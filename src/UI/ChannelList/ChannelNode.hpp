@@ -16,7 +16,7 @@ struct ChannelNode
     Core::Snowflake id;
     QString name;
     Type type;
-    int unreadCount = 5;
+    int unreadCount = 0;
     int position = 0;
     QString TEMP_iconHash;
 
