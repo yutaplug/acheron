@@ -16,14 +16,15 @@ void AccountRepository::saveAccount(const Core::AccountInfo &acc)
     QSqlQuery query(db);
     query.prepare(R"(
             INSERT OR REPLACE INTO accounts 
-            (id, username, display_name, token)
-            VALUES (:id, :username, :display_name, :token)
+            (id, username, display_name, token, avatar)
+            VALUES (:id, :username, :display_name, :token, :avatar)
         )");
 
     query.bindValue(":id", static_cast<qint64>(acc.id));
     query.bindValue(":username", acc.username);
     query.bindValue(":display_name", acc.displayName);
     query.bindValue(":token", acc.token);
+    query.bindValue(":avatar", acc.avatar);
 
     if (!query.exec())
         qCWarning(LogDB) << "AccountRepository: Save failed:" << query.lastError().text();
@@ -54,7 +55,7 @@ Core::AccountInfo AccountRepository::getAccount(quint64 id)
     acc.username = query.value("username").toString();
     acc.displayName = query.value("display_name").toString();
     acc.token = query.value("token").toString();
-    // acc.avatar =
+    acc.avatar = query.value("avatar").toString();
 
     return acc;
 }
@@ -77,10 +78,9 @@ QVector<Core::AccountInfo> AccountRepository::getAllAccounts()
         acc.username = query.value("username").toString();
         acc.displayName = query.value("display_name").toString();
         acc.token = query.value("token").toString();
+        acc.avatar = query.value("avatar").toString();
 
         acc.state = Core::ConnectionState::Disconnected;
-
-        // acc.avatar = defAv;
 
         results.append(acc);
     }

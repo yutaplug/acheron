@@ -25,6 +25,7 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
 
         account.username = ready.user->username;
         account.displayName = ready.user->globalName;
+        account.avatar = ready.user->avatar;
 
         db.transaction();
         for (const auto &guild : ready.guilds.get()) {

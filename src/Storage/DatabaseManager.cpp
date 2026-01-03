@@ -18,7 +18,7 @@ bool DatabaseManager::init()
     if (!dir.exists())
         dir.mkpath(".");
 
-    persistentPath = dir.filePath("acheron_persistent.sqlite");
+    persistentPath = dir.filePath("acheron.sqlite");
     persistentDb = QSqlDatabase::addDatabase("QSQLITE", PERSISTENT_CONN_NAME);
     persistentDb.setDatabaseName(persistentPath);
 
@@ -96,7 +96,8 @@ void DatabaseManager::setupPersistentTables()
             id INTEGER PRIMARY KEY,
             username TEXT,
             display_name TEXT,
-            token TEXT
+            token TEXT,
+            avatar TEXT
         )
     )");
 }

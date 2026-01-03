@@ -15,7 +15,7 @@ struct AccountInfo
     QString username;
     QString displayName;
     QString token;
-    QPixmap avatar;
+    QString avatar;
     ConnectionState state = ConnectionState::Disconnected;
 };
 } // namespace Core

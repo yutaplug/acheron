@@ -21,7 +21,10 @@ bool ImageManager::isCached(const QUrl &url)
 
 QPixmap ImageManager::get(const QUrl &url)
 {
-    return *cache.object(url);
+    if (isCached(url))
+        return *cache.object(url);
+    request(url);
+    return placeholder();
 }
 
 QPixmap ImageManager::placeholder()

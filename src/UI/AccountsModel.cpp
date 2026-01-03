@@ -35,6 +35,7 @@ AccountsModel::AccountsModel(Core::Session *session, QObject *parent)
             if (accounts[i].id == info.id) {
                 accounts[i].username = info.username;
                 accounts[i].displayName = info.displayName;
+                accounts[i].avatar = info.avatar;
 
                 QModelIndex idx = index(i, 0);
                 emit dataChanged(idx, idx, { Qt::DisplayRole, AccountObjectRole });
@@ -69,9 +70,13 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const
             text += " [Connecting...]";
         return text;
     }
-    case Qt::DecorationRole:
-        return acc.avatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    case Qt::DecorationRole: {
 
+        QUrl TEMPORARY = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=32")
+                                      .arg(quint64(acc.id))
+                                      .arg(acc.avatar));
+        return session->getImageManager()->get(TEMPORARY);
+    }
     case AccountObjectRole:
         return QVariant::fromValue((void *)&acc);
 
