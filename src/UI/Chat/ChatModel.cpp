@@ -10,7 +10,7 @@ ChatModel::ChatModel(Core::ImageManager *imageManager, QObject *parent)
     : QAbstractListModel(parent), imageManager(imageManager)
 {
     connect(imageManager, &Core::ImageManager::imageFetched, this,
-            [this](const QUrl &url, const QPixmap &pixmap) {
+            [this](const QUrl &url, const QSize &size, const QPixmap &pixmap) {
                 auto values = pendingRequests.values(url);
                 for (const auto &index : values) {
                     if (index.isValid())
@@ -43,16 +43,30 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case UsernameRole:
         return msg.author->getDisplayName();
     case AvatarRole: {
+        const QSize desiredSize(32, 32);
+
         if (!avatarUrlResolver)
-            return imageManager->placeholder();
-        auto key = avatarUrlResolver(msg.author.get());
-        if (imageManager->isCached(key)) {
-            return imageManager->get(key);
-        } else {
-            pendingRequests.insert(key, QPersistentModelIndex(index));
-            imageManager->request(key);
-            return imageManager->placeholder();
+            return imageManager->placeholder(desiredSize);
+
+        QUrl url = avatarUrlResolver(msg.author.get());
+        QPixmap pixmap = imageManager->get(url, desiredSize);
+
+        if (!imageManager->isCached(url, desiredSize)) {
+            bool alreadyWaiting = false;
+            auto it = pendingRequests.constFind(url);
+            while (it != pendingRequests.cend() && it.key() == url) {
+                if (it.value() == index) {
+                    alreadyWaiting = true;
+                    break;
+                }
+                it++;
+            }
+
+            if (!alreadyWaiting)
+                pendingRequests.insert(url, QPersistentModelIndex(index));
         }
+
+        return pixmap;
     }
     case TimestampRole:
         return msg.timestamp;

@@ -43,6 +43,15 @@ AccountsModel::AccountsModel(Core::Session *session, QObject *parent)
             }
         }
     });
+
+    connect(session->getImageManager(), &Core::ImageManager::imageFetched, this,
+            [this](const QUrl &url, const QSize &size, const QPixmap &pixmap) {
+                auto values = pendingRequests.values(url);
+                for (const auto &index : values) {
+                    if (index.isValid())
+                        emit dataChanged(index, index, { Qt::DecorationRole });
+                }
+            });
 }
 
 int AccountsModel::rowCount(const QModelIndex &parent) const
@@ -71,11 +80,30 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const
         return text;
     }
     case Qt::DecorationRole: {
-
-        QUrl TEMPORARY = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=32")
+        const QSize desiredSize(32, 32);
+        QUrl TEMPORARY = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=%3")
                                       .arg(quint64(acc.id))
-                                      .arg(acc.avatar));
-        return session->getImageManager()->get(TEMPORARY);
+                                      .arg(acc.avatar)
+                                      .arg(desiredSize.width()));
+
+        QPixmap pixmap = session->getImageManager()->get(TEMPORARY, desiredSize);
+
+        if (!session->getImageManager()->isCached(TEMPORARY, desiredSize)) {
+            bool alreadyWaiting = false;
+            auto it = pendingRequests.constFind(TEMPORARY);
+            while (it != pendingRequests.cend() && it.key() == TEMPORARY) {
+                if (it.value() == index) {
+                    alreadyWaiting = true;
+                    break;
+                }
+                it++;
+            }
+
+            if (!alreadyWaiting)
+                pendingRequests.insert(TEMPORARY, QPersistentModelIndex(index));
+        }
+
+        return pixmap;
     }
     case AccountObjectRole:
         return QVariant::fromValue((void *)&acc);

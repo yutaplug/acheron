@@ -32,6 +32,7 @@ private:
     Core::Session *session;
 
     QVector<Core::AccountInfo> accounts;
+    mutable QMultiHash<QUrl, QPersistentModelIndex> pendingRequests;
 };
 
 } // namespace UI

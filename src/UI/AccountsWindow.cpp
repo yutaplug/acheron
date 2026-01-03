@@ -226,7 +226,13 @@ void AccountsWindow::updateDetails(const AccountInfo *info)
     if (!info)
         return;
 
-    detailAvatar->setPixmap(info->avatar);
+    const QSize desiredSize(64, 64);
+    QUrl TEMPORARY = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=%3")
+                                  .arg(quint64(info->id))
+                                  .arg(info->avatar)
+                                  .arg(desiredSize.width()));
+
+    session->getImageManager()->assign(detailAvatar, TEMPORARY, desiredSize);
     detailDisplayName->setText(info->displayName);
     detailUsername->setText(info->username);
     detailId->setText(QString::number(info->id));

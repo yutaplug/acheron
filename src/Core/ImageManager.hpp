@@ -4,6 +4,7 @@
 #include <QUrl>
 #include <QCache>
 #include <QPixmap>
+#include <qlabel.h>
 
 class QNetworkAccessManager;
 
@@ -13,12 +14,12 @@ namespace Core {
 struct ImageRequestKey
 {
     QUrl url;
-    int size;
-    QString extension;
+    QSize size;
+    // QString extension;
 
     bool operator==(const ImageRequestKey &other) const
     {
-        return url == other.url && size == other.size && extension == other.extension;
+        return url == other.url && size == other.size;
     }
 };
 
@@ -28,21 +29,24 @@ class ImageManager : public QObject
 public:
     explicit ImageManager(QObject *parent = nullptr);
 
-    [[nodiscard]] bool isCached(const QUrl &url);
-    [[nodiscard]] QPixmap get(const QUrl &url);
-    [[nodiscard]] QPixmap placeholder();
-    void request(const QUrl &url);
+    [[nodiscard]] ImageRequestKey key(const QUrl &url, const QSize &size);
+
+    [[nodiscard]] bool isCached(const QUrl &url, const QSize &size);
+    [[nodiscard]] void assign(QLabel *label, const QUrl &url, const QSize &size);
+    [[nodiscard]] QPixmap get(const QUrl &url, const QSize &size);
+    [[nodiscard]] QPixmap placeholder(const QSize &size);
 
 signals:
-    void imageFetched(const QUrl &url, const QPixmap &pixmap);
+    void imageFetched(const QUrl &url, const QSize &size, const QPixmap &pixmap);
 
 private:
-    void fetchFromNetwork(const QUrl &url);
+    void request(const QUrl &url, const QSize &size);
+    void fetchFromNetwork(const QUrl &url, const QSize &size);
 
     QNetworkAccessManager *networkManager;
 
-    QSet<QUrl> requests;
-    QCache<QUrl, QPixmap> cache;
+    QSet<ImageRequestKey> requests;
+    QCache<ImageRequestKey, QPixmap> cache;
 };
 
 } // namespace Core
@@ -54,7 +58,7 @@ struct hash<Acheron::Core::ImageRequestKey>
 {
     size_t operator()(const Acheron::Core::ImageRequestKey &key, size_t seed = 0) const
     {
-        return qHashMulti(seed, key.url, key.size, key.extension);
+        return qHashMulti(seed, key.url, key.size);
     }
 };
 } // namespace std
