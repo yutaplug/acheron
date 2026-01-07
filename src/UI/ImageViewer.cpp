@@ -110,7 +110,7 @@ void ImageViewer::resetView()
 
         qreal scaleX = windowSize.width() / imageSize.width();
         qreal scaleY = windowSize.height() / imageSize.height();
-        zoomLevel = qMin(scaleX, scaleY) * 0.9;
+        zoomLevel = qMin(scaleX, scaleY) * 0.8;
     }
 }
 
