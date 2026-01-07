@@ -13,7 +13,7 @@ public:
     explicit BasePopup(QWidget *parent = nullptr);
 
 protected:
-    QFrame *container() const { return m_container; }
+    QFrame *container() const { return container; }
 
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
@@ -21,7 +21,7 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
-    QFrame *m_container;
+    QFrame *container;
 };
 
 } // namespace UI

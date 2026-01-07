@@ -12,24 +12,24 @@ BasePopup::BasePopup(QWidget *parent) : QDialog(parent, Qt::FramelessWindowHint 
     overlayLayout->setAlignment(Qt::AlignCenter);
     overlayLayout->setContentsMargins(20, 20, 20, 20);
 
-    m_container = new QFrame(this);
-    m_container->setObjectName("ContentFrame");
-    m_container->setAutoFillBackground(true);
-    m_container->setFrameShape(QFrame::StyledPanel);
-    m_container->setFrameShadow(QFrame::Raised);
+    container = new QFrame(this);
+    container->setObjectName("ContentFrame");
+    container->setAutoFillBackground(true);
+    container->setFrameShape(QFrame::StyledPanel);
+    container->setFrameShadow(QFrame::Raised);
 
-    m_container->setMinimumWidth(300);
-    m_container->setMaximumWidth(600);
-    m_container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+    container->setMinimumWidth(300);
+    container->setMaximumWidth(600);
+    container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
 
     auto *shadow = new QGraphicsDropShadowEffect(this);
     shadow->setBlurRadius(25);
     shadow->setXOffset(0);
     shadow->setYOffset(8);
     shadow->setColor(QColor(0, 0, 0, 100));
-    m_container->setGraphicsEffect(shadow);
+    container->setGraphicsEffect(shadow);
 
-    overlayLayout->addWidget(m_container);
+    overlayLayout->addWidget(container);
 }
 
 void BasePopup::paintEvent(QPaintEvent *)
@@ -40,7 +40,7 @@ void BasePopup::paintEvent(QPaintEvent *)
 
 void BasePopup::mousePressEvent(QMouseEvent *event)
 {
-    if (!m_container->geometry().contains(event->pos())) {
+    if (!container->geometry().contains(event->pos())) {
         reject();
     } else {
         QDialog::mousePressEvent(event);
