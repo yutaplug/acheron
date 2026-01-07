@@ -152,6 +152,121 @@ QString getLinkAt(const QAbstractItemView *view, const QModelIndex &index, const
     return doc.documentLayout()->anchorAt(localPos);
 }
 
+AttachmentGridLayout calculateAttachmentGrid(int count, int maxWidth)
+{
+    AttachmentGridLayout layout;
+
+    if (count <= 0) {
+        layout.totalHeight = 0;
+        return layout;
+    }
+
+    constexpr int MaxGridWidth = 400;
+    int gridWidth = std::min(maxWidth, MaxGridWidth);
+
+    constexpr int gap = 4;
+
+    if (count == 1) {
+        // placeholder. single images are shown in full
+        layout.cells.append({ 0, QRect(0, 0, gridWidth, 300) });
+        layout.totalHeight = 300;
+    } else if (count == 2) {
+        // 2 horizontal
+        int w = (gridWidth - gap) / 2;
+        layout.cells.append({ 0, QRect(0, 0, w, 300) });
+        layout.cells.append({ 1, QRect(w + gap, 0, w, 300) });
+        layout.totalHeight = 300;
+    } else if (count == 3) {
+        // 1 then 2 vertical
+        int leftW = (gridWidth * 2) / 3 - gap / 2;
+        int rightW = gridWidth / 3 - gap / 2;
+        int rightH = (300 - gap) / 2;
+        layout.cells.append({ 0, QRect(0, 0, leftW, 300) });
+        layout.cells.append({ 1, QRect(leftW + gap, 0, rightW, rightH) });
+        layout.cells.append({ 2, QRect(leftW + gap, rightH + gap, rightW, rightH) });
+        layout.totalHeight = 300;
+    } else if (count == 4) {
+        // 2x2
+        int w = (gridWidth - gap) / 2;
+        int h = 150;
+        layout.cells.append({ 0, QRect(0, 0, w, h) });
+        layout.cells.append({ 1, QRect(w + gap, 0, w, h) });
+        layout.cells.append({ 2, QRect(0, h + gap, w, h) });
+        layout.cells.append({ 3, QRect(w + gap, h + gap, w, h) });
+        layout.totalHeight = h * 2 + gap;
+    } else if (count == 5) {
+        // 2 on top, 3 on bottom
+        int topW = (gridWidth - gap) / 2;
+        int bottomW = (gridWidth - gap * 2) / 3;
+        int h = 150;
+        layout.cells.append({ 0, QRect(0, 0, topW, h) });
+        layout.cells.append({ 1, QRect(topW + gap, 0, topW, h) });
+        layout.cells.append({ 2, QRect(0, h + gap, bottomW, h) });
+        layout.cells.append({ 3, QRect(bottomW + gap, h + gap, bottomW, h) });
+        layout.cells.append({ 4, QRect((bottomW + gap) * 2, h + gap, bottomW, h) });
+        layout.totalHeight = h * 2 + gap;
+    } else if (count == 6) {
+        // 2x3
+        int w = (gridWidth - gap * 2) / 3;
+        int h = 150;
+        for (int row = 0; row < 2; ++row)
+            for (int col = 0; col < 3; ++col) {
+                int idx = row * 3 + col;
+                layout.cells.append({ idx, QRect(col * (w + gap), row * (h + gap), w, h) });
+            }
+        layout.totalHeight = h * 2 + gap;
+    } else if (count == 7) {
+        // 1 on top, 2x3 on bottom
+        int h = 133;
+        int w3 = (gridWidth - gap * 2) / 3;
+        layout.cells.append({ 0, QRect(0, 0, gridWidth, h) });
+        for (int row = 0; row < 2; ++row)
+            for (int col = 0; col < 3; ++col) {
+                int idx = 1 + row * 3 + col;
+                layout.cells.append({ idx, QRect(col * (w3 + gap), (row + 1) * (h + gap), w3, h) });
+            }
+        layout.totalHeight = h * 3 + gap * 2;
+    } else if (count == 8) {
+        // 2 on top, 2x3 on bottom
+        int h = 133;
+        int w2 = (gridWidth - gap) / 2;
+        int w3 = (gridWidth - gap * 2) / 3;
+        layout.cells.append({ 0, QRect(0, 0, w2, h) });
+        layout.cells.append({ 1, QRect(w2 + gap, 0, w2, h) });
+        for (int row = 0; row < 2; ++row)
+            for (int col = 0; col < 3; ++col) {
+                int idx = 2 + row * 3 + col;
+                layout.cells.append({ idx, QRect(col * (w3 + gap), (row + 1) * (h + gap), w3, h) });
+            }
+        layout.totalHeight = h * 3 + gap * 2;
+    } else if (count == 9) {
+        // 3x3
+        int w = (gridWidth - gap * 2) / 3;
+        int h = 133;
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 3; ++col) {
+                int idx = row * 3 + col;
+                layout.cells.append({ idx, QRect(col * (w + gap), row * (h + gap), w, h) });
+            }
+        layout.totalHeight = h * 3 + gap * 2;
+    } else {
+        // 1 on top, 3x3 on bottom
+        int h = 133;
+        int w3 = (gridWidth - gap * 2) / 3;
+        layout.cells.append({ 0, QRect(0, 0, gridWidth, h) });
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 3; ++col) {
+                int idx = 1 + row * 3 + col;
+                if (idx >= count)
+                    break;
+                layout.cells.append({ idx, QRect(col * (w3 + gap), (row + 1) * (h + gap), w3, h) });
+            }
+        layout.totalHeight = h * 4 + gap * 3;
+    }
+
+    return layout;
+}
+
 std::optional<AttachmentData> getAttachmentAt(const QAbstractItemView *view,
                                               const QModelIndex &index, const QPoint &mousePos)
 {
@@ -180,14 +295,27 @@ std::optional<AttachmentData> getAttachmentAt(const QAbstractItemView *view,
 
     int attachmentTop = textRect.top() + realTextHeight + padding();
 
-    for (const auto &att : attachments) {
+    bool isSingleImage = (attachments.size() == 1);
+
+    if (isSingleImage) {
+        const auto &att = attachments[0];
         QRect imgRect(textRect.left(), attachmentTop, att.displaySize.width(),
                       att.displaySize.height());
 
         if (imgRect.contains(mousePos))
             return att;
+    } else {
+        AttachmentGridLayout grid = calculateAttachmentGrid(attachments.size(), textRect.width());
 
-        attachmentTop = imgRect.bottom() + padding();
+        for (const auto &cell : grid.cells) {
+            if (cell.attachmentIndex >= attachments.size())
+                continue;
+
+            QRect imgRect = cell.rect.translated(textRect.left(), attachmentTop);
+
+            if (imgRect.contains(mousePos))
+                return attachments[cell.attachmentIndex];
+        }
     }
 
     return std::nullopt;

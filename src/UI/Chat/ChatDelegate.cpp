@@ -124,19 +124,54 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         int realTextHeight = int(std::ceil(doc.size().height()));
         int attachmentTop = textRect.top() + realTextHeight + ChatLayout::padding();
 
-        for (const auto &att : attachments) {
-            QRect imgRect(textRect.left(), attachmentTop, att.displaySize.width(),
-                          att.displaySize.height());
+        ChatLayout::AttachmentGridLayout grid =
+                ChatLayout::calculateAttachmentGrid(attachments.size(), textRect.width());
+
+        bool isSingleImage = (attachments.size() == 1);
+
+        for (const auto &cell : grid.cells) {
+            if (cell.attachmentIndex >= attachments.size())
+                continue;
+
+            const auto &att = attachments[cell.attachmentIndex];
+
+            QRect imgRect = cell.rect.translated(textRect.left(), attachmentTop);
 
             if (!att.pixmap.isNull()) {
-                painter->drawPixmap(imgRect, att.pixmap);
+                if (isSingleImage) {
+                    QRect actualRect(imgRect.x(), imgRect.y(), att.displaySize.width(),
+                                     att.displaySize.height());
+                    painter->drawPixmap(actualRect, att.pixmap);
+                } else {
+                    QSize pixSize = att.pixmap.size() / att.pixmap.devicePixelRatio();
+                    QRect sourceRect;
+
+                    qreal targetAspect = qreal(imgRect.width()) / imgRect.height();
+                    qreal pixAspect = qreal(pixSize.width()) / pixSize.height();
+
+                    // crop to fit
+                    if (pixAspect > targetAspect) {
+                        int cropWidth = qRound(pixSize.height() * targetAspect);
+                        int cropX = (pixSize.width() - cropWidth) / 2;
+                        sourceRect = QRect(cropX, 0, cropWidth, pixSize.height());
+                    } else {
+                        int cropHeight = qRound(pixSize.width() / targetAspect);
+                        int cropY = (pixSize.height() - cropHeight) / 2;
+                        sourceRect = QRect(0, cropY, pixSize.width(), cropHeight);
+                    }
+
+                    qreal dpr = att.pixmap.devicePixelRatio();
+                    QRect physicalSourceRect(
+                            qRound(sourceRect.x() * dpr), qRound(sourceRect.y() * dpr),
+                            qRound(sourceRect.width() * dpr), qRound(sourceRect.height() * dpr));
+
+                    painter->drawPixmap(imgRect, att.pixmap, physicalSourceRect);
+                }
             } else {
                 painter->fillRect(imgRect, QColor(60, 60, 60));
                 painter->setPen(option.palette.text().color());
                 painter->drawText(imgRect, Qt::AlignCenter, "Loading...");
             }
-
-            attachmentTop = imgRect.bottom() + ChatLayout::padding();
         }
     }
 
@@ -166,8 +201,14 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         // add height for attachments
         QList<AttachmentData> atts =
                 index.data(ChatModel::AttachmentsRole).value<QList<AttachmentData>>();
-        for (const auto &att : atts) {
-            requiredHeight += att.displaySize.height() + pad;
+        if (!atts.isEmpty()) {
+            if (atts.size() == 1) {
+                requiredHeight += atts[0].displaySize.height() + pad;
+            } else {
+                ChatLayout::AttachmentGridLayout grid = ChatLayout::calculateAttachmentGrid(
+                        atts.size(), option.rect.width() - pad - aSz - pad - pad);
+                requiredHeight += grid.totalHeight + pad;
+            }
         }
 
         if (option.rect.height() != requiredHeight) {
@@ -237,8 +278,14 @@ QSize ChatDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelInd
     // add height for attachments
     QList<AttachmentData> attachments =
             index.data(ChatModel::AttachmentsRole).value<QList<AttachmentData>>();
-    for (const auto &att : attachments) {
-        totalHeight += att.displaySize.height() + pad;
+    if (!attachments.isEmpty()) {
+        if (attachments.size() == 1) {
+            totalHeight += attachments[0].displaySize.height() + pad;
+        } else {
+            ChatLayout::AttachmentGridLayout grid =
+                    ChatLayout::calculateAttachmentGrid(attachments.size(), textWidth);
+            totalHeight += grid.totalHeight + pad;
+        }
     }
 
     return QSize(viewportWidth, totalHeight);
