@@ -21,7 +21,7 @@ namespace UI {
 
 MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent), session(session)
 {
-    chatModel = new ChatModel(session->getImageManager(), this);
+    chatModel = new ChatModel(session->getImageManager(), session->getAttachmentCache(), this);
     channelTreeModel = new ChannelTreeModel(session, this);
     accountsModel = new AccountsModel(session, this);
 

@@ -10,6 +10,7 @@ namespace Core {
 Session::Session(QObject *parent) : QObject(parent)
 {
     imageManager = new ImageManager(this);
+    attachmentCache = new AttachmentCache(this);
 }
 
 Session::~Session()

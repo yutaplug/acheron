@@ -173,6 +173,23 @@ void DatabaseManager::setupCacheTables(const QString &connName)
             PRIMARY KEY("user_id", "guild_id")
         );
     )");
+
+    query.exec(R"(
+        CREATE TABLE "attachments" (
+            "id" INTEGER NOT NULL,
+            "message_id" INTEGER NOT NULL,
+            "filename" TEXT NOT NULL,
+            "content_type" TEXT,
+            "size" INTEGER NOT NULL,
+            "url" TEXT NOT NULL,
+            "proxy_url" TEXT NOT NULL,
+            "width" INTEGER,
+            "height" INTEGER,
+            PRIMARY KEY("id")
+        );
+    )");
+
+    query.exec("CREATE INDEX idx_attachments_message_id ON attachments(message_id);");
 }
 } // namespace Storage
 } // namespace Acheron

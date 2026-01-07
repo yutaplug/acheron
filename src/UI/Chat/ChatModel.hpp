@@ -10,14 +10,24 @@ namespace Acheron {
 
 namespace Core {
 class ImageManager;
-}
+class AttachmentCache;
+} // namespace Core
+
+struct AttachmentData
+{
+    QUrl proxyUrl;
+    QSize displaySize;
+    QPixmap pixmap;
+    bool isLoading;
+};
 
 namespace UI {
 class ChatModel : public QAbstractListModel
 {
     Q_OBJECT
 public:
-    ChatModel(Core::ImageManager *imageManager, QObject *parent = nullptr);
+    ChatModel(Core::ImageManager *imageManager, Core::AttachmentCache *attachmentCache,
+              QObject *parent = nullptr);
 
     enum Roles {
         ContentRole = Qt::UserRole + 1,
@@ -29,6 +39,7 @@ public:
         ShowHeaderRole,
         DateSeparatorRole,
         HtmlRole,
+        AttachmentsRole,
     };
 
     using AvatarUrlResolver = std::function<QUrl(const Discord::User &)>;
@@ -57,6 +68,7 @@ private:
     void setMessages(const QList<Discord::Message> &messages);
 
     Core::ImageManager *imageManager;
+    Core::AttachmentCache *attachmentCache;
     QVector<Discord::Message> messages;
     mutable QHash<Snowflake, QSize> sizeCache;
 
@@ -68,3 +80,6 @@ private:
 };
 } // namespace UI
 } // namespace Acheron
+
+Q_DECLARE_METATYPE(Acheron::AttachmentData)
+Q_DECLARE_METATYPE(QList<Acheron::AttachmentData>)

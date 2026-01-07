@@ -3,11 +3,13 @@
 #include "Core/Markdown/Parser.hpp"
 #include "Core/MessageManager.hpp"
 #include "Core/ImageManager.hpp"
+#include "Core/AttachmentCache.hpp"
 
 namespace Acheron {
 namespace UI {
-ChatModel::ChatModel(Core::ImageManager *imageManager, QObject *parent)
-    : QAbstractListModel(parent), imageManager(imageManager)
+ChatModel::ChatModel(Core::ImageManager *imageManager, Core::AttachmentCache *attachmentCache,
+                     QObject *parent)
+    : QAbstractListModel(parent), imageManager(imageManager), attachmentCache(attachmentCache)
 {
     connect(imageManager, &Core::ImageManager::imageFetched, this,
             [this](const QUrl &url, const QSize &size, const QPixmap &pixmap) {
@@ -15,6 +17,22 @@ ChatModel::ChatModel(Core::ImageManager *imageManager, QObject *parent)
                 for (const auto &index : values) {
                     if (index.isValid())
                         emit dataChanged(index, index, { Qt::DecorationRole });
+                }
+            });
+
+    connect(attachmentCache, &Core::AttachmentCache::attachmentFetched, this,
+            [this](const QUrl &url, const QPixmap &pixmap) {
+                for (int row = 0; row < messages.size(); ++row) {
+                    const auto &msg = messages[row];
+                    if (!msg.attachments.hasValue())
+                        continue;
+                    for (const auto &att : *msg.attachments) {
+                        if (QUrl(*att.proxyUrl) == url) {
+                            QModelIndex idx = index(row, 0);
+                            emit dataChanged(idx, idx, { AttachmentsRole, CachedSizeRole });
+                            break;
+                        }
+                    }
                 }
             });
 }
@@ -104,6 +122,31 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     }
     case HtmlRole: {
         return msg.parsedContentCached;
+    }
+    case AttachmentsRole: {
+        if (!msg.attachments.hasValue() || msg.attachments->isEmpty())
+            return QVariant();
+
+        QList<AttachmentData> result;
+        for (const auto &att : *msg.attachments) {
+            if (!att.isImage())
+                continue;
+
+            AttachmentData data;
+            data.proxyUrl = QUrl(*att.proxyUrl);
+
+            QSize original;
+            if (att.width.hasValue() && att.height.hasValue())
+                original = QSize(*att.width, *att.height);
+
+            data.displaySize = Core::AttachmentCache::calculateDisplaySize(original);
+            data.pixmap = attachmentCache->get(data.proxyUrl, original);
+            data.isLoading = !attachmentCache->isCached(data.proxyUrl);
+
+            result.append(data);
+        }
+
+        return QVariant::fromValue(result);
     }
     default:
         return {};

@@ -131,6 +131,39 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
     }
 };
 
+struct Attachment : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> id;
+    Field<QString> filename;
+    Field<QString, true> contentType;
+    Field<qint64> size;
+    Field<QString> url;
+    Field<QString> proxyUrl;
+    Field<int, true> width;
+    Field<int, true> height;
+
+    static Attachment fromJson(const QJsonObject &obj)
+    {
+        Attachment att;
+        get(obj, "id", att.id);
+        get(obj, "filename", att.filename);
+        get(obj, "content_type", att.contentType);
+        get(obj, "size", att.size);
+        get(obj, "url", att.url);
+        get(obj, "proxy_url", att.proxyUrl);
+        get(obj, "width", att.width);
+        get(obj, "height", att.height);
+        return att;
+    }
+
+    bool isImage() const
+    {
+        if (!contentType.hasValue())
+            return false;
+        return contentType->startsWith("image/");
+    }
+};
+
 struct Message : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;
@@ -141,6 +174,7 @@ struct Message : Core::JsonUtils::JsonObject
     Field<QDateTime, false, true> editedTimestamp;
     Field<MessageType> type;
     Field<MessageFlags> flags;
+    Field<QList<Attachment>, true> attachments;
 
     // ui stuff
     QString parsedContentCached;
@@ -156,6 +190,7 @@ struct Message : Core::JsonUtils::JsonObject
         get(obj, "edited_timestamp", message.editedTimestamp);
         get(obj, "type", message.type);
         get(obj, "flags", message.flags);
+        get(obj, "attachments", message.attachments);
         return message;
     }
 };

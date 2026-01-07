@@ -38,6 +38,13 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
 		VALUES (:id, :username, :global_name, :avatar, :bot)
 	)");
 
+    QSqlQuery qAtt(db);
+    qAtt.prepare(R"(
+        INSERT OR REPLACE INTO attachments
+        (id, message_id, filename, content_type, size, url, proxy_url, width, height)
+        VALUES (:id, :message_id, :filename, :content_type, :size, :url, :proxy_url, :width, :height)
+    )");
+
     for (const auto &message : messages) {
         qMsg.bindValue(":id", static_cast<qint64>(message.id.get()));
         qMsg.bindValue(":channel_id", static_cast<qint64>(message.channelId.get()));
@@ -61,6 +68,26 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
 
         if (!qUser.exec()) {
             qCWarning(LogDB) << "MessageRepository: Save user failed:" << qUser.lastError().text();
+        }
+
+        if (message.attachments.hasValue()) {
+            for (const auto &att : *message.attachments) {
+                qAtt.bindValue(":id", static_cast<qint64>(att.id.get()));
+                qAtt.bindValue(":message_id", static_cast<qint64>(message.id.get()));
+                qAtt.bindValue(":filename", att.filename);
+                qAtt.bindValue(":content_type", att.contentType);
+                qAtt.bindValue(":size", static_cast<qint64>(att.size.get()));
+                qAtt.bindValue(":url", att.url);
+                qAtt.bindValue(":proxy_url", att.proxyUrl);
+                qAtt.bindValue(":width", att.width.hasValue() ? QVariant(*att.width) : QVariant());
+                qAtt.bindValue(":height",
+                               att.height.hasValue() ? QVariant(*att.height) : QVariant());
+
+                if (!qAtt.exec()) {
+                    qCWarning(LogDB) << "MessageRepository: Save attachment failed:"
+                                     << qAtt.lastError().text();
+                }
+            }
         }
     }
 
@@ -111,6 +138,8 @@ QList<Discord::Message> MessageRepository::getLatestMessages(Core::Snowflake cha
         messages.append(message);
     }
 
+    loadAttachmentsForMessages(messages, db);
+
     return messages;
 }
 
@@ -160,7 +189,68 @@ QList<Discord::Message> MessageRepository::getMessagesBefore(Core::Snowflake cha
         messages.append(message);
     }
 
+    loadAttachmentsForMessages(messages, db);
+
     return messages;
+}
+
+void MessageRepository::loadAttachmentsForMessages(QList<Discord::Message> &messages,
+                                                   QSqlDatabase &db)
+{
+    if (messages.isEmpty())
+        return;
+
+    QHash<qint64, int> messageIndexMap;
+    for (int i = 0; i < messages.size(); ++i) {
+        messageIndexMap.insert(static_cast<qint64>(messages[i].id.get()), i);
+    }
+
+    QSqlQuery q(db);
+    q.prepare(R"(
+        SELECT id, message_id, filename, content_type, size, url, proxy_url, width, height
+        FROM attachments
+        WHERE message_id IN (SELECT id FROM messages WHERE id IN (%1))
+    )");
+
+    QStringList placeholders;
+    for (const auto &msg : messages) {
+        placeholders.append(QString::number(static_cast<qint64>(msg.id.get())));
+    }
+
+    QString query = QString(R"(
+        SELECT id, message_id, filename, content_type, size, url, proxy_url, width, height
+        FROM attachments
+        WHERE message_id IN (%1)
+    )")
+                            .arg(placeholders.join(", "));
+
+    if (!q.exec(query)) {
+        qCWarning(LogDB) << "MessageRepository: Load attachments failed:" << q.lastError().text();
+        return;
+    }
+
+    while (q.next()) {
+        qint64 messageId = q.value(1).toLongLong();
+        int idx = messageIndexMap.value(messageId, -1);
+        if (idx < 0)
+            continue;
+
+        Discord::Attachment att;
+        att.id = static_cast<Core::Snowflake>(q.value(0).toLongLong());
+        att.filename = q.value(2).toString();
+        att.contentType = q.value(3).toString();
+        att.size = q.value(4).toLongLong();
+        att.url = q.value(5).toString();
+        att.proxyUrl = q.value(6).toString();
+        if (!q.value(7).isNull())
+            att.width = q.value(7).toInt();
+        if (!q.value(8).isNull())
+            att.height = q.value(8).toInt();
+
+        if (!messages[idx].attachments.hasValue())
+            messages[idx].attachments = QList<Discord::Attachment>();
+        messages[idx].attachments->append(att);
+    }
 }
 
 } // namespace Storage

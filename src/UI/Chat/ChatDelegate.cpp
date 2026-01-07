@@ -58,8 +58,8 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         painter->setFont(headerFont);
 
         QColor headerColor = (option.state & QStyle::State_Selected)
-                ? option.palette.highlightedText().color()
-                : option.palette.text().color();
+                                     ? option.palette.highlightedText().color()
+                                     : option.palette.text().color();
         painter->setPen(headerColor);
 
         QString header = username + "  " + timestamp.toString("hh:mm");
@@ -75,8 +75,8 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
     QAbstractTextDocumentLayout::PaintContext ctx;
 
     QColor textColor = (option.state & QStyle::State_Selected)
-            ? option.palette.highlightedText().color()
-            : option.palette.text().color();
+                               ? option.palette.highlightedText().color()
+                               : option.palette.text().color();
     ctx.palette.setColor(QPalette::Text, textColor);
 
     const ChatView *view = qobject_cast<const ChatView *>(option.widget);
@@ -113,6 +113,33 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 
     doc.documentLayout()->draw(painter, ctx);
 
+    // reset translation for attachment rendering
+    painter->restore();
+    painter->save();
+
+    // render attachments below text
+    QList<AttachmentData> attachments =
+            index.data(ChatModel::AttachmentsRole).value<QList<AttachmentData>>();
+    if (!attachments.isEmpty()) {
+        int realTextHeight = int(std::ceil(doc.size().height()));
+        int attachmentTop = textRect.top() + realTextHeight + ChatLayout::padding();
+
+        for (const auto &att : attachments) {
+            QRect imgRect(textRect.left(), attachmentTop, att.displaySize.width(),
+                          att.displaySize.height());
+
+            if (!att.pixmap.isNull()) {
+                painter->drawPixmap(imgRect, att.pixmap);
+            } else {
+                painter->fillRect(imgRect, QColor(60, 60, 60));
+                painter->setPen(option.palette.text().color());
+                painter->drawText(imgRect, Qt::AlignCenter, "Loading...");
+            }
+
+            attachmentTop = imgRect.bottom() + ChatLayout::padding();
+        }
+    }
+
     painter->restore();
 
     // correct height calculation
@@ -134,6 +161,13 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 
         if (hasSeparator) {
             requiredHeight += ChatLayout::separatorHeight();
+        }
+
+        // add height for attachments
+        QList<AttachmentData> atts =
+                index.data(ChatModel::AttachmentsRole).value<QList<AttachmentData>>();
+        for (const auto &att : atts) {
+            requiredHeight += att.displaySize.height() + pad;
         }
 
         if (option.rect.height() != requiredHeight) {
@@ -198,6 +232,13 @@ QSize ChatDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelInd
 
     if (hasSeparator) {
         totalHeight += ChatLayout::separatorHeight();
+    }
+
+    // add height for attachments
+    QList<AttachmentData> attachments =
+            index.data(ChatModel::AttachmentsRole).value<QList<AttachmentData>>();
+    for (const auto &att : attachments) {
+        totalHeight += att.displaySize.height() + pad;
     }
 
     return QSize(viewportWidth, totalHeight);

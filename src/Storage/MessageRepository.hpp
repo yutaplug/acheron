@@ -21,6 +21,9 @@ public:
     QList<Discord::Message> getLatestMessages(Core::Snowflake channelId, int limit);
     QList<Discord::Message> getMessagesBefore(Core::Snowflake channelId, Core::Snowflake beforeId,
                                               int limit);
+
+private:
+    void loadAttachmentsForMessages(QList<Discord::Message> &messages, QSqlDatabase &db);
 };
 
 } // namespace Storage

@@ -8,6 +8,7 @@
 #include "Storage/AccountRepository.hpp"
 #include "Core/Enums.hpp"
 #include "Core/ImageManager.hpp"
+#include "Core/AttachmentCache.hpp"
 
 namespace Acheron {
 namespace Core {
@@ -28,6 +29,7 @@ public:
     [[nodiscard]] ClientInstance *client(Snowflake accountId) const;
     [[nodiscard]] AccountInfo getAccountInfo(Snowflake accountId);
     [[nodiscard]] ImageManager *getImageManager() { return imageManager; }
+    [[nodiscard]] AttachmentCache *getAttachmentCache() { return attachmentCache; }
 
 signals:
     void connectionStateChanged(Snowflake accountId, Core::ConnectionState newState);
@@ -37,6 +39,7 @@ signals:
 
 private:
     ImageManager *imageManager;
+    AttachmentCache *attachmentCache;
     Storage::AccountRepository repo;
     QMap<Snowflake, ClientInstance *> clients;
 };
