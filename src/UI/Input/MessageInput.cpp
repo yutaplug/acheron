@@ -88,7 +88,7 @@ void MessageInput::adjustHeight()
 
     textEdit->setFixedHeight(newHeight);
 
-    setFixedHeight(newHeight + 24);
+    setFixedHeight(newHeight + 12);
 }
 
 } // namespace UI

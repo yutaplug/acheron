@@ -35,6 +35,7 @@ signals:
     void gatewayHello();
     void gatewayReady(const Ready &data);
     void gatewayMessageCreate(const Message &data);
+    void gatewayTypingStart(const TypingStart &data);
 
 private:
     void sendPayload(const QJsonObject &obj);
@@ -46,6 +47,7 @@ private:
     void handleReady(const Inbound &data);
     void handleReadySupplemental(const Inbound &data);
     void handleMessageCreate(const Inbound &data);
+    void handleTypingStart(const Inbound &data);
     void handleHello(const Inbound &data);
     void identify();
 

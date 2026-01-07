@@ -155,6 +155,24 @@ void DatabaseManager::setupCacheTables(const QString &connName)
             PRIMARY KEY("id")
         );
     )");
+
+    query.exec(R"(
+        CREATE TABLE "members" (
+            "user_id" INTEGER NOT NULL,
+            "guild_id" INTEGER NOT NULL,
+            "nick" TEXT,
+            "avatar" TEXT,
+            "roles" TEXT,
+            "joined_at" TEXT,
+            "premium_since" TEXT,
+            "deaf" INTEGER,
+            "mute" INTEGER,
+            "flags" INTEGER,
+            "pending" INTEGER,
+            "communication_disabled_until" TEXT,
+            PRIMARY KEY("user_id", "guild_id")
+        );
+    )");
 }
 } // namespace Storage
 } // namespace Acheron

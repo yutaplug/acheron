@@ -23,5 +23,25 @@ struct Ready : Core::JsonUtils::JsonObject
     }
 };
 
+struct TypingStart : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> channelId;
+    Field<Core::Snowflake, true> guildId;
+    Field<Core::Snowflake> userId;
+    Field<QDateTime> timestamp;
+    Field<Member, true> member;
+
+    static TypingStart fromJson(const QJsonObject &obj)
+    {
+        TypingStart typingStart;
+        get(obj, "channel_id", typingStart.channelId);
+        get(obj, "guild_id", typingStart.guildId);
+        get(obj, "user_id", typingStart.userId);
+        get(obj, "member", typingStart.member);
+        typingStart.timestamp = QDateTime::fromSecsSinceEpoch(obj["timestamp"].toInteger());
+        return typingStart;
+    }
+};
+
 } // namespace Discord
 } // namespace Acheron

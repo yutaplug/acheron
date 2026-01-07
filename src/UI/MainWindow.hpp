@@ -6,13 +6,18 @@ namespace Acheron {
 namespace Core {
 class Session;
 class ClientInstance;
+class TypingTracker;
 } // namespace Core
+namespace Discord {
+struct TypingStart;
+}
 namespace UI {
 class ChatView;
 class ChatModel;
 class ChannelTreeModel;
 class AccountsWindow;
 class AccountsModel;
+class TypingIndicator;
 } // namespace UI
 } // namespace Acheron
 
@@ -30,6 +35,7 @@ protected:
 
 private slots:
     void onChannelSelectionChanged(const QModelIndex &current, const QModelIndex &previous);
+    void onTypingStart(const Discord::TypingStart &event);
 
 private:
     void switchActiveInstance(Core::ClientInstance *instance);
@@ -47,6 +53,8 @@ private:
     AccountsModel *accountsModel;
 
     MessageInput *messageInput;
+    TypingIndicator *typingIndicator;
+    Core::TypingTracker *typingTracker;
 
     AccountsWindow *accountsWindow = nullptr;
 

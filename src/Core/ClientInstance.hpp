@@ -8,6 +8,7 @@
 #include "AccountInfo.hpp"
 #include "Discord/Client.hpp"
 #include "MessageManager.hpp"
+#include "UserManager.hpp"
 
 namespace Acheron {
 namespace Core {
@@ -24,6 +25,7 @@ public:
 
     [[nodiscard]] Discord::Client *discord() const;
     [[nodiscard]] MessageManager *messages() const;
+    [[nodiscard]] UserManager *users() const;
 
     [[nodiscard]] ConnectionState state() const;
 
@@ -42,6 +44,7 @@ private:
     AccountInfo account;
 
     MessageManager *messageManager;
+    UserManager *userManager;
     Discord::Client *client;
 };
 

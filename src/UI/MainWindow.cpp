@@ -9,6 +9,10 @@
 #include "AccountsModel.hpp"
 #include "Core/ClientInstance.hpp"
 #include "Core/AccountInfo.hpp"
+#include "Core/UserManager.hpp"
+#include "Core/TypingTracker.hpp"
+#include "Discord/Events.hpp"
+#include "TypingIndicator.hpp"
 
 using namespace Acheron::Core;
 
@@ -28,8 +32,13 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
                 .arg(user.avatar.get());
     });
 
+    typingTracker = new TypingTracker(this);
+
     setupUi();
     setupMenu();
+
+    connect(typingTracker, &TypingTracker::typersChanged, this,
+            [this]() { typingIndicator->setTypers(typingTracker->getActiveTyperNames()); });
 
     connect(session, &Session::ready, this,
             [this](const Discord::Ready &ready) { channelTreeModel->populateFromReady(ready); });
@@ -104,6 +113,7 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     if (node->type == ChannelNode::Type::Channel) {
         if (node->id != chatModel->getActiveChannelId()) {
             chatModel->setActiveChannel(node->id);
+            typingTracker->setActiveChannel(node->id);
         }
     }
 
@@ -116,10 +126,15 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
         auto *msgs = currentInstance->messages();
         disconnect(msgs, nullptr, chatModel, nullptr);
         disconnect(msgs, nullptr, this, nullptr);
+        disconnect(currentInstance->discord(), &Discord::Client::typingStart, this, nullptr);
     }
 
     currentInstance = newInstance;
     auto *msgs = currentInstance->messages();
+
+    typingTracker->clear();
+    typingTracker->setUserManager(currentInstance->users());
+    typingTracker->setCurrentUserId(currentInstance->accountId());
 
     connect(msgs, &MessageManager::messagesReceived, chatModel, &ChatModel::handleIncomingMessages);
     connect(msgs, &MessageManager::messagesReceived, this,
@@ -127,6 +142,13 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
                 if (result.success && result.type == Discord::Client::MessageLoadType::History &&
                     result.channelId == chatModel->getActiveChannelId())
                     chatView->onHistoryRequestFinished();
+            });
+
+    connect(currentInstance->discord(), &Discord::Client::typingStart, this,
+            &MainWindow::onTypingStart);
+    connect(currentInstance->discord(), &Discord::Client::messageCreated, this,
+            [this](const Discord::Message &msg) {
+                typingTracker->removeTyper(msg.channelId, msg.author->id);
             });
 }
 
@@ -144,9 +166,10 @@ void MainWindow::setupUi()
 
     chatView = new ChatView(rightSideWidget);
     messageInput = new MessageInput(rightSideWidget);
-    // messageInput->setEnabled(false);
+    typingIndicator = new TypingIndicator(rightSideWidget);
 
     rightLayout->addWidget(chatView, 1);
+    rightLayout->addWidget(typingIndicator, 0);
     rightLayout->addWidget(messageInput, 0);
 
     auto *splitter = new QSplitter(this);
@@ -227,6 +250,22 @@ void MainWindow::openAccountsWindow()
     accountsWindow->show();
     accountsWindow->raise();
     accountsWindow->activateWindow();
+}
+
+void MainWindow::onTypingStart(const Discord::TypingStart &event)
+{
+    // todo im not really sure if i like having this handled here but its not that complex so oh well maybe later
+    if (!currentInstance)
+        return;
+
+    if (event.member.hasValue() && event.guildId.hasValue()) {
+        currentInstance->users()->saveMemberWithUser(event.guildId.get(), event.member.get());
+    }
+
+    std::optional<Snowflake> guildId =
+            event.guildId.hasValue() ? std::optional(event.guildId.get()) : std::nullopt;
+
+    typingTracker->addTyper(event.channelId.get(), event.userId.get(), guildId);
 }
 
 } // namespace UI

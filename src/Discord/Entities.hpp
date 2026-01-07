@@ -38,6 +38,38 @@ struct User : Core::JsonUtils::JsonObject
     }
 };
 
+struct Member : Core::JsonUtils::JsonObject
+{
+    Field<User, true> user;
+    Field<QString, true, true> nick;
+    Field<QString, true, true> avatar;
+    Field<QList<Core::Snowflake>, true> roles;
+    Field<QDateTime, true> joinedAt;
+    Field<QDateTime, true, true> premiumSince;
+    Field<bool, true> deaf;
+    Field<bool, true> mute;
+    Field<int, true> flags;
+    Field<bool, true> pending;
+    Field<QDateTime, true, true> communicationDisabledUntil;
+
+    static Member fromJson(const QJsonObject &obj)
+    {
+        Member member;
+        get(obj, "user", member.user);
+        get(obj, "nick", member.nick);
+        get(obj, "avatar", member.avatar);
+        get(obj, "roles", member.roles);
+        get(obj, "joined_at", member.joinedAt);
+        get(obj, "premium_since", member.premiumSince);
+        get(obj, "deaf", member.deaf);
+        get(obj, "mute", member.mute);
+        get(obj, "flags", member.flags);
+        get(obj, "pending", member.pending);
+        get(obj, "communication_disabled_until", member.communicationDisabledUntil);
+        return member;
+    }
+};
+
 struct Channel : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;

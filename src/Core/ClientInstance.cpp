@@ -14,6 +14,8 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
 
     Storage::DatabaseManager::instance().openCacheDatabase(info.id);
 
+    userManager = new UserManager(info.id, this);
+
     connect(client, &Discord::Client::stateChanged, this, &ClientInstance::stateChanged);
 
     connect(client, &Discord::Client::ready, this, [this](const Discord::Ready &ready) {
@@ -37,6 +39,9 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
                 channelRepo.saveChannel(copy, db);
             }
         }
+
+        userManager->saveUser(ready.user);
+
         db.commit();
 
         emit detailsUpdated(account);
@@ -70,6 +75,11 @@ Discord::Client *ClientInstance::discord() const
 MessageManager *ClientInstance::messages() const
 {
     return messageManager;
+}
+
+UserManager *ClientInstance::users() const
+{
+    return userManager;
 }
 
 ConnectionState ClientInstance::state() const

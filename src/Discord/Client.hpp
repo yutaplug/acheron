@@ -56,6 +56,7 @@ signals:
     void stateChanged(Core::ConnectionState state);
     void ready(const Ready &data);
     void messageCreated(const Message &msg);
+    void typingStart(const TypingStart &event);
 
     void errorOccurred(const QString &errorStr);
 
