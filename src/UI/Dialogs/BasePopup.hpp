@@ -13,7 +13,7 @@ public:
     explicit BasePopup(QWidget *parent = nullptr);
 
 protected:
-    QFrame *container() const { return container; }
+    QFrame *getContainer() const { return container; }
 
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;

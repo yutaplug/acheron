@@ -7,12 +7,12 @@ ConfirmPopup::ConfirmPopup(const QString &title, const QString &text, const QStr
                            QWidget *parent)
     : BasePopup(parent)
 {
-    auto *layout = new QVBoxLayout(container());
+    auto *layout = new QVBoxLayout(getContainer());
     layout->setSpacing(15);
     layout->setContentsMargins(24, 24, 24, 24);
 
     if (!title.isEmpty()) {
-        auto *titleLabel = new QLabel(title, container());
+        auto *titleLabel = new QLabel(title, getContainer());
         QFont titleFont = titleLabel->font();
         titleFont.setBold(true);
         titleFont.setPointSize(titleFont.pointSize() + 2);
@@ -28,13 +28,13 @@ ConfirmPopup::ConfirmPopup(const QString &title, const QString &text, const QStr
         layout->addWidget(line);
     }
 
-    auto *textLabel = new QLabel(text, container());
+    auto *textLabel = new QLabel(text, getContainer());
     textLabel->setWordWrap(true);
     textLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     textLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     layout->addWidget(textLabel);
 
-    auto *btnBox = new QDialogButtonBox(container());
+    auto *btnBox = new QDialogButtonBox(getContainer());
     QPushButton *btnYes = btnBox->addButton(yesLabel, QDialogButtonBox::AcceptRole);
     btnBox->addButton(QDialogButtonBox::Cancel);
     btnYes->setDefault(true);
