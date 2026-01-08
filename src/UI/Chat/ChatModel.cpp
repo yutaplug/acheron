@@ -192,6 +192,16 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         return false;
     }
     case HtmlRole: {
+        // for image embeds, suppress text if content is just the embed url
+        if (msg.embeds.hasValue() && msg.embeds->size() == 1) {
+            const auto &embed = msg.embeds->first();
+            QString embedType = embed.type.hasValue() ? *embed.type : QString();
+            if (embedType == "image") {
+                QString embedUrl = embed.url.hasValue() ? *embed.url : QString();
+                if (!embedUrl.isEmpty() && msg.content == embedUrl)
+                    return QString();
+            }
+        }
         return msg.parsedContentCached;
     }
     case AttachmentsRole: {
