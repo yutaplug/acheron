@@ -314,9 +314,13 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
                     QSize origSize;
                     if (embed.thumbnail->width.hasValue() && embed.thumbnail->height.hasValue())
                         origSize = QSize(*embed.thumbnail->width, *embed.thumbnail->height);
-                    data.thumbnailSize = origSize.isValid()
-                                                 ? origSize.scaled(80, 80, Qt::KeepAspectRatio)
-                                                 : QSize(80, 80);
+
+                    if (data.type == EmbedType::Gifv || data.type == EmbedType::Image)
+                        data.thumbnailSize = Core::AttachmentCache::calculateDisplaySize(origSize);
+                    else
+                        data.thumbnailSize = origSize.isValid()
+                                                     ? origSize.scaled(80, 80, Qt::KeepAspectRatio)
+                                                     : QSize(80, 80);
                     data.thumbnail = attachmentCache->get(data.thumbnailUrl, origSize);
                 }
 
