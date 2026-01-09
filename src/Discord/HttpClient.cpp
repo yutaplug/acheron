@@ -101,9 +101,9 @@ void HttpClient::executeRequest(Method method, const QString &url, const QByteAr
             curl_easy_setopt(curl, CURLOPT_COOKIEFILE, ""); // engine
             curl_easy_setopt(curl, CURLOPT_SHARE, share);
 
-            curl_easy_setopt(curl, CURLOPT_PROXY, "http://127.0.0.1:8888");
+            // curl_easy_setopt(curl, CURLOPT_PROXY, "http://127.0.0.1:8888");
             // dont verify
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+            // curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
 
             curl_slist *headers = nullptr;
             headers = curl_slist_append(headers, ("Authorization: " + sToken).c_str());
