@@ -128,6 +128,8 @@ void HttpClient::executeRequest(Method method, const QString &url, const QByteAr
 
             curl_easy_setopt(curl, CURLOPT_URL, sUrl.c_str());
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+            // otherwise body is compressed for some reason
+            curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
 
