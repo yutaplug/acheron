@@ -592,6 +592,13 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
         totalHeight += layout.embedsTotalHeight;
     }
 
+    // last ditch minimum size but only with headers
+    if (ctx.showHeader) {
+        int minHeight = padding() + avatarSize() + padding();
+        if (totalHeight < minHeight)
+            totalHeight = minHeight;
+    }
+
     layout.totalHeight = totalHeight;
     layout.rowRect = QRect(0, ctx.rowTop, ctx.rowWidth, totalHeight);
 
