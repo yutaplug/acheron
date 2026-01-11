@@ -101,6 +101,7 @@ ChatModel::ChatModel(Core::ImageManager *imageManager, Core::AttachmentCache *at
                     }
 
                     if (found) {
+                        embedCache.remove(msg.id);
                         QModelIndex idx = index(row, 0);
                         emit dataChanged(idx, idx, { AttachmentsRole, EmbedsRole, CachedSizeRole });
                     }
@@ -238,6 +239,9 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case EmbedsRole: {
         if (!msg.embeds.hasValue() || msg.embeds->isEmpty())
             return QVariant();
+
+        if (embedCache.contains(msg.id))
+            return QVariant::fromValue(embedCache.value(msg.id));
 
         QList<EmbedData> result;
         // for handling the url-based embed image merging
@@ -412,6 +416,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
             }
         }
 
+        embedCache[msg.id] = result;
         return QVariant::fromValue(result);
     }
     default:
@@ -462,6 +467,7 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
     case Discord::Client::MessageLoadType::Latest: {
         beginResetModel();
         sizeCache.clear();
+        embedCache.clear();
         messages = result.messages;
         endResetModel();
         break;
@@ -504,6 +510,7 @@ void ChatModel::setActiveChannel(Snowflake channelId)
     beginResetModel();
     messages.clear();
     sizeCache.clear();
+    embedCache.clear();
     endResetModel();
 }
 

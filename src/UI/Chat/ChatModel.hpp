@@ -146,6 +146,7 @@ private:
     Core::AttachmentCache *attachmentCache;
     QVector<Discord::Message> messages;
     mutable QHash<Snowflake, QSize> sizeCache;
+    mutable QHash<Snowflake, QList<EmbedData>> embedCache;
 
     Snowflake currentChannelId = Snowflake::Invalid;
 
