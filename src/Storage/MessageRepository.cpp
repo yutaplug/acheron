@@ -11,7 +11,7 @@ namespace Acheron {
 namespace Storage {
 
 MessageRepository::MessageRepository(Core::Snowflake accountId)
-    : BaseRepository(DatabaseManager::getCacheConnectionName(accountId))
+    : BaseRepository(DatabaseManager::getCacheConnectionName(accountId)), userRepository(accountId)
 {
 }
 
@@ -33,13 +33,6 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
 		(id, channel_id, author_id, content, timestamp, edited_timestamp, type, flags, embeds)
 		VALUES (:id, :channel_id, :author_id, :content, :timestamp, :edited_timestamp, :type, :flags, :embeds)
     )");
-
-    QSqlQuery qUser(db);
-    qUser.prepare(R"(
-		INSERT OR REPLACE INTO users
-		(id, username, global_name, avatar, bot)
-		VALUES (:id, :username, :global_name, :avatar, :bot)
-	)");
 
     QSqlQuery qAtt(db);
     qAtt.prepare(R"(
@@ -64,15 +57,7 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
                              << qMsg.lastError().text();
         }
 
-        qUser.bindValue(":id", static_cast<qint64>(message.author->id.get()));
-        qUser.bindValue(":username", message.author->username);
-        qUser.bindValue(":global_name", message.author->globalName);
-        qUser.bindValue(":avatar", message.author->avatar);
-        qUser.bindValue(":bot", static_cast<qint64>(message.author->bot.get()));
-
-        if (!qUser.exec()) {
-            qCWarning(LogDB) << "MessageRepository: Save user failed:" << qUser.lastError().text();
-        }
+        userRepository.saveUser(message.author.get(), db);
 
         if (message.attachments.hasValue()) {
             for (const auto &att : *message.attachments) {
