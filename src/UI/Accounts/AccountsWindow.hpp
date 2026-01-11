@@ -3,7 +3,7 @@
 #include <QtWidgets>
 
 #include "AccountsModel.hpp"
-#include "Dialogs/AddAccountDialog.hpp"
+#include "UI/Dialogs/AddAccountDialog.hpp"
 
 namespace Acheron {
 

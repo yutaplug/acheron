@@ -40,11 +40,11 @@ set(PROJECT_SOURCES
     src/Core/TypingTracker.cpp
     src/Core/Markdown/Parser.cpp
     src/UI/MainWindow.cpp
-    src/UI/AccountsWindow.cpp
-    src/UI/AccountsModel.cpp
     src/UI/TypingIndicator.cpp
     src/UI/ElidedLabel.cpp
     src/UI/ImageViewer.cpp
+    src/UI/Accounts/AccountsWindow.cpp
+    src/UI/Accounts/AccountsModel.cpp
     src/UI/ChannelList/ChannelDelegate.cpp
     src/UI/ChannelList/ChannelTreeModel.cpp
     src/UI/ChannelList/ChannelTreeView.cpp
