@@ -479,9 +479,11 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
     if (textWidth < 10)
         textWidth = 10;
 
-    QTextDocument doc;
-    setupDocument(doc, ctx.htmlContent, ctx.font, textWidth);
-    layout.textHeight = int(std::ceil(doc.size().height()));
+    if (!ctx.htmlContent.isEmpty()) {
+        QTextDocument doc;
+        setupDocument(doc, ctx.htmlContent, ctx.font, textWidth);
+        layout.textHeight = int(std::ceil(doc.size().height()));
+    }
 
     int textTop = ctx.rowTop + (ctx.hasSeparator ? separatorHeight() : 0);
     if (ctx.showHeader)
@@ -494,8 +496,9 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
     int totalHeight = 0;
     if (ctx.showHeader) {
         int contentHeight = padding() + fm.height() + layout.textHeight + padding();
-        int minHeight = padding() + avatarSize() + padding();
-        totalHeight = std::max(contentHeight, minHeight);
+        // int minHeight = padding() + avatarSize() + padding();
+        // totalHeight = std::max(contentHeight, minHeight);
+        totalHeight = contentHeight;
     } else {
         totalHeight = layout.textHeight + padding() + 1;
     }
@@ -503,7 +506,7 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
     if (ctx.hasSeparator)
         totalHeight += separatorHeight();
 
-    layout.attachmentsTop = textTop + layout.textHeight + padding();
+    layout.attachmentsTop = textTop + layout.textHeight;
     layout.attachmentsTotalHeight = 0;
 
     if (!ctx.attachments.isEmpty()) {
@@ -539,9 +542,9 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
             }
 
             if (images.size() == 1)
-                layout.attachmentsTotalHeight += images[0].displaySize.height() + padding();
+                layout.attachmentsTotalHeight += images[0].displaySize.height();
             else
-                layout.attachmentsTotalHeight += layout.imageGrid.totalHeight + padding();
+                layout.attachmentsTotalHeight += layout.imageGrid.totalHeight;
         }
 
         int currentFileTop = layout.attachmentsTop + layout.attachmentsTotalHeight;

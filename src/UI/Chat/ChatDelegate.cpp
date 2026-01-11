@@ -37,6 +37,24 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
     const QPixmap avatar = qvariant_cast<QPixmap>(index.data(ChatModel::AvatarRole));
     const QDateTime timestamp = index.data(ChatModel::TimestampRole).toDateTime();
 
+// debug paint
+#if 0
+    painter->setPen(Qt::red);
+    painter->drawRect(layout.rowRect);
+    if (layout.hasSeparator) {
+        painter->setPen(Qt::yellow);
+        painter->drawRect(layout.separatorRect);
+    }
+    if (layout.showHeader) {
+        painter->setPen(Qt::green);
+        painter->drawRect(layout.avatarRect);
+        painter->setPen(Qt::green);
+        painter->drawRect(layout.headerRect);
+    }
+    painter->setPen(Qt::white);
+    painter->drawRect(layout.textRect);
+#endif
+
     if (layout.hasSeparator) {
         painter->setPen(QPen(option.palette.alternateBase().color(), 1));
         int midY = layout.separatorRect.center().y();
