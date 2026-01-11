@@ -5,6 +5,7 @@
 #include "Chat/ChatView.hpp"
 #include "ChannelList/ChannelTreeModel.hpp"
 #include "ChannelList/ChannelDelegate.hpp"
+#include "ChannelList/ChannelTreeView.hpp"
 #include "AccountsWindow.hpp"
 #include "AccountsModel.hpp"
 #include "Core/ClientInstance.hpp"
@@ -157,7 +158,7 @@ void MainWindow::setupUi()
     auto *central = new QWidget(this);
     auto *layout = new QHBoxLayout(central);
 
-    channelTree = new QTreeView(central);
+    channelTree = new ChannelTreeView(central);
 
     auto *rightSideWidget = new QWidget(central);
     auto *rightLayout = new QVBoxLayout(rightSideWidget);
@@ -209,20 +210,6 @@ void MainWindow::setupUi()
         if (currentInstance && oldestId.isValid())
             currentInstance->messages()->requestLoadHistory(chatModel->getActiveChannelId(),
                                                             oldestId);
-    });
-
-    connect(channelTree, &QTreeView::clicked, this, [this](const QModelIndex &index) {
-        if (!index.isValid())
-            return;
-
-        auto node = static_cast<ChannelNode *>(index.internalPointer());
-
-        if (node->type == ChannelNode::Type::Category || node->type == ChannelNode::Type::Server ||
-            node->type == ChannelNode::Type::Account || node->type == ChannelNode::Type::DMHeader ||
-            node->type == ChannelNode::Type::Folder) {
-            bool isExpanded = channelTree->isExpanded(index);
-            channelTree->setExpanded(index, !isExpanded);
-        }
     });
 
     connect(channelTree->selectionModel(), &QItemSelectionModel::currentChanged, this,
