@@ -206,7 +206,11 @@ void MessageManager::onApiMessagesReceived(const QList<Discord::Message> &messag
 
     if (type == Discord::Client::MessageLoadType::Latest ||
         type == Discord::Client::MessageLoadType::History) {
-        if (sortedMessages.size() < 50) // hit the end probably
+        // hit the end probably
+        // maybe 0 could happen mistakenly prob not tho
+        if (sortedMessages.size() == 0)
+            lowestKnownId[channelId] = 0;
+        else if (sortedMessages.size() < 50)
             lowestKnownId[channelId] = sortedMessages.first().id;
     }
 
