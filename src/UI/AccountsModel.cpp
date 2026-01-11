@@ -3,6 +3,7 @@
 #include "Storage/AccountRepository.hpp"
 
 #include "Core/Session.hpp"
+#include <QMimeData>
 
 namespace Acheron {
 namespace UI {
@@ -115,11 +116,20 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const
 
 void AccountsModel::addAccount(const AccountInfo &account)
 {
+    AccountInfo newAccount = account;
+
+    int maxOrder = -1;
+    for (const auto &acc : accounts) {
+        if (acc.displayOrder > maxOrder)
+            maxOrder = acc.displayOrder;
+    }
+    newAccount.displayOrder = maxOrder + 1;
+
     AccountRepository repo;
-    repo.saveAccount(account);
+    repo.saveAccount(newAccount);
 
     beginInsertRows(QModelIndex(), accounts.size(), accounts.size());
-    accounts.append(account);
+    accounts.append(newAccount);
     endInsertRows();
 }
 
@@ -147,6 +157,90 @@ void AccountsModel::setConnectionState(int row, ConnectionState state)
     QModelIndex idx = index(row, 0);
 
     emit dataChanged(idx, idx, { Qt::DisplayRole, ConnectionStateRole, AccountObjectRole });
+}
+
+Qt::ItemFlags AccountsModel::flags(const QModelIndex &index) const
+{
+    Qt::ItemFlags defaultFlags = QAbstractListModel::flags(index);
+    if (index.isValid())
+        return Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled | defaultFlags;
+    return Qt::ItemIsDropEnabled | defaultFlags;
+}
+
+Qt::DropActions AccountsModel::supportedDropActions() const
+{
+    return Qt::MoveAction;
+}
+
+QStringList AccountsModel::mimeTypes() const
+{
+    return { "application/x-acheron-account-index" };
+}
+
+QMimeData *AccountsModel::mimeData(const QModelIndexList &indexes) const
+{
+    if (indexes.isEmpty())
+        return nullptr;
+
+    QMimeData *mimeData = new QMimeData();
+    QByteArray encodedData;
+    QDataStream stream(&encodedData, QIODevice::WriteOnly);
+
+    for (const QModelIndex &index : indexes) {
+        if (index.isValid())
+            stream << index.row();
+    }
+
+    mimeData->setData("application/x-acheron-account-index", encodedData);
+    return mimeData;
+}
+
+bool AccountsModel::dropMimeData(const QMimeData *data, Qt::DropAction action, int row, int column,
+                                 const QModelIndex &parent)
+{
+    if (!data->hasFormat("application/x-acheron-account-index"))
+        return false;
+
+    if (action == Qt::IgnoreAction)
+        return true;
+
+    int targetRow = row;
+    if (targetRow == -1) {
+        if (parent.isValid())
+            targetRow = parent.row();
+        else
+            targetRow = rowCount();
+    }
+
+    QByteArray encodedData = data->data("application/x-acheron-account-index");
+    QDataStream stream(&encodedData, QIODevice::ReadOnly);
+
+    int sourceRow;
+    stream >> sourceRow;
+
+    if (sourceRow == targetRow || sourceRow + 1 == targetRow)
+        return false;
+
+    int actualTargetRow = targetRow;
+    if (sourceRow < targetRow)
+        actualTargetRow--;
+
+    if (actualTargetRow < 0 || actualTargetRow >= accounts.size() || sourceRow < 0 ||
+        sourceRow >= accounts.size())
+        return false;
+
+    beginMoveRows(QModelIndex(), sourceRow, sourceRow, QModelIndex(),
+                  sourceRow < actualTargetRow ? actualTargetRow + 1 : actualTargetRow);
+    accounts.move(sourceRow, actualTargetRow);
+    endMoveRows();
+
+    AccountRepository repo;
+    for (int i = 0; i < accounts.size(); ++i) {
+        accounts[i].displayOrder = i;
+        repo.updateDisplayOrder(accounts[i].id, i);
+    }
+
+    return true;
 }
 
 } // namespace UI

@@ -19,6 +19,7 @@ public:
     Core::AccountInfo getAccount(quint64 id);
     QVector<Core::AccountInfo> getAllAccounts();
     void removeAccount(quint64 id);
+    void updateDisplayOrder(quint64 id, int order);
 };
 
 } // namespace Storage

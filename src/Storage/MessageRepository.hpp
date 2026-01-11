@@ -5,6 +5,7 @@
 #include "BaseRepository.hpp"
 #include "Core/Snowflake.hpp"
 #include "Discord/Entities.hpp"
+#include "UserRepository.hpp"
 
 namespace Acheron {
 namespace Storage {
@@ -24,6 +25,8 @@ public:
 
 private:
     void loadAttachmentsForMessages(QList<Discord::Message> &messages, QSqlDatabase &db);
+
+    UserRepository userRepository;
 };
 
 } // namespace Storage

@@ -100,7 +100,8 @@ void DatabaseManager::setupPersistentTables()
             avatar TEXT,
             gateway_url TEXT,
             rest_url TEXT,
-            cdn_url TEXT
+            cdn_url TEXT,
+            display_order INTEGER DEFAULT 0
         )
     )");
 }

@@ -21,6 +21,8 @@ struct AccountInfo
     QString restUrl = "https://discord.com/api/v9";
     QString cdnUrl = "https://cdn.discordapp.com";
 
+    int displayOrder = 0;
+
     ConnectionState state = ConnectionState::Disconnected;
 
     [[nodiscard]] QString getEntryString() const

@@ -31,6 +31,10 @@ void AccountsWindow::setupUi()
     listView = new QListView(this);
     listView->setModel(model);
     listView->setIconSize(QSize(32, 32));
+    listView->setDragEnabled(true);
+    listView->setAcceptDrops(true);
+    listView->setDropIndicatorShown(true);
+    listView->setDragDropMode(QAbstractItemView::InternalMove);
 
     listView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(listView, &QListView::customContextMenuRequested, this,
