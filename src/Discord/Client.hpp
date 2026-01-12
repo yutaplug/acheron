@@ -50,17 +50,19 @@ public:
     // void fetchFuture(Snowflake channelId, Snowflake afterId, int limit = 50);
     // void fetchAround(Snowflake channelId, Snowflake targetId, int limit = 50);
 
-    void postMessage(Snowflake channelId, const QString &content);
+    void sendMessage(Snowflake channelId, const QString &content, const QString &nonce);
 
     void ensureSubscriptionByChannel(Snowflake guildId);
 
     [[nodiscard]] const Proto::PreloadedUserSettings &getSettings() const;
+    [[nodiscard]] const User &getMe() const;
 
 signals:
     void stateChanged(Core::ConnectionState state);
     void ready(const Ready &data);
     void messageCreated(const Message &msg);
     void typingStart(const TypingStart &event);
+    void messageSendFailed(const QString &nonce, const QString &error);
 
     void errorOccurred(const QString &errorStr);
 
@@ -88,6 +90,7 @@ private:
     QSet<Snowflake> subscribedGuilds;
 
     Proto::PreloadedUserSettings settings;
+    User me;
 };
 
 } // namespace Discord

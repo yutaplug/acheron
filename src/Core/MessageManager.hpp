@@ -29,12 +29,15 @@ public:
 
     void requestLoadChannel(Snowflake channelId);
     void requestLoadHistory(Snowflake channelId, Snowflake beforeId);
+    void sendMessage(Snowflake channelId, const QString &content);
 
 signals:
     void messagesReceived(const MessageRequestResult &result);
+    void messageErrored(const QString &nonce);
 
 public slots:
     void onMessageCreated(const Discord::Message &message);
+    void onMessageSendFailed(const QString &nonce, const QString &error);
 
 private slots:
     void onApiMessagesReceived(const QList<Discord::Message> &messages,

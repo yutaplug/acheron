@@ -23,6 +23,8 @@ public:
     const static Snowflake Invalid;
     const static quint64 SecondsInterval = 4194304000ULL;
 
+    static Snowflake generateNonce();
+
 private:
     friend struct ::std::hash<Snowflake>;
     friend struct ::std::less<Snowflake>;

@@ -1,6 +1,7 @@
 #include "Client.hpp"
 
 #include <QDebug>
+#include <QJsonObject>
 
 #include "Enums.hpp"
 #include "Core/Logging.hpp"
@@ -123,6 +124,7 @@ void Client::onGatewayReady(const Ready &data)
     const QByteArray binary = QByteArray::fromBase64(data.userSettingsProto->toUtf8());
     Proto::ProtoReader reader(binary);
     settings = Proto::PreloadedUserSettings::fromProto(reader);
+    me = data.user;
 
     emit ready(data);
 }
@@ -132,7 +134,29 @@ void Client::onGatewayMessageCreate(const Message &msg)
     emit messageCreated(msg);
 }
 
-void Client::postMessage(Snowflake channelId, const QString &content) { }
+void Client::sendMessage(Snowflake channelId, const QString &content, const QString &nonce)
+{
+    QString endpoint = "/channels/" + QString::number(channelId) + "/messages";
+
+    // todo extract to struct probably
+    QJsonObject payload;
+    payload["content"] = content;
+    payload["flags"] = 0;
+    payload["mobile_network_type"] = "unknown";
+    payload["nonce"] = nonce;
+    payload["tts"] = false;
+
+    httpClient->post(endpoint, payload, [this, channelId, nonce](const HttpResponse &response) {
+        if (!response.success) {
+            qCWarning(LogDiscord) << "Failed to send message:" << response.error
+                                  << "Status:" << response.statusCode;
+            emit messageSendFailed(nonce, response.error);
+            return;
+        }
+
+        qCInfo(LogDiscord) << "Message sent successfully to channel" << channelId;
+    });
+}
 
 void Client::ensureSubscriptionByChannel(Snowflake channelId)
 {
@@ -149,6 +173,11 @@ void Client::ensureSubscriptionByChannel(Snowflake channelId)
 [[nodiscard]] const Proto::PreloadedUserSettings &Client::getSettings() const
 {
     return settings;
+}
+
+[[nodiscard]] const User &Client::getMe() const
+{
+    return me;
 }
 
 void Client::setState(Core::ConnectionState state)

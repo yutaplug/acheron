@@ -115,6 +115,8 @@ public:
         HtmlRole,
         AttachmentsRole,
         EmbedsRole,
+        IsPendingRole,
+        IsErroredRole,
     };
 
     using AvatarUrlResolver = std::function<QUrl(const Discord::User &)>;
@@ -130,6 +132,7 @@ public:
 public slots:
     void setActiveChannel(Snowflake channelId);
     void handleIncomingMessages(const Core::MessageRequestResult &result);
+    void handleMessageErrored(const QString &nonce);
 
     void triggerResize(int row)
     {
@@ -153,6 +156,8 @@ private:
     AvatarUrlResolver avatarUrlResolver;
 
     mutable QMultiMap<QUrl, QPersistentModelIndex> pendingRequests;
+    QSet<QString> pendingNonces;
+    QSet<QString> erroredNonces;
 };
 } // namespace UI
 } // namespace Acheron

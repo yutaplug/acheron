@@ -97,9 +97,20 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
     painter->translate(layout.textRect.topLeft());
 
     QAbstractTextDocumentLayout::PaintContext paintCtx;
-    QColor textColor = (option.state & QStyle::State_Selected)
-                               ? option.palette.highlightedText().color()
-                               : option.palette.text().color();
+
+    bool isPending = index.data(ChatModel::IsPendingRole).toBool();
+    bool isErrored = index.data(ChatModel::IsErroredRole).toBool();
+
+    QColor textColor;
+    if (isErrored) {
+        textColor = QColor(220, 50, 50);
+    } else if (isPending) {
+        textColor = option.palette.text().color().lighter(50);
+    } else {
+        textColor = (option.state & QStyle::State_Selected)
+                            ? option.palette.highlightedText().color()
+                            : option.palette.text().color();
+    }
     paintCtx.palette.setColor(QPalette::Text, textColor);
 
     const ChatView *view = qobject_cast<const ChatView *>(option.widget);

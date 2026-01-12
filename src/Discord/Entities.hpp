@@ -289,6 +289,7 @@ struct Attachment : Core::JsonUtils::JsonObject
 struct Message : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;
+    Field<QString, true> nonce;
     Field<Core::Snowflake> channelId;
     Field<User> author;
     Field<QString> content;
@@ -303,10 +304,14 @@ struct Message : Core::JsonUtils::JsonObject
     QString parsedContentCached;
     QString embedsJson;
 
+    // sent
+    bool isPendingOutbound = false;
+
     static Message fromJson(const QJsonObject &obj)
     {
         Message message;
         get(obj, "id", message.id);
+        get(obj, "nonce", message.nonce);
         get(obj, "channel_id", message.channelId);
         get(obj, "author", message.author);
         get(obj, "content", message.content);

@@ -27,6 +27,7 @@ public:
                         QObject *parent = nullptr);
 
     void get(const QString &endpoint, const QUrlQuery &query, HttpCallback callback);
+    void post(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
 
 private:
     enum class Method { GET, POST, PUT, PATCH, DELETE_ }; // thanks windows.h for the DELETE macro

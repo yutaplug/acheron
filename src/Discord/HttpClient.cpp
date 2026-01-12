@@ -3,6 +3,8 @@
 #include "ClientIdentity.hpp"
 
 #include <curl/curl.h>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include "Core/Logging.hpp"
 
@@ -30,6 +32,13 @@ void HttpClient::get(const QString &endpoint, const QUrlQuery &query, HttpCallba
     if (!query.isEmpty())
         url += "?" + query.toString(QUrl::FullyEncoded);
     executeRequest(Method::GET, url, {}, callback);
+}
+
+void HttpClient::post(const QString &endpoint, const QJsonObject &body, HttpCallback callback)
+{
+    QString url = baseUrl + endpoint;
+    QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
+    executeRequest(Method::POST, url, data, callback);
 }
 
 void HttpClient::lock_cb(CURL *handle, curl_lock_data data, curl_lock_access access, void *userptr)

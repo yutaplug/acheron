@@ -50,6 +50,8 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
 
     connect(client, &Discord::Client::messageCreated, messageManager,
             &MessageManager::onMessageCreated);
+    connect(client, &Discord::Client::messageSendFailed, messageManager,
+            &MessageManager::onMessageSendFailed);
 }
 
 ClientInstance::~ClientInstance()

@@ -4,6 +4,7 @@
 
 #include "Discord/Client.hpp"
 #include "Markdown/Parser.hpp"
+#include "Logging.hpp"
 
 namespace Acheron {
 namespace Core {
@@ -192,6 +193,42 @@ void MessageManager::onMessageCreated(const Discord::Message &message)
 {
     onApiMessagesReceived({ message }, Discord::Client::MessageLoadType::Created,
                           message.channelId);
+}
+
+void MessageManager::onMessageSendFailed(const QString &nonce, const QString &error)
+{
+    qCWarning(LogCore) << "Message send failed for nonce" << nonce << ":" << error;
+
+    emit messageErrored(nonce);
+}
+
+void MessageManager::sendMessage(Snowflake channelId, const QString &content)
+{
+    Snowflake nonceId = Snowflake::generateNonce();
+    QString nonce = QString::number(nonceId);
+
+    Discord::Message preview;
+    preview.id = nonceId; // temporary id, will be overwritten
+    preview.nonce = nonce;
+    preview.channelId = channelId;
+    preview.content = content;
+    preview.timestamp = QDateTime::currentDateTimeUtc();
+    preview.author = client->getMe();
+    preview.type = Discord::MessageType::DEFAULT;
+    preview.flags = Discord::MessageFlags(0);
+    preview.isPendingOutbound = true;
+
+    static Markdown::Parser parser;
+    Markdown::ParseState state;
+    state.isInline = true;
+    auto ast = parser.parse(content, state);
+    preview.parsedContentCached = parser.toHtml(ast);
+
+    // get our fake preview in
+    emit messagesReceived(
+            { true, Discord::Client::MessageLoadType::Created, channelId, { preview } });
+
+    client->sendMessage(channelId, content, nonce);
 }
 
 void MessageManager::onApiMessagesReceived(const QList<Discord::Message> &messages,

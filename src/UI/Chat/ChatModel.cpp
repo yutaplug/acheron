@@ -419,6 +419,10 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         embedCache[msg.id] = result;
         return QVariant::fromValue(result);
     }
+    case IsPendingRole:
+        return msg.nonce.hasValue() && pendingNonces.contains(msg.nonce.get());
+    case IsErroredRole:
+        return msg.nonce.hasValue() && erroredNonces.contains(msg.nonce.get());
     default:
         return {};
     }
@@ -468,6 +472,8 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
         beginResetModel();
         sizeCache.clear();
         embedCache.clear();
+        pendingNonces.clear();
+        erroredNonces.clear();
         messages = result.messages;
         endResetModel();
         break;
@@ -490,13 +496,55 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
         break;
     }
     case Discord::Client::MessageLoadType::Created: {
-        beginInsertRows({}, messages.size(), messages.size() + result.messages.size() - 1);
-        messages = messages + result.messages;
-        endInsertRows();
+        // replace sent message by nonce
+        bool replacedPreview = false;
+        for (const auto &incomingMsg : result.messages) {
+            if (incomingMsg.nonce.hasValue()) {
+                QString nonce = incomingMsg.nonce.get();
+
+                // todo qhash? probably doesnt matter at all
+                for (int i = 0; i < messages.size(); i++) {
+                    if (messages[i].nonce.hasValue() && messages[i].nonce.get() == nonce) {
+                        messages[i] = incomingMsg;
+                        pendingNonces.remove(nonce);
+                        QModelIndex idx = index(i, 0);
+                        emit dataChanged(idx, idx);
+                        replacedPreview = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!replacedPreview) {
+            beginInsertRows({}, messages.size(), messages.size() + result.messages.size() - 1);
+
+            for (const auto &msg : result.messages) {
+                if (msg.isPendingOutbound && msg.nonce.hasValue()) {
+                    pendingNonces.insert(msg.nonce.get());
+                }
+            }
+
+            messages = messages + result.messages;
+            endInsertRows();
+        }
         break;
     }
     default:
         break;
+    }
+}
+
+void ChatModel::handleMessageErrored(const QString &nonce)
+{
+    for (int i = 0; i < messages.size(); i++) {
+        if (messages[i].nonce.hasValue() && messages[i].nonce.get() == nonce) {
+            pendingNonces.remove(nonce);
+            erroredNonces.insert(nonce);
+            QModelIndex idx = index(i, 0);
+            emit dataChanged(idx, idx);
+            break;
+        }
     }
 }
 
@@ -511,6 +559,8 @@ void ChatModel::setActiveChannel(Snowflake channelId)
     messages.clear();
     sizeCache.clear();
     embedCache.clear();
+    pendingNonces.clear();
+    erroredNonces.clear();
     endResetModel();
 }
 

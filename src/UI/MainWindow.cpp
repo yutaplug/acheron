@@ -12,6 +12,7 @@
 #include "Core/AccountInfo.hpp"
 #include "Core/UserManager.hpp"
 #include "Core/TypingTracker.hpp"
+#include "Core/Logging.hpp"
 #include "Discord/Events.hpp"
 #include "TypingIndicator.hpp"
 
@@ -138,6 +139,7 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
     typingTracker->setCurrentUserId(currentInstance->accountId());
 
     connect(msgs, &MessageManager::messagesReceived, chatModel, &ChatModel::handleIncomingMessages);
+    connect(msgs, &MessageManager::messageErrored, chatModel, &ChatModel::handleMessageErrored);
     connect(msgs, &MessageManager::messagesReceived, this,
             [this](const MessageRequestResult &result) {
                 if (result.success && result.type == Discord::Client::MessageLoadType::History &&
@@ -201,8 +203,20 @@ void MainWindow::setupUi()
     chatView->setWordWrap(true);
     chatView->setResizeMode(QListView::Adjust);
 
-    connect(messageInput, &MessageInput::sendMessage, this,
-            [this](const QString &text) { qDebug() << "meow: " << text; });
+    connect(messageInput, &MessageInput::sendMessage, this, [this](const QString &text) {
+        if (!currentInstance) {
+            qCWarning(LogCore) << "Cannot send message: no active instance";
+            return;
+        }
+
+        Snowflake channelId = chatModel->getActiveChannelId();
+        if (!channelId.isValid()) {
+            qCWarning(LogCore) << "Cannot send message: no active channel";
+            return;
+        }
+
+        currentInstance->messages()->sendMessage(channelId, text);
+    });
 
     connect(chatView, &ChatView::historyRequested, this, [this]() {
         Snowflake oldestId = chatModel->getOldestMessageId();
