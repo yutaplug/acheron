@@ -27,6 +27,10 @@ public:
     bool hasChannelPermission(Snowflake userId, Snowflake channelId,
                               Discord::Permission permission);
 
+    void precomputeGuildPermissions(const Discord::Guild &guild, const Discord::Member &member,
+                                    const QList<Discord::Role> &roles,
+                                    const QList<Discord::Channel> &channels, Snowflake userId);
+
 private:
     Discord::Permissions computeChannelPermissions(Snowflake userId, Snowflake channelId);
 
@@ -35,7 +39,7 @@ private:
     Storage::ChannelRepository channelRepo;
     Storage::MemberRepository memberRepo;
 
-    QCache<QPair<Snowflake, Snowflake>, Discord::Permissions> permissionCache;
+    QHash<QPair<Snowflake, Snowflake>, Discord::Permissions> permissionCache;
 };
 
 } // namespace Core

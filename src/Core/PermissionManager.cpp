@@ -17,18 +17,17 @@ PermissionManager::PermissionManager(Snowflake accountId, QObject *parent)
       channelRepo(accountId),
       memberRepo(accountId)
 {
-    permissionCache.setMaxCost(1000);
 }
 
 Discord::Permissions PermissionManager::getChannelPermissions(Snowflake userId, Snowflake channelId)
 {
     auto cacheKey = qMakePair(userId, channelId);
-    if (auto cached = permissionCache.object(cacheKey))
-        return *cached;
+    if (permissionCache.contains(cacheKey))
+        return permissionCache.value(cacheKey);
 
     auto permissions = computeChannelPermissions(userId, channelId);
 
-    permissionCache.insert(cacheKey, new Discord::Permissions(permissions));
+    permissionCache.insert(cacheKey, permissions);
 
     return permissions;
 }
@@ -38,6 +37,30 @@ bool PermissionManager::hasChannelPermission(Snowflake userId, Snowflake channel
 {
     auto perms = getChannelPermissions(userId, channelId);
     return (perms & permission) == permission;
+}
+
+void PermissionManager::precomputeGuildPermissions(const Discord::Guild &guild,
+                                                   const Discord::Member &member,
+                                                   const QList<Discord::Role> &roles,
+                                                   const QList<Discord::Channel> &channels,
+                                                   Snowflake userId)
+{
+    QList<Snowflake> memberRoleIds;
+    if (member.roles.hasValue())
+        memberRoleIds = member.roles.get();
+
+    for (const auto &channel : channels) {
+        QList<Discord::PermissionOverwrite> overwrites;
+        if (channel.permissionOverwrites.hasValue())
+            overwrites = channel.permissionOverwrites.get();
+
+        auto permissions = PermissionComputer::computeChannelPermissions(
+                guild.ownerId.get(), userId, guild.id.get(), false, memberRoleIds, roles,
+                overwrites);
+
+        auto cacheKey = qMakePair(userId, channel.id.get());
+        permissionCache.insert(cacheKey, permissions);
+    }
 }
 
 Discord::Permissions PermissionManager::computeChannelPermissions(Snowflake userId,

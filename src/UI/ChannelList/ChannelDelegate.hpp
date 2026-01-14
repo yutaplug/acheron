@@ -2,17 +2,22 @@
 
 #include <QtWidgets>
 
+class QAbstractProxyModel;
+
 namespace Acheron {
 namespace UI {
 class ChannelDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
 public:
-    explicit ChannelDelegate(QObject *parent = nullptr);
+    explicit ChannelDelegate(QAbstractProxyModel *proxyModel = nullptr, QObject *parent = nullptr);
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override;
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
+
+private:
+    QAbstractProxyModel *proxyModel;
 };
 } // namespace UI
 } // namespace Acheron

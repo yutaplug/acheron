@@ -15,6 +15,7 @@ namespace UI {
 class ChatView;
 class ChatModel;
 class ChannelTreeModel;
+class ChannelFilterProxyModel;
 class AccountsWindow;
 class AccountsModel;
 class TypingIndicator;
@@ -49,6 +50,7 @@ private:
 
     QTreeView *channelTree;
     ChannelTreeModel *channelTreeModel;
+    ChannelFilterProxyModel *channelFilterProxy;
 
     AccountsModel *accountsModel;
 

@@ -326,7 +326,7 @@ void Gateway::networkLoop()
             res = curl_ws_recv(curl, chunk, sizeof(chunk), &rlen, &meta);
         }
 
-        if (res == CURLE_AGAIN) {
+        if (res == CURLE_AGAIN || res == CURLE_GOT_NOTHING || !meta) {
             curl_socket_t sockfd;
             {
                 std::lock_guard lock(curlMutex);

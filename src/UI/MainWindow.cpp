@@ -4,6 +4,7 @@
 #include "Chat/ChatDelegate.hpp"
 #include "Chat/ChatView.hpp"
 #include "ChannelList/ChannelTreeModel.hpp"
+#include "ChannelList/ChannelFilterProxyModel.hpp"
 #include "ChannelList/ChannelDelegate.hpp"
 #include "ChannelList/ChannelTreeView.hpp"
 #include "Accounts/AccountsWindow.hpp"
@@ -25,6 +26,8 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
 {
     chatModel = new ChatModel(session->getImageManager(), session->getAttachmentCache(), this);
     channelTreeModel = new ChannelTreeModel(session, this);
+    channelFilterProxy = new ChannelFilterProxyModel(session, this);
+    channelFilterProxy->setSourceModel(channelTreeModel);
     accountsModel = new AccountsModel(session, this);
 
     chatModel->setAvatarUrlResolver([this](const Discord::User &user) -> QUrl {
@@ -58,10 +61,10 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
                     if (acc.state == Acheron::Core::ConnectionState::Connected) {
                         channelTreeModel->addAccount(acc);
 
-                        for (int i = 0; i < channelTreeModel->rowCount(QModelIndex()); ++i) {
-                            QModelIndex treeIdx = channelTreeModel->index(i, 0, QModelIndex());
-                            if (treeIdx.data(Qt::UserRole).toULongLong() == acc.id) {
-                                channelTree->expand(treeIdx);
+                        for (int i = 0; i < channelFilterProxy->rowCount(QModelIndex()); ++i) {
+                            QModelIndex proxyIdx = channelFilterProxy->index(i, 0, QModelIndex());
+                            if (proxyIdx.data(Qt::UserRole).toULongLong() == acc.id) {
+                                channelTree->expand(proxyIdx);
                                 break;
                             }
                         }
@@ -86,13 +89,11 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     if (!current.isValid())
         return;
 
-    auto node = static_cast<ChannelNode *>(current.internalPointer());
+    QModelIndex sourceIndex = channelFilterProxy->mapToSource(current);
+    auto node = static_cast<ChannelNode *>(sourceIndex.internalPointer());
 
-    if (!node || node->type != ChannelNode::Type::Channel) {
-        messageInput->setEnabled(false);
-        messageInput->setPlaceholder("");
+    if (!node || node->type != ChannelNode::Type::Channel)
         return;
-    }
 
     ChannelNode *accountNode = channelTreeModel->getAccountNodeFor(node);
     if (!accountNode) {
@@ -198,10 +199,10 @@ void MainWindow::setupUi()
     splitter->setStretchFactor(1, 1);
     channelTree->setMinimumWidth(200);
 
-    channelTree->setModel(channelTreeModel);
+    channelTree->setModel(channelFilterProxy);
     channelTree->setHeaderHidden(true);
     channelTree->setIndentation(0);
-    channelTree->setItemDelegate(new ChannelDelegate(channelTree));
+    channelTree->setItemDelegate(new ChannelDelegate(channelFilterProxy, channelTree));
     channelTree->setIconSize(QSize(24, 24));
     channelTree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     channelTree->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);

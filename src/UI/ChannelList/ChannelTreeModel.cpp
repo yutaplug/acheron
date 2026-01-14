@@ -290,7 +290,8 @@ std::unique_ptr<ChannelNode> ChannelTreeModel::createGuildNode(const Discord::Ga
     }
 
     for (const auto &channel : guild.channels.get()) {
-        if (channel.type == Discord::ChannelType::GUILD_TEXT) {
+        if (channel.type == Discord::ChannelType::GUILD_TEXT ||
+            channel.type == Discord::ChannelType::GUILD_NEWS) {
             auto node = std::make_unique<ChannelNode>();
             node->id = channel.id;
             node->name = channel.name;

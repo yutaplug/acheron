@@ -4,14 +4,18 @@
 
 namespace Acheron {
 namespace UI {
-ChannelDelegate::ChannelDelegate(QObject *parent) : QStyledItemDelegate(parent) { }
+ChannelDelegate::ChannelDelegate(QAbstractProxyModel *proxyModel, QObject *parent)
+    : QStyledItemDelegate(parent), proxyModel(proxyModel)
+{
+}
 
 void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
                             const QModelIndex &index) const
 {
     painter->save();
 
-    ChannelNode *node = static_cast<ChannelNode *>(index.internalPointer());
+    QModelIndex sourceIndex = proxyModel ? proxyModel->mapToSource(index) : index;
+    ChannelNode *node = static_cast<ChannelNode *>(sourceIndex.internalPointer());
     if (!node) {
         painter->restore();
         return;

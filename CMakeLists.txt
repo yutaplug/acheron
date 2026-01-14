@@ -49,6 +49,7 @@ set(PROJECT_SOURCES
     src/UI/Accounts/AccountsModel.cpp
     src/UI/ChannelList/ChannelDelegate.cpp
     src/UI/ChannelList/ChannelTreeModel.cpp
+    src/UI/ChannelList/ChannelFilterProxyModel.cpp
     src/UI/ChannelList/ChannelTreeView.cpp
     src/UI/Chat/ChatModel.cpp
     src/UI/Chat/ChatDelegate.cpp

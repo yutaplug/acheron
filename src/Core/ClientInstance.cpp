@@ -39,6 +39,21 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
         for (size_t i = 0; i < ready.guilds->size(); i++) {
             const auto &guild = ready.guilds->at(i);
 
+            const Discord::Member *me = nullptr;
+            if (ready.mergedMembers.hasValue()) {
+                const auto &members = ready.mergedMembers->at(i);
+                for (const auto &member : members) {
+                    memberRepo.saveMember(guild.properties->id.get(), member.userId.get(), member);
+                    if (member.userId.get() == ready.user->id.get())
+                        me = &member;
+                }
+            }
+
+            if (me && guild.roles.hasValue() && guild.channels.hasValue())
+                permissionManager->precomputeGuildPermissions(guild.asGuild(), *me,
+                                                              guild.roles.get(),
+                                                              guild.channels.get(), ready.user->id);
+
             guildRepo.saveGuild(guild.asGuild(), db);
 
             if (guild.roles.hasValue())
@@ -53,12 +68,6 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
                 if (copy.permissionOverwrites.hasValue())
                     channelRepo.savePermissionOverwrites(copy.id.get(),
                                                          copy.permissionOverwrites.get(), db);
-            }
-
-            if (ready.mergedMembers.hasValue()) {
-                const auto &members = ready.mergedMembers->at(i);
-                for (const auto &member : members)
-                    memberRepo.saveMember(guild.properties->id.get(), member.userId.get(), member);
             }
         }
 
