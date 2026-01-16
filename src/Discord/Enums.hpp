@@ -128,6 +128,7 @@ enum class GatewayEvent {
     MESSAGE_CREATE,
     TYPING_START,
     CHANNEL_UPDATE,
+    GUILD_MEMBERS_CHUNK,
 };
 
 inline GatewayEvent parseGatewayEvent(const QString &event)
@@ -138,6 +139,7 @@ inline GatewayEvent parseGatewayEvent(const QString &event)
         { "MESSAGE_CREATE", GatewayEvent::MESSAGE_CREATE },
         { "TYPING_START", GatewayEvent::TYPING_START },
         { "CHANNEL_UPDATE", GatewayEvent::CHANNEL_UPDATE },
+        { "GUILD_MEMBERS_CHUNK", GatewayEvent::GUILD_MEMBERS_CHUNK },
     };
 
     return events.value(event, GatewayEvent::UNKNOWN);

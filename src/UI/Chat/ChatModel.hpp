@@ -117,10 +117,14 @@ public:
         EmbedsRole,
         IsPendingRole,
         IsErroredRole,
+        UsernameColorRole,
     };
 
     using AvatarUrlResolver = std::function<QUrl(const Discord::User &)>;
     void setAvatarUrlResolver(AvatarUrlResolver resolver);
+
+    using RoleColorResolver = std::function<QColor(Snowflake userId, Snowflake guildId)>;
+    void setRoleColorResolver(RoleColorResolver resolver);
 
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &index, int role) const override;
@@ -130,9 +134,10 @@ public:
     [[nodiscard]] Snowflake getActiveChannelId() const;
 
 public slots:
-    void setActiveChannel(Snowflake channelId);
+    void setActiveChannel(Snowflake channelId, Snowflake guildId = Snowflake::Invalid);
     void handleIncomingMessages(const Core::MessageRequestResult &result);
     void handleMessageErrored(const QString &nonce);
+    void refreshUsersInView(const QList<Snowflake> &userIds);
 
     void triggerResize(int row)
     {
@@ -152,8 +157,10 @@ private:
     mutable QHash<Snowflake, QList<EmbedData>> embedCache;
 
     Snowflake currentChannelId = Snowflake::Invalid;
+    Snowflake currentGuildId = Snowflake::Invalid;
 
     AvatarUrlResolver avatarUrlResolver;
+    RoleColorResolver roleColorResolver;
 
     mutable QMultiMap<QUrl, QPersistentModelIndex> pendingRequests;
     QSet<QString> pendingNonces;

@@ -168,6 +168,9 @@ void Gateway::handleDispatch(const Inbound &data)
     case GatewayEvent::CHANNEL_UPDATE:
         handleChannelUpdate(data);
         break;
+    case GatewayEvent::GUILD_MEMBERS_CHUNK:
+        handleGuildMembersChunk(data);
+        break;
     case GatewayEvent::UNKNOWN:
         qCInfo(LogDiscord) << "Unknown gateway event: " << t;
         break;
@@ -213,6 +216,23 @@ void Gateway::handleChannelUpdate(const Inbound &data)
     ChannelUpdate event = data.getData<ChannelUpdate>();
 
     emit gatewayChannelUpdate(event);
+}
+
+void Gateway::handleGuildMembersChunk(const Inbound &data)
+{
+    GuildMembersChunk chunk = data.getData<GuildMembersChunk>();
+
+    emit gatewayGuildMembersChunk(chunk);
+}
+
+void Gateway::requestGuildMembers(Core::Snowflake guildId, const QList<Core::Snowflake> &userIds)
+{
+    RequestGuildMembers request;
+    request.guildId = guildId;
+    request.userIds = userIds;
+    request.presences = false;
+
+    sendPayload(request.toJson());
 }
 
 void Gateway::handleHello(const Inbound &data)

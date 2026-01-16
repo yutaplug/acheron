@@ -3,6 +3,7 @@
 
 #include <Core/Snowflake.hpp>
 #include "Input/MessageInput.hpp"
+#include "Discord/Entities.hpp"
 
 namespace Acheron {
 namespace Core {
@@ -70,6 +71,10 @@ private slots:
 private:
     Core::Session *session;
     Core::ClientInstance *currentInstance = nullptr;
+
+    Core::Snowflake cachedGuildId = Core::Snowflake::Invalid;
+    QHash<Core::Snowflake, QList<Discord::Role>> guildRolesCache;
+    QHash<Core::Snowflake, QColor> userColorCache; // current guild
 };
 
 } // namespace UI

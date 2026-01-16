@@ -100,7 +100,25 @@ struct GuildSubscriptionsBulkData : Core::JsonUtils::JsonObject
         return obj;
     }
 };
-using GuildSubscriptionsBulk = Outbound<OpCode::GUILD_SUBSCRIPTIONS_BULK, GuildSubscriptionsBulkData>;
+using GuildSubscriptionsBulk =
+        Outbound<OpCode::GUILD_SUBSCRIPTIONS_BULK, GuildSubscriptionsBulkData>;
+
+struct RequestGuildMembersData : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> guildId;
+    Field<QList<Core::Snowflake>, true> userIds;
+    Field<bool, true> presences;
+
+    QJsonObject toJson() const
+    {
+        QJsonObject obj;
+        insert(obj, "guild_id", guildId);
+        insert(obj, "user_ids", userIds);
+        insert(obj, "presences", presences);
+        return obj;
+    }
+};
+using RequestGuildMembers = Outbound<OpCode::REQUEST_GUILD_MEMBERS, RequestGuildMembersData>;
 
 } // namespace Discord
 } // namespace Acheron

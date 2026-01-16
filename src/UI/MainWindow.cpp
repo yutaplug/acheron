@@ -39,6 +39,43 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
                 .arg(user.avatar.get());
     });
 
+    chatModel->setRoleColorResolver([this](Snowflake userId, Snowflake guildId) -> QColor {
+        if (!currentInstance || guildId == Snowflake::Invalid)
+            return QColor();
+
+        if (cachedGuildId == guildId && userColorCache.contains(userId))
+            return userColorCache.value(userId);
+
+        if (!guildRolesCache.contains(guildId))
+            guildRolesCache[guildId] = currentInstance->getRolesForGuild(guildId);
+
+        const auto &roles = guildRolesCache[guildId];
+
+        Discord::Member *member = currentInstance->users()->getMember(guildId, userId);
+        if (!member || !member->roles.hasValue())
+            return QColor();
+
+        int highestPos = -1;
+        int colorValue = 0;
+        for (const auto &roleId : member->roles.get()) {
+            for (const auto &role : roles) {
+                if (role.id == roleId && role.color.hasValue() && role.color.get() != 0) {
+                    if (role.position.get() > highestPos) {
+                        highestPos = role.position.get();
+                        colorValue = role.color.get();
+                    }
+                }
+            }
+        }
+
+        QColor result = colorValue != 0 ? QColor::fromRgb(colorValue) : QColor();
+
+        if (cachedGuildId == guildId)
+            userColorCache[userId] = result;
+
+        return result;
+    });
+
     typingTracker = new TypingTracker(this);
 
     setupUi();
@@ -140,7 +177,17 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
 
     if (node->type == ChannelNode::Type::Channel) {
         if (node->id != chatModel->getActiveChannelId()) {
-            chatModel->setActiveChannel(node->id);
+            ChannelNode *guildNode = node;
+            while (guildNode && guildNode->type != ChannelNode::Type::Server)
+                guildNode = guildNode->parent;
+            Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
+
+            if (guildId != cachedGuildId) {
+                cachedGuildId = guildId;
+                userColorCache.clear();
+            }
+
+            chatModel->setActiveChannel(node->id, guildId);
             typingTracker->setActiveChannel(node->id);
         }
     }
@@ -156,6 +203,7 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
         disconnect(msgs, nullptr, this, nullptr);
         disconnect(currentInstance->discord(), &Discord::Client::typingStart, this, nullptr);
         disconnect(currentInstance->permissions(), nullptr, this, nullptr);
+        disconnect(currentInstance, &Core::ClientInstance::membersUpdated, this, nullptr);
     }
 
     currentInstance = newInstance;
@@ -183,6 +231,14 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
 
     connect(currentInstance->permissions(), &Core::PermissionManager::channelPermissionsChanged,
             this, &MainWindow::onChannelPermissionsChanged);
+
+    connect(currentInstance, &Core::ClientInstance::membersUpdated, this,
+            [this](Snowflake guildId, const QList<Snowflake> &userIds) {
+                for (const auto &userId : userIds)
+                    userColorCache.remove(userId);
+
+                chatModel->refreshUsersInView(userIds);
+            });
 }
 
 void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)

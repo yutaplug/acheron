@@ -28,6 +28,7 @@ Client::Client(const QString &token, const QString &gatewayUrl, const QString &b
     connect(gateway, &Gateway::gatewayMessageCreate, this, &Client::onGatewayMessageCreate);
     connect(gateway, &Gateway::gatewayTypingStart, this, &Client::typingStart);
     connect(gateway, &Gateway::gatewayChannelUpdate, this, &Client::onGatewayChannelUpdate);
+    connect(gateway, &Gateway::gatewayGuildMembersChunk, this, &Client::guildMembersChunk);
 }
 
 void Client::start()
@@ -180,6 +181,11 @@ void Client::ensureSubscriptionByChannel(Snowflake channelId)
     if (!subscribedGuilds.contains(guildId)) {
         gateway->subscribeToGuild(guildId);
     }
+}
+
+void Client::requestGuildMembers(Snowflake guildId, const QList<Snowflake> &userIds)
+{
+    gateway->requestGuildMembers(guildId, userIds);
 }
 
 [[nodiscard]] const Proto::PreloadedUserSettings &Client::getSettings() const

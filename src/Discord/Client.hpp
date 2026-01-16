@@ -53,6 +53,7 @@ public:
     void sendMessage(Snowflake channelId, const QString &content, const QString &nonce);
 
     void ensureSubscriptionByChannel(Snowflake guildId);
+    void requestGuildMembers(Snowflake guildId, const QList<Snowflake> &userIds);
 
     [[nodiscard]] const Proto::PreloadedUserSettings &getSettings() const;
     [[nodiscard]] const User &getMe() const;
@@ -64,6 +65,7 @@ signals:
     void messageCreated(const Message &msg);
     void typingStart(const TypingStart &event);
     void channelUpdated(const ChannelUpdate &event);
+    void guildMembersChunk(const GuildMembersChunk &chunk);
     void messageSendFailed(const QString &nonce, const QString &error);
 
     void errorOccurred(const QString &errorStr);

@@ -35,6 +35,7 @@ public:
     void hardStop();
 
     void subscribeToGuild(Core::Snowflake guildId);
+    void requestGuildMembers(Core::Snowflake guildId, const QList<Core::Snowflake> &userIds);
 
 signals:
     void connected();
@@ -46,6 +47,7 @@ signals:
     void gatewayMessageCreate(const Message &data);
     void gatewayTypingStart(const TypingStart &data);
     void gatewayChannelUpdate(const ChannelUpdate &data);
+    void gatewayGuildMembersChunk(const GuildMembersChunk &data);
 
 private:
     void sendPayload(const QJsonObject &obj);
@@ -59,6 +61,7 @@ private:
     void handleMessageCreate(const Inbound &data);
     void handleTypingStart(const Inbound &data);
     void handleChannelUpdate(const Inbound &data);
+    void handleGuildMembersChunk(const Inbound &data);
     void handleHello(const Inbound &data);
     void identify();
 

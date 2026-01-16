@@ -76,8 +76,8 @@ void IngestThread::threadLoop()
         }
 
         const auto len = data.size();
-        const bool hasSuffix = len >= 4 && data[len - 4] == '\x00' && data[len - 3] == '\x00'
-                && data[len - 2] == '\xFF' && data[len - 1] == '\xFF';
+        const bool hasSuffix = len >= 4 && data[len - 4] == '\x00' && data[len - 3] == '\x00' &&
+                               data[len - 2] == '\xFF' && data[len - 1] == '\xFF';
 
         stream.next_in = reinterpret_cast<Bytef *>(data.data());
         stream.avail_in = data.size();

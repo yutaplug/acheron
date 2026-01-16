@@ -29,6 +29,8 @@ public:
     [[nodiscard]] UserManager *users() const;
     [[nodiscard]] PermissionManager *permissions() const;
 
+    [[nodiscard]] QList<Discord::Role> getRolesForGuild(Snowflake guildId);
+
     [[nodiscard]] ConnectionState state() const;
 
     Snowflake accountId() const;
@@ -40,9 +42,12 @@ signals:
 
     void ready(const Discord::Ready &ready);
     void channelUpdated(const Discord::ChannelUpdate &update);
+    void membersUpdated(Snowflake guildId, const QList<Snowflake> &userIds);
 
 private slots:
     void onChannelUpdated(const Discord::ChannelUpdate &event);
+    void onGuildMembersChunk(const Discord::GuildMembersChunk &chunk);
+    void onMessagesReceived(const MessageRequestResult &result);
 
 private:
     AccountInfo account;
@@ -56,6 +61,8 @@ private:
     Storage::GuildRepository guildRepo;
     Storage::ChannelRepository channelRepo;
     Storage::MemberRepository memberRepo;
+
+    QSet<Snowflake> pendingMemberRequests;
 };
 
 } // namespace Core

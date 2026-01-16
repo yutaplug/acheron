@@ -12,6 +12,14 @@
 // or the honkai star rail character
 // who knows
 
+void registerMetatypes()
+{
+    qRegisterMetaType<Acheron::Core::Snowflake>("Snowflake");
+
+    QMetaType::registerConverter<Snowflake, QString>(
+            [](const Snowflake &s) { return s.toString(); });
+}
+
 int main(int argc, char *argv[])
 {
     using namespace Acheron;
@@ -21,12 +29,12 @@ int main(int argc, char *argv[])
     App app(argc, argv);
     app.setStyle("Fusion");
 
-    {
-        QNetworkAccessManager buildNumberNam;
-        Discord::CurlUtils::fetchBuildNumber(&buildNumberNam);
-    }
+    registerMetatypes();
 
-#if 0
+    QNetworkAccessManager buildNumberNam;
+    Discord::CurlUtils::fetchBuildNumber(&buildNumberNam);
+
+#if 1
     QPalette darkCoolPurple;
 
     darkCoolPurple.setColor(QPalette::Window, QColor(24, 22, 34)); // deep cool background

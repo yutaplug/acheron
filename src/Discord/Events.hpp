@@ -85,5 +85,25 @@ struct ChannelUpdate : Core::JsonUtils::JsonObject
     }
 };
 
+struct GuildMembersChunk : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> guildId;
+    Field<QList<Member>> members;
+    Field<int> chunkIndex;
+    Field<int> chunkCount;
+    Field<QList<Core::Snowflake>, true> notFound;
+
+    static GuildMembersChunk fromJson(const QJsonObject &obj)
+    {
+        GuildMembersChunk chunk;
+        get(obj, "guild_id", chunk.guildId);
+        get(obj, "members", chunk.members);
+        get(obj, "chunk_index", chunk.chunkIndex);
+        get(obj, "chunk_count", chunk.chunkCount);
+        get(obj, "not_found", chunk.notFound);
+        return chunk;
+    }
+};
+
 } // namespace Discord
 } // namespace Acheron

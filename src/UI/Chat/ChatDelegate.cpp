@@ -81,14 +81,28 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         QFont headerFont = option.font;
         headerFont.setBold(true);
         painter->setFont(headerFont);
+        QFontMetrics headerFm(headerFont);
 
-        QColor headerColor = (option.state & QStyle::State_Selected)
-                                     ? option.palette.highlightedText().color()
-                                     : option.palette.text().color();
+        QColor headerColor;
+        if (option.state & QStyle::State_Selected) {
+            headerColor = option.palette.highlightedText().color();
+        } else {
+            QColor roleColor = index.data(ChatModel::UsernameColorRole).value<QColor>();
+            headerColor = roleColor.isValid() ? roleColor : option.palette.text().color();
+        }
+
         painter->setPen(headerColor);
+        painter->drawText(layout.headerRect, Qt::AlignLeft | Qt::AlignTop, username);
 
-        QString header = username + "  " + timestamp.toString("hh:mm");
-        painter->drawText(layout.headerRect, Qt::AlignLeft | Qt::AlignTop, header);
+        QFont timestampFont = option.font;
+        timestampFont.setWeight(QFont::Light);
+        painter->setFont(timestampFont);
+
+        int usernameWidth = headerFm.horizontalAdvance(username);
+        QRect timestampRect = layout.headerRect.adjusted(usernameWidth, 0, 0, 0);
+        painter->setPen(option.palette.text().color().darker(150));
+        painter->drawText(timestampRect, Qt::AlignLeft | Qt::AlignTop,
+                          "  " + timestamp.toString("hh:mm"));
     }
 
     QTextDocument doc;

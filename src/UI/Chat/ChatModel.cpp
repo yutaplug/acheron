@@ -114,6 +114,11 @@ void ChatModel::setAvatarUrlResolver(AvatarUrlResolver resolver)
     avatarUrlResolver = std::move(resolver);
 }
 
+void ChatModel::setRoleColorResolver(RoleColorResolver resolver)
+{
+    roleColorResolver = std::move(resolver);
+}
+
 int ChatModel::rowCount(const QModelIndex &parent) const
 {
     return messages.size();
@@ -423,6 +428,11 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         return msg.nonce.hasValue() && pendingNonces.contains(msg.nonce.get());
     case IsErroredRole:
         return msg.nonce.hasValue() && erroredNonces.contains(msg.nonce.get());
+    case UsernameColorRole: {
+        if (!roleColorResolver || currentGuildId == Snowflake::Invalid)
+            return QColor();
+        return roleColorResolver(msg.author->id.get(), currentGuildId);
+    }
     default:
         return {};
     }
@@ -554,12 +564,13 @@ void ChatModel::handleMessageErrored(const QString &nonce)
     }
 }
 
-void ChatModel::setActiveChannel(Snowflake channelId)
+void ChatModel::setActiveChannel(Snowflake channelId, Snowflake guildId)
 {
     if (currentChannelId == channelId)
         return;
 
     currentChannelId = channelId;
+    currentGuildId = guildId;
 
     beginResetModel();
     messages.clear();
@@ -568,6 +579,19 @@ void ChatModel::setActiveChannel(Snowflake channelId)
     pendingNonces.clear();
     erroredNonces.clear();
     endResetModel();
+}
+
+void ChatModel::refreshUsersInView(const QList<Snowflake> &userIds)
+{
+    QSet<Snowflake> userIdSet(userIds.begin(), userIds.end());
+
+    for (int row = 0; row < messages.size(); ++row) {
+        const auto &msg = messages[row];
+        if (msg.author.hasValue() && userIdSet.contains(msg.author->id.get())) {
+            QModelIndex idx = index(row, 0);
+            emit dataChanged(idx, idx, { UsernameColorRole });
+        }
+    }
 }
 
 } // namespace UI

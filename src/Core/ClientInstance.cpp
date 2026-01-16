@@ -104,6 +104,10 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
     connect(client, &Discord::Client::messageSendFailed, messageManager,
             &MessageManager::onMessageSendFailed);
     connect(client, &Discord::Client::channelUpdated, this, &ClientInstance::onChannelUpdated);
+    connect(client, &Discord::Client::guildMembersChunk, this,
+            &ClientInstance::onGuildMembersChunk);
+    connect(messageManager, &MessageManager::messagesReceived, this,
+            &ClientInstance::onMessagesReceived);
 }
 
 void ClientInstance::onChannelUpdated(const Discord::ChannelUpdate &event)
@@ -131,6 +135,70 @@ void ClientInstance::onChannelUpdated(const Discord::ChannelUpdate &event)
     permissionManager->invalidateChannelCache(channelId);
 
     emit channelUpdated(event);
+}
+
+void ClientInstance::onGuildMembersChunk(const Discord::GuildMembersChunk &chunk)
+{
+    Snowflake guildId = chunk.guildId.get();
+    QList<Snowflake> updatedUserIds;
+
+    for (const auto &member : chunk.members.get()) {
+        Snowflake userId =
+                member.userId.hasValue()
+                        ? member.userId.get()
+                        : (member.user.hasValue() ? member.user->id.get() : Snowflake::Invalid);
+        if (!userId.isValid())
+            continue;
+
+        memberRepo.saveMember(guildId, userId, member);
+        if (member.user.hasValue())
+            userManager->saveUser(member.user.get());
+
+        pendingMemberRequests.remove(userId);
+        updatedUserIds.append(userId);
+    }
+
+    for (const auto &notFound : chunk.notFound.get())
+        pendingMemberRequests.remove(notFound);
+
+    if (!updatedUserIds.isEmpty())
+        emit membersUpdated(guildId, updatedUserIds);
+}
+
+void ClientInstance::onMessagesReceived(const MessageRequestResult &result)
+{
+    if (!result.success || result.messages.isEmpty())
+        return;
+
+    if (result.type != Discord::Client::MessageLoadType::Latest &&
+        result.type != Discord::Client::MessageLoadType::History)
+        return;
+
+    auto channelOpt = channelRepo.getChannel(result.channelId);
+    if (!channelOpt || !channelOpt->guildId.hasValue())
+        return;
+
+    Snowflake guildId = channelOpt->guildId.get();
+    QList<Snowflake> missingUserIds;
+
+    for (const auto &msg : result.messages) {
+        if (!msg.author.hasValue())
+            continue;
+
+        Snowflake userId = msg.author->id.get();
+
+        if (pendingMemberRequests.contains(userId))
+            continue;
+
+        if (userManager->getMember(guildId, userId))
+            continue;
+
+        pendingMemberRequests.insert(userId);
+        missingUserIds.append(userId);
+    }
+
+    if (!missingUserIds.isEmpty())
+        client->requestGuildMembers(guildId, missingUserIds);
 }
 
 ClientInstance::~ClientInstance()
@@ -166,6 +234,11 @@ UserManager *ClientInstance::users() const
 PermissionManager *ClientInstance::permissions() const
 {
     return permissionManager;
+}
+
+QList<Discord::Role> ClientInstance::getRolesForGuild(Snowflake guildId)
+{
+    return roleRepo.getRolesForGuild(guildId);
 }
 
 ConnectionState ClientInstance::state() const

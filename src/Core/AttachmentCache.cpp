@@ -81,7 +81,8 @@ QPixmap AttachmentCache::get(const QUrl &proxyUrl, const QSize &originalSize)
         QPixmap pixmap;
         if (pixmap.load(path)) {
             // scale to physical pixels then set device pixel ratio
-            QSize physicalSize(qRound(displaySize.width() * dpr), qRound(displaySize.height() * dpr));
+            QSize physicalSize(qRound(displaySize.width() * dpr),
+                               qRound(displaySize.height() * dpr));
             if (pixmap.size() != physicalSize)
                 pixmap = pixmap.scaled(physicalSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             pixmap.setDevicePixelRatio(dpr);
@@ -148,7 +149,8 @@ void AttachmentCache::fetchFromNetwork(const QUrl &url, const QSize &displaySize
         // load pixmap - already sized by server in physical pixels
         QPixmap pixmap;
         if (pixmap.loadFromData(data)) {
-            QSize physicalSize(qRound(displaySize.width() * dpr), qRound(displaySize.height() * dpr));
+            QSize physicalSize(qRound(displaySize.width() * dpr),
+                               qRound(displaySize.height() * dpr));
             if (pixmap.size() != physicalSize)
                 pixmap = pixmap.scaled(physicalSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             pixmap.setDevicePixelRatio(dpr);
