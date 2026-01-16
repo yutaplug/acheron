@@ -467,6 +467,12 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
     if (result.messages.isEmpty())
         return;
 
+    auto incomingMessages = result.messages;
+    std::sort(incomingMessages.begin(), incomingMessages.end(),
+              [](const Discord::Message &a, const Discord::Message &b) {
+                  return a.id.get() < b.id.get();
+              });
+
     switch (result.type) {
     case Discord::Client::MessageLoadType::Latest: {
         beginResetModel();
@@ -474,17 +480,17 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
         embedCache.clear();
         pendingNonces.clear();
         erroredNonces.clear();
-        messages = result.messages;
+        messages = incomingMessages;
         endResetModel();
         break;
     };
     case Discord::Client::MessageLoadType::History: {
-        int numNew = result.messages.size();
+        int numNew = incomingMessages.size();
 
         const Snowflake oldAnchorId = messages.first().id;
 
         beginInsertRows({}, 0, numNew - 1);
-        messages = result.messages + messages;
+        messages = incomingMessages + messages;
         endInsertRows();
 
         // invalidate cached size cuz header and/or separator might have moved
@@ -498,7 +504,7 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
     case Discord::Client::MessageLoadType::Created: {
         // replace sent message by nonce
         bool replacedPreview = false;
-        for (const auto &incomingMsg : result.messages) {
+        for (const auto &incomingMsg : incomingMessages) {
             if (incomingMsg.nonce.hasValue()) {
                 QString nonce = incomingMsg.nonce.get();
 
@@ -517,15 +523,15 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
         }
 
         if (!replacedPreview) {
-            beginInsertRows({}, messages.size(), messages.size() + result.messages.size() - 1);
+            beginInsertRows({}, messages.size(), messages.size() + incomingMessages.size() - 1);
 
-            for (const auto &msg : result.messages) {
+            for (const auto &msg : incomingMessages) {
                 if (msg.isPendingOutbound && msg.nonce.hasValue()) {
                     pendingNonces.insert(msg.nonce.get());
                 }
             }
 
-            messages = messages + result.messages;
+            messages = messages + incomingMessages;
             endInsertRows();
         }
         break;

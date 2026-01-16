@@ -96,7 +96,7 @@ QList<Discord::Message> MessageRepository::getLatestMessages(Core::Snowflake cha
         INNER JOIN users u
 		ON m.author_id = u.id
 		WHERE channel_id = :channel_id
-		ORDER BY m.id ASC
+		ORDER BY m.id DESC
         LIMIT :limit
     )");
 

@@ -58,6 +58,14 @@ void MessageManager::requestLoadChannel(Snowflake channelId)
         // disk cache
         QList<Discord::Message> msgs = repo.getLatestMessages(channelId, 50);
         if (!msgs.isEmpty()) { // probably good
+            for (auto &msg : msgs) {
+                static Markdown::Parser parser;
+                Markdown::ParseState state;
+                state.isInline = true;
+                auto ast = parser.parse(msg.content, state);
+                msg.parsedContentCached = parser.toHtml(ast);
+            }
+
             emit messagesReceived({
                     true,
                     Discord::Client::MessageLoadType::Latest,
@@ -140,6 +148,15 @@ void MessageManager::requestLoadHistory(Snowflake channelId, Snowflake beforeId)
 
         // disk cache
         QList<Discord::Message> msgs = repo.getMessagesBefore(channelId, beforeId, 50);
+
+        for (auto &msg : msgs) {
+            static Markdown::Parser parser;
+            Markdown::ParseState state;
+            state.isInline = true;
+            auto ast = parser.parse(msg.content, state);
+            msg.parsedContentCached = parser.toHtml(ast);
+        }
+
         if (!msgs.isEmpty()) { // probably good
             emit messagesReceived({
                     true,
