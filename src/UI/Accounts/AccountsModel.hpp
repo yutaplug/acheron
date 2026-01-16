@@ -18,7 +18,10 @@ class AccountsModel : public QAbstractListModel
 public:
     explicit AccountsModel(Core::Session *session, QObject *parent = nullptr);
 
-    enum Roles { AccountObjectRole = Qt::UserRole + 1, ConnectionStateRole };
+    enum Roles {
+        AccountObjectRole = Qt::UserRole + 1,
+        ConnectionStateRole,
+    };
 
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &index, int role) const override;

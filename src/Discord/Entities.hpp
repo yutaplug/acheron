@@ -109,7 +109,10 @@ struct Role : Core::JsonUtils::JsonObject
 
 struct PermissionOverwrite : Core::JsonUtils::JsonObject
 {
-    enum class Type { Role = 0, Member = 1 };
+    enum class Type {
+        Role = 0,
+        Member = 1,
+    };
 
     Field<Core::Snowflake> id;
     Field<Type> type;

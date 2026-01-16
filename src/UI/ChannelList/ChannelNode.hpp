@@ -12,7 +12,16 @@ namespace UI {
 
 struct ChannelNode
 {
-    enum class Type { Root, Account, DMHeader, Folder, Server, Category, Channel };
+    enum class Type {
+        Root,
+        Account,
+        DMHeader,
+        Folder,
+        Server,
+        Category,
+        Channel,
+    };
+
     Core::Snowflake id;
     QString name;
     Type type;

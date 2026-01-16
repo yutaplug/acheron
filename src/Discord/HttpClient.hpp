@@ -30,7 +30,13 @@ public:
     void post(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
 
 private:
-    enum class Method { GET, POST, PUT, PATCH, DELETE_ }; // thanks windows.h for the DELETE macro
+    enum class Method {
+        GET,
+        POST,
+        PUT,
+        PATCH,
+        DELETE_, // thanks windows.h for the DELETE macro
+    };
 
     static void lock_cb(CURL *handle, curl_lock_data data, curl_lock_access access, void *userptr);
     static void unlock_cb(CURL *handle, curl_lock_data data, void *userptr);
