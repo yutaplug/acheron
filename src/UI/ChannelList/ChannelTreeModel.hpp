@@ -48,7 +48,7 @@ public:
 private:
     QModelIndex indexForNode(ChannelNode *node) const;
     std::unique_ptr<ChannelNode> createGuildNode(const Discord::GatewayGuild &guild);
-    ChannelNode *findChannelNode(Snowflake channelId, ChannelNode *root);
+    ChannelNode *findChannelTreeNode(Snowflake channelId, ChannelNode *root);
     ChannelNode *findGuildNode(ChannelNode *node);
     ChannelNode *findGuildNodeById(Snowflake guildId, ChannelNode *accountNode);
     ChannelNode *findCategoryNode(Snowflake categoryId, ChannelNode *guildNode);

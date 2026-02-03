@@ -355,16 +355,16 @@ QModelIndex ChannelTreeModel::indexForNode(ChannelNode *node) const
     return {};
 }
 
-ChannelNode *ChannelTreeModel::findChannelNode(Snowflake channelId, ChannelNode *searchRoot)
+ChannelNode *ChannelTreeModel::findChannelTreeNode(Snowflake channelId, ChannelNode *searchRoot)
 {
     if (!searchRoot)
         return nullptr;
 
-    if (searchRoot->type == ChannelNode::Type::Channel && searchRoot->id == channelId)
+    if (searchRoot->type != ChannelNode::Type::Server && searchRoot->id == channelId)
         return searchRoot;
 
     for (const auto &child : searchRoot->children) {
-        if (ChannelNode *found = findChannelNode(channelId, child.get()))
+        if (ChannelNode *found = findChannelTreeNode(channelId, child.get()))
             return found;
     }
 
@@ -433,7 +433,7 @@ void ChannelTreeModel::addChannel(const Discord::ChannelCreate &event, Snowflake
     if (!guildNode)
         return;
 
-    if (findChannelNode(channel.id, guildNode))
+    if (findChannelTreeNode(channel.id, guildNode))
         return;
 
     auto node = std::make_unique<ChannelNode>();
@@ -481,7 +481,7 @@ void ChannelTreeModel::updateChannel(const Discord::ChannelUpdate &update, Snowf
     if (!accNode)
         return;
 
-    ChannelNode *channelNode = findChannelNode(channel.id, accNode);
+    ChannelNode *channelNode = findChannelTreeNode(channel.id, accNode);
     if (!channelNode)
         return;
 
