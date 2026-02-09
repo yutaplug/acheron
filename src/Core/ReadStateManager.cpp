@@ -64,7 +64,7 @@ ChannelReadState ReadStateManager::computeChannelReadState(Snowflake channelId, 
     Snowflake lastMessageId = lmIt != channelLastMessageIds.constEnd() ? lmIt.value()
                                                                        : Snowflake();
 
-    result.isMuted = isChannelMuted(channelId) || isGuildMuted(guildId);
+    result.isMuted = isChannelMuted(channelId);
     result.isUnread = canView && isChannelUnread(channelId, lastMessageId, canSend);
     result.mentionCount = canView ? getMentionCount(channelId) : 0;
 

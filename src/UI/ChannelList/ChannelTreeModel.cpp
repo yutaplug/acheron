@@ -874,6 +874,13 @@ void ChannelTreeModel::updateGuildSettings(Snowflake guildId, Snowflake accountI
     if (!targetNode)
         return;
 
+    if (targetNode->type == ChannelNode::Type::Server) {
+        targetNode->isMuted = instance->readState()->isGuildMuted(guildId);
+        QModelIndex idx = indexForNode(targetNode);
+        if (idx.isValid())
+            emit dataChanged(idx, idx, { IsMutedRole });
+    }
+
     updateChildrenReadState(targetNode, guildId, instance);
     updateNodeAggregates(targetNode);
 }
@@ -933,6 +940,9 @@ void ChannelTreeModel::updateNodeAggregates(ChannelNode *node)
 
 void ChannelTreeModel::initChannelReadStates(ChannelNode *node, Core::ClientInstance *instance)
 {
+    if (node->type == ChannelNode::Type::Server)
+        node->isMuted = instance->readState()->isGuildMuted(node->id);
+
     if (node->type == ChannelNode::Type::Channel ||
         node->type == ChannelNode::Type::DMChannel) {
         ChannelNode *guildNode = findGuildNode(node);
