@@ -114,6 +114,11 @@ void ChatModel::setAvatarUrlResolver(AvatarUrlResolver resolver)
     avatarUrlResolver = std::move(resolver);
 }
 
+void ChatModel::setDisplayNameResolver(DisplayNameResolver resolver)
+{
+    displayNameResolver = std::move(resolver);
+}
+
 void ChatModel::setRoleColorResolver(RoleColorResolver resolver)
 {
     roleColorResolver = std::move(resolver);
@@ -135,8 +140,14 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         [[fallthrough]];
     case ContentRole:
         return msg.content;
-    case UsernameRole:
+    case UsernameRole: {
+        if (displayNameResolver) {
+            QString name = displayNameResolver(msg.author->id.get(), currentGuildId);
+            if (!name.isEmpty())
+                return name;
+        }
         return msg.author->getDisplayName();
+    }
     case AvatarRole: {
         const QSize desiredSize(32, 32);
 
@@ -648,7 +659,7 @@ void ChatModel::refreshUsersInView(const QList<Snowflake> &userIds)
 
         if (refreshAll || userIds.contains(authorId)) {
             QModelIndex idx = index(row, 0);
-            emit dataChanged(idx, idx, { UsernameColorRole });
+            emit dataChanged(idx, idx, { UsernameRole, UsernameColorRole });
         }
     }
 }

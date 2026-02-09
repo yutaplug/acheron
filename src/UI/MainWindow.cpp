@@ -40,6 +40,15 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
                 .arg(user.avatar.get());
     });
 
+    chatModel->setDisplayNameResolver([this](Snowflake userId, Snowflake guildId) -> QString {
+        if (!currentInstance)
+            return QString();
+        return currentInstance->users()->getDisplayName(userId,
+                                                        guildId != Snowflake::Invalid
+                                                                ? std::optional(guildId)
+                                                                : std::nullopt);
+    });
+
     chatModel->setRoleColorResolver([this](Snowflake userId, Snowflake guildId) -> QColor {
         if (!currentInstance || guildId == Snowflake::Invalid)
             return QColor();

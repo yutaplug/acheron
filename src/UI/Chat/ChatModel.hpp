@@ -126,6 +126,9 @@ public:
     using AvatarUrlResolver = std::function<QUrl(const Discord::User &)>;
     void setAvatarUrlResolver(AvatarUrlResolver resolver);
 
+    using DisplayNameResolver = std::function<QString(Snowflake userId, Snowflake guildId)>;
+    void setDisplayNameResolver(DisplayNameResolver resolver);
+
     using RoleColorResolver = std::function<QColor(Snowflake userId, Snowflake guildId)>;
     void setRoleColorResolver(RoleColorResolver resolver);
 
@@ -166,6 +169,7 @@ private:
     Snowflake currentGuildId = Snowflake::Invalid;
 
     AvatarUrlResolver avatarUrlResolver;
+    DisplayNameResolver displayNameResolver;
     RoleColorResolver roleColorResolver;
 
     mutable QMultiMap<QUrl, QPersistentModelIndex> pendingRequests;
