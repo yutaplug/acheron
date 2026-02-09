@@ -50,7 +50,7 @@ public:
     void setActiveChannel(Snowflake channelId);
     void markChannelAsRead(Snowflake channelId, Snowflake lastMessageId);
     void markChannelsAsRead(const QList<QPair<Snowflake, Snowflake>> &channelMessagePairs);
-    void handleMessageCreated(Snowflake channelId, Snowflake messageId);
+    void handleMessageCreated(Snowflake channelId, Snowflake messageId, bool isMention);
 
     void updateChannelLastMessageId(Snowflake channelId, Snowflake messageId);
 

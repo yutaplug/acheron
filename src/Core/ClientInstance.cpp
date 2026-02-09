@@ -449,9 +449,32 @@ void ClientInstance::onMessageCreated(const Discord::Message &msg)
     Snowflake channelId = msg.channelId.get();
     Snowflake messageId = msg.id.get();
 
-    readStateManager->handleMessageCreated(channelId, messageId);
+    bool isMention = isMessageMentioningMe(msg);
+    readStateManager->handleMessageCreated(channelId, messageId, isMention);
 
     emit channelLastMessageUpdated(channelId, messageId);
+}
+
+bool ClientInstance::isMessageMentioningMe(const Discord::Message &msg) const
+{
+    if (msg.mentions.hasValue()) {
+        for (const auto &user : msg.mentions.get())
+            if (user.id.get() == account.id)
+                return true;
+    }
+
+    if (msg.mentionRoles.hasValue() && msg.guildId.hasValue()) {
+        Snowflake guildId = msg.guildId.get();
+        Discord::Member *me = userManager->getMember(guildId, account.id);
+        if (me && me->roles.hasValue()) {
+            const auto &myRoles = me->roles.get();
+            for (const auto &roleId : msg.mentionRoles.get())
+                if (myRoles.contains(roleId))
+                    return true;
+        }
+    }
+
+    return false;
 }
 
 void ClientInstance::handleAckRequest(Snowflake channelId, Snowflake messageId)

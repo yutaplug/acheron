@@ -67,6 +67,7 @@ private slots:
     void onMessageCreated(const Discord::Message &msg);
     void handleAckRequest(Snowflake channelId, Snowflake messageId);
     void handleBulkAckRequest(const QList<QPair<Snowflake, Snowflake>> &pairs);
+    bool isMessageMentioningMe(const Discord::Message &msg) const;
 
 private:
     AccountInfo account;

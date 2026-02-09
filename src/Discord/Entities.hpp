@@ -387,6 +387,8 @@ struct Message : Core::JsonUtils::JsonObject
     Field<MessageFlags> flags;
     Field<QList<Attachment>, true> attachments;
     Field<QList<Embed>, true> embeds;
+    Field<QList<User>, true> mentions;
+    Field<QList<Core::Snowflake>, true> mentionRoles;
 
     // TRANSIENT for MESSAGE_UPDATE
     Field<Core::Snowflake, true> guildId;
@@ -413,6 +415,8 @@ struct Message : Core::JsonUtils::JsonObject
         get(obj, "flags", message.flags);
         get(obj, "attachments", message.attachments);
         get(obj, "embeds", message.embeds);
+        get(obj, "mentions", message.mentions);
+        get(obj, "mention_roles", message.mentionRoles);
         get(obj, "guild_id", message.guildId);
         get(obj, "channel_type", message.channelType);
 

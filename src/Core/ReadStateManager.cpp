@@ -246,13 +246,29 @@ void ReadStateManager::markChannelsAsRead(
         emit bulkAckRequested(toAck);
 }
 
-void ReadStateManager::handleMessageCreated(Snowflake channelId, Snowflake messageId)
+void ReadStateManager::handleMessageCreated(Snowflake channelId, Snowflake messageId,
+                                            bool isMention)
 {
     updateChannelLastMessageId(channelId, messageId);
 
     if (channelId == activeChannelId) {
         updateLocalReadState(channelId, messageId);
         activeChannelAckPending = true;
+        return;
+    }
+
+    if (isMention) {
+        auto it = channelReadStates.find(channelId);
+        if (it == channelReadStates.end()) {
+            Discord::ReadStateEntry entry;
+            entry.id = channelId;
+            entry.mentionCount = 1;
+            channelReadStates.insert(channelId, entry);
+        } else {
+            int current = it->mentionCount.hasValue() ? it->mentionCount.get() : 0;
+            it->mentionCount = current + 1;
+        }
+        emit readStateUpdated(channelId);
     }
 }
 
