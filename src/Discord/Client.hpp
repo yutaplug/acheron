@@ -80,6 +80,7 @@ signals:
     void channelUpdated(const ChannelUpdate &event);
     void channelDeleted(const ChannelDelete &event);
     void guildMembersChunk(const GuildMembersChunk &chunk);
+    void guildMemberUpdated(const GuildMemberUpdate &event);
     void guildRoleCreated(const GuildRoleCreate &event);
     void guildRoleUpdated(const GuildRoleUpdate &event);
     void guildRoleDeleted(const GuildRoleDelete &event);

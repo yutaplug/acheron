@@ -162,6 +162,20 @@ struct GuildMembersChunk : Core::JsonUtils::JsonObject
     }
 };
 
+struct GuildMemberUpdate : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> guildId;
+    Field<Member> member;
+
+    static GuildMemberUpdate fromJson(const QJsonObject &obj)
+    {
+        GuildMemberUpdate event;
+        get(obj, "guild_id", event.guildId);
+        event.member = Member::fromJson(obj);
+        return event;
+    }
+};
+
 struct MessageDelete : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;

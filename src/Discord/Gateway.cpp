@@ -184,6 +184,9 @@ void Gateway::handleDispatch(const Inbound &data)
     case GatewayEvent::GUILD_MEMBERS_CHUNK:
         handleGuildMembersChunk(data);
         break;
+    case GatewayEvent::GUILD_MEMBER_UPDATE:
+        handleGuildMemberUpdate(data);
+        break;
     case GatewayEvent::GUILD_ROLE_CREATE:
         handleGuildRoleCreate(data);
         break;
@@ -279,6 +282,13 @@ void Gateway::handleGuildMembersChunk(const Inbound &data)
     GuildMembersChunk chunk = data.getData<GuildMembersChunk>();
 
     emit gatewayGuildMembersChunk(chunk);
+}
+
+void Gateway::handleGuildMemberUpdate(const Inbound &data)
+{
+    GuildMemberUpdate event = data.getData<GuildMemberUpdate>();
+
+    emit gatewayGuildMemberUpdate(event);
 }
 
 void Gateway::handleGuildRoleCreate(const Inbound &data)

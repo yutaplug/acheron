@@ -165,6 +165,8 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
     connect(client, &Discord::Client::guildRoleDeleted, this, &ClientInstance::onGuildRoleDeleted);
     connect(client, &Discord::Client::guildMembersChunk, this,
             &ClientInstance::onGuildMembersChunk);
+    connect(client, &Discord::Client::guildMemberUpdated, this,
+            &ClientInstance::onGuildMemberUpdate);
     connect(messageManager, &MessageManager::messagesReceived, this,
             &ClientInstance::onMessagesReceived);
 
@@ -403,6 +405,22 @@ void ClientInstance::onGuildMembersChunk(const Discord::GuildMembersChunk &chunk
 
     if (!updatedUserIds.isEmpty())
         emit membersUpdated(guildId, updatedUserIds);
+}
+
+void ClientInstance::onGuildMemberUpdate(const Discord::GuildMemberUpdate &event)
+{
+    Snowflake guildId = event.guildId.get();
+    const auto &member = event.member.get();
+
+    Snowflake userId = member.user.hasValue() ? member.user->id.get() : Snowflake::Invalid;
+    if (!userId.isValid())
+        return;
+
+    if (member.user.hasValue())
+        userManager->saveUser(member.user.get());
+    userManager->saveMember(guildId, userId, member);
+
+    emit membersUpdated(guildId, { userId });
 }
 
 void ClientInstance::onMessagesReceived(const MessageRequestResult &result)

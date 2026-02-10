@@ -63,6 +63,7 @@ private slots:
     void onGuildRoleUpdated(const Discord::GuildRoleUpdate &event);
     void onGuildRoleDeleted(const Discord::GuildRoleDelete &event);
     void onGuildMembersChunk(const Discord::GuildMembersChunk &chunk);
+    void onGuildMemberUpdate(const Discord::GuildMemberUpdate &event);
     void onMessagesReceived(const MessageRequestResult &result);
     void onMessageCreated(const Discord::Message &msg);
     void handleAckRequest(Snowflake channelId, Snowflake messageId);
