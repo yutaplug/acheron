@@ -74,7 +74,7 @@ void TypingTracker::clear()
     emit typersChanged();
 }
 
-QStringList TypingTracker::getActiveTyperNames() const
+QList<TyperInfo> TypingTracker::getActiveTypers() const
 {
     if (!userManager || !activeChannel.isValid())
         return {};
@@ -83,12 +83,15 @@ QStringList TypingTracker::getActiveTyperNames() const
     if (it == channelTypers.end() || it.value().isEmpty())
         return {};
 
-    QStringList names;
+    QList<TyperInfo> typers;
     for (const auto &entry : it.value()) {
-        QString name = userManager->getDisplayName(entry.userId, entry.guildId);
-        names.append(name);
+        TyperInfo info;
+        info.userId = entry.userId;
+        info.guildId = entry.guildId;
+        info.name = userManager->getDisplayName(entry.userId, entry.guildId);
+        typers.append(info);
     }
-    return names;
+    return typers;
 }
 
 void TypingTracker::cleanupExpired()

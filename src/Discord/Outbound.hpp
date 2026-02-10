@@ -120,5 +120,22 @@ struct RequestGuildMembersData : Core::JsonUtils::JsonObject
 };
 using RequestGuildMembers = Outbound<OpCode::REQUEST_GUILD_MEMBERS, RequestGuildMembersData>;
 
+struct ResumeData : Core::JsonUtils::JsonObject
+{
+    Field<QString> token;
+    Field<QString> sessionId;
+    Field<int, false, true> seq;
+
+    QJsonObject toJson() const
+    {
+        QJsonObject obj;
+        insert(obj, "token", token);
+        insert(obj, "session_id", sessionId);
+        insert(obj, "seq", seq);
+        return obj;
+    }
+};
+using Resume = Outbound<OpCode::RESUME, ResumeData>;
+
 } // namespace Discord
 } // namespace Acheron

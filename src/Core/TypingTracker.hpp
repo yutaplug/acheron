@@ -13,6 +13,13 @@ namespace Core {
 
 class UserManager;
 
+struct TyperInfo
+{
+    Snowflake userId;
+    std::optional<Snowflake> guildId;
+    QString name;
+};
+
 class TypingTracker : public QObject
 {
     Q_OBJECT
@@ -27,7 +34,7 @@ public:
     void removeTyper(Snowflake channelId, Snowflake userId);
     void clear();
 
-    QStringList getActiveTyperNames() const;
+    QList<TyperInfo> getActiveTypers() const;
 
 signals:
     void typersChanged();

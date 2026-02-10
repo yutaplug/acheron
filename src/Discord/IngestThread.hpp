@@ -19,11 +19,18 @@ public:
     void stop();
 
     void push(const QByteArray &data);
+    void reset();
 
 signals:
     void payloadReceived(QJsonObject root);
 
 private:
+    struct TaggedData
+    {
+        QByteArray data;
+        uint64_t generation;
+    };
+
     void threadLoop();
 
 private:
@@ -32,11 +39,12 @@ private:
 
     std::mutex mutex;
     std::condition_variable cv;
-    std::deque<QByteArray> queue;
+    std::deque<TaggedData> queue;
     QByteArray decompressedBuffer;
 
     z_stream stream;
     bool streamActive = false;
+    std::atomic<uint64_t> generation{ 0 };
 };
 
 } // namespace Discord

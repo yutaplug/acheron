@@ -37,9 +37,13 @@ public:
     void subscribeToGuild(Core::Snowflake guildId);
     void requestGuildMembers(Core::Snowflake guildId, const QList<Core::Snowflake> &userIds);
 
+    // Debug: simulate a server RECONNECT opcode
+    void debugForceReconnect();
+
 signals:
     void connected();
     void disconnected(CloseCode code, const QString &reason);
+    void reconnecting(int attempt, int maxAttempts);
 
     void gatewayHello();
     void gatewayReady(const Ready &data);
@@ -84,6 +88,8 @@ private:
     void handleUserGuildSettingsUpdate(const Inbound &data);
     void handleHello(const Inbound &data);
     void identify();
+    void resume();
+    bool isFatalCloseCode(CloseCode code) const;
 
     void networkLoop();
     void heartbeatLoop();
@@ -112,6 +118,16 @@ private:
     std::mutex heartbeatMutex;
     std::condition_variable heartbeatCv;
     std::thread heartbeatThread;
+
+    QString sessionId;
+    QString resumeGatewayUrl;
+
+    std::atomic<bool> heartbeatAckReceived{ true };
+    std::atomic<bool> shouldReconnect{ false };
+    bool canResume = false;
+    bool isResuming = false;
+    int reconnectAttempts = 0;
+    static constexpr int maxReconnectAttempts = 5;
 };
 
 } // namespace Discord

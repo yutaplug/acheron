@@ -24,6 +24,7 @@ class AccountsModel;
 class ChannelTreeView;
 struct ChannelNode;
 class TypingIndicator;
+class ConnectionBanner;
 } // namespace UI
 } // namespace Acheron
 
@@ -47,6 +48,7 @@ private slots:
 private:
     void switchActiveInstance(Core::ClientInstance *instance);
     void setupPermanentConnections(Core::ClientInstance *instance);
+    QColor resolveRoleColor(Core::Snowflake userId, Core::Snowflake guildId);
 
 private:
     void setupUi();
@@ -63,6 +65,7 @@ private:
 
     MessageInput *messageInput;
     TypingIndicator *typingIndicator;
+    ConnectionBanner *connectionBanner;
     Core::TypingTracker *typingTracker;
 
     AccountsWindow *accountsWindow = nullptr;

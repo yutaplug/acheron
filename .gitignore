@@ -4,3 +4,4 @@ acheron.slnx
 CMakeUserPresets.json
 .vs/
 *.aps
+.planning/

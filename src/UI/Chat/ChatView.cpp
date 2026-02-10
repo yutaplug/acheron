@@ -1,5 +1,9 @@
 #include "ChatView.hpp"
 
+#include <QMenu>
+#include <QTextDocument>
+#include <QTextCursor>
+
 #include "UI/Dialogs/ConfirmPopup.hpp"
 #include "UI/ImageViewer.hpp"
 
@@ -13,6 +17,13 @@ ChatView::ChatView(QWidget *parent) : QListView(parent), hoveredRow(-1), hovered
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     verticalScrollBar()->setSingleStep(10);
     setAutoScroll(false);
+    setFocusPolicy(Qt::StrongFocus);
+
+    inlineEditWidget = new QTextEdit(viewport());
+    inlineEditWidget->setVisible(false);
+    inlineEditWidget->setFrameStyle(QFrame::Box);
+    inlineEditWidget->setLineWidth(2);
+    inlineEditWidget->installEventFilter(this);
 
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this,
             &ChatView::onScrollBarValueChanged);
@@ -302,5 +313,240 @@ void ChatView::onScrollBarValueChanged(int value)
         emit historyRequested();
     }
 }
+
+void ChatView::setCurrentUserId(Core::Snowflake userId)
+{
+    currentUserId = userId;
+}
+
+void ChatView::setCanPinMessages(bool canPin)
+{
+    canPinMessages = canPin;
+}
+
+void ChatView::setCanManageMessages(bool canManage)
+{
+    canManageMessages = canManage;
+}
+
+void ChatView::contextMenuEvent(QContextMenuEvent *event)
+{
+    QModelIndex index = indexAt(event->pos());
+    if (!index.isValid())
+        return;
+
+    auto *chatModel = qobject_cast<ChatModel *>(model());
+    if (!chatModel)
+        return;
+
+    Core::Snowflake messageId = index.data(ChatModel::MessageIdRole).toULongLong();
+    Core::Snowflake authorId = index.data(ChatModel::UserIdRole).toULongLong();
+    Core::Snowflake channelId = chatModel->getActiveChannelId();
+    QString content = index.data(ChatModel::ContentRole).toString();
+    bool isOwnMessage = (authorId == currentUserId);
+
+    QMenu menu(this);
+
+    QAction *copyAction = menu.addAction(tr("Copy Text"));
+    copyAction->setShortcut(QKeySequence::Copy);
+    if (hasTextSelection()) {
+        connect(copyAction, &QAction::triggered, this, [this]() {
+            copySelectedText();
+        });
+    } else {
+        connect(copyAction, &QAction::triggered, this, [this, index]() {
+            copyMessageContent(index);
+        });
+    }
+
+    menu.addSeparator();
+
+    QAction *replyAction = menu.addAction(tr("Reply"));
+    connect(replyAction, &QAction::triggered, this, [this, channelId, messageId]() {
+        emit replyToMessageRequested(channelId, messageId);
+    });
+
+    if (isOwnMessage) {
+        QAction *editAction = menu.addAction(tr("Edit Message"));
+        connect(editAction, &QAction::triggered, this, [this, index]() {
+            startInlineEdit(index);
+        });
+    }
+
+    if (isOwnMessage || canManageMessages) {
+        QAction *deleteAction = menu.addAction(tr("Delete Message"));
+        connect(deleteAction, &QAction::triggered, this, [this, channelId, messageId]() {
+            emit deleteMessageRequested(channelId, messageId);
+        });
+    }
+
+    menu.addSeparator();
+
+    if (canPinMessages) {
+        QAction *pinAction = menu.addAction(tr("Pin Message"));
+        connect(pinAction, &QAction::triggered, this, [this, channelId, messageId]() {
+            emit pinMessageRequested(channelId, messageId);
+        });
+    }
+
+    QAction *reactAction = menu.addAction(tr("Add Reaction"));
+    connect(reactAction, &QAction::triggered, this, [this, channelId, messageId]() {
+        emit addReactionRequested(channelId, messageId);
+    });
+
+    menu.exec(event->globalPos());
+}
+
+void ChatView::keyPressEvent(QKeyEvent *event)
+{
+    if (event->matches(QKeySequence::Copy)) {
+        copySelectedText();
+        return;
+    }
+    QListView::keyPressEvent(event);
+}
+
+void ChatView::copySelectedText()
+{
+    if (!hasTextSelection())
+        return;
+
+    ChatCursor start = selectionStart();
+    ChatCursor end = selectionEnd();
+
+    QString selectedText;
+    for (int row = start.row; row <= end.row; row++) {
+        QModelIndex idx = model()->index(row, 0);
+        QString html = idx.data(ChatModel::HtmlRole).toString();
+
+        QTextDocument doc;
+        doc.setHtml(html);
+
+        int docLength = doc.characterCount() - 1;
+        int startChar = (row == start.row) ? start.index : 0;
+        int endChar = (row == end.row) ? end.index : docLength;
+
+        startChar = qBound(0, startChar, docLength);
+        endChar = qBound(0, endChar, docLength);
+
+        if (startChar >= endChar && row == start.row && row == end.row)
+            continue;
+
+        QTextCursor cursor(&doc);
+        cursor.setPosition(startChar);
+        cursor.setPosition(endChar, QTextCursor::KeepAnchor);
+
+        QString rowText = cursor.selectedText();
+        rowText.replace(QChar(0x2029), '\n');
+
+        if (!selectedText.isEmpty())
+            selectedText += '\n';
+        selectedText += rowText;
+    }
+
+    if (!selectedText.isEmpty())
+        QGuiApplication::clipboard()->setText(selectedText);
+}
+
+void ChatView::copyMessageContent(const QModelIndex &index)
+{
+    QString content = index.data(ChatModel::ContentRole).toString();
+    if (!content.isEmpty())
+        QGuiApplication::clipboard()->setText(content);
+}
+
+void ChatView::startInlineEdit(const QModelIndex &index)
+{
+    if (!index.isValid())
+        return;
+
+    QString content = index.data(ChatModel::ContentRole).toString();
+    Core::Snowflake messageId = index.data(ChatModel::MessageIdRole).toULongLong();
+
+    currentEditingMessageId = messageId;
+    currentEditingIndex = index;
+
+    // Invalidate cached size so sizeHint returns the enlarged height
+    auto *m = const_cast<QAbstractItemModel *>(index.model());
+    m->setData(index, QSize(), ChatModel::CachedSizeRole);
+
+    // Force the view to re-query sizeHint for this row
+    scheduleDelayedItemsLayout();
+
+    // Position the edit widget after layout recalculates
+    QTimer::singleShot(0, this, [this, content]() {
+        if (!currentEditingIndex.isValid())
+            return;
+
+        QRect itemRect = visualRect(currentEditingIndex);
+        bool showHeader = currentEditingIndex.data(ChatModel::ShowHeaderRole).toBool();
+        bool hasSeparator = currentEditingIndex.data(ChatModel::DateSeparatorRole).toBool();
+        QFont font = ChatLayout::getFontForIndex(this, currentEditingIndex);
+        QFontMetrics fm(font);
+        QRect textRect = ChatLayout::textRectForRow(itemRect, showHeader, fm, hasSeparator);
+
+        int editHeight = qMax(InlineEditMinHeight, itemRect.bottom() - textRect.top() - 4);
+        QRect editRect(textRect.left(), textRect.top(), textRect.width(), editHeight);
+
+        inlineEditWidget->setGeometry(editRect);
+        inlineEditWidget->setFont(font);
+        inlineEditWidget->setPlainText(content);
+        inlineEditWidget->setVisible(true);
+        inlineEditWidget->setFocus();
+        inlineEditWidget->selectAll();
+
+        scrollTo(currentEditingIndex, QAbstractItemView::EnsureVisible);
+    });
+}
+
+void ChatView::commitInlineEdit()
+{
+    if (!currentEditingIndex.isValid())
+        return;
+
+    QString newContent = inlineEditWidget->toPlainText().trimmed();
+    QString oldContent = currentEditingIndex.data(ChatModel::ContentRole).toString();
+
+    if (newContent != oldContent && !newContent.isEmpty()) {
+        auto *chatModel = qobject_cast<ChatModel *>(model());
+        Core::Snowflake channelId = chatModel ? chatModel->getActiveChannelId() : Core::Snowflake::Invalid;
+        emit editMessageRequested(channelId, currentEditingMessageId, newContent);
+    }
+
+    cancelInlineEdit();
+}
+
+void ChatView::cancelInlineEdit()
+{
+    inlineEditWidget->setVisible(false);
+
+    QModelIndex editedIndex = currentEditingIndex;
+    currentEditingMessageId = Core::Snowflake::Invalid;
+    currentEditingIndex = QModelIndex();
+
+    // Invalidate cached size so sizeHint returns the normal height
+    if (editedIndex.isValid()) {
+        auto *m = const_cast<QAbstractItemModel *>(editedIndex.model());
+        m->setData(editedIndex, QSize(), ChatModel::CachedSizeRole);
+        scheduleDelayedItemsLayout();
+    }
+}
+
+bool ChatView::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == inlineEditWidget && event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
+            commitInlineEdit();
+            return true;
+        }
+        if (keyEvent->key() == Qt::Key_Escape) {
+            cancelInlineEdit();
+            return true;
+        }
+    }
+    return QListView::eventFilter(obj, event);
+}
+
 } // namespace UI
 } // namespace Acheron

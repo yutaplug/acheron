@@ -12,6 +12,10 @@
 #include "Proto/ProtoReader.hpp"
 #include "Proto/UserSettings.hpp"
 
+#include <QUrl>
+
+#include <cstdlib>
+
 namespace Acheron {
 namespace Discord {
 
@@ -62,6 +66,7 @@ void Gateway::stop()
 
 void Gateway::hardStop()
 {
+    shouldReconnect = false;
     running = false;
 
     heartbeatCv.notify_all();
@@ -143,6 +148,23 @@ void Gateway::onPayloadReceived(const QJsonObject &root)
     case OpCode::HELLO:
         handleHello(msg);
         break;
+    case OpCode::HEARTBEAT_ACK:
+        heartbeatAckReceived = true;
+        break;
+    case OpCode::RECONNECT:
+        qCInfo(LogDiscord) << "Server requested reconnect";
+        shouldReconnect = true;
+        break;
+    case OpCode::INVALID_SESSION: {
+        bool resumable = msg.data.toBool();
+        qCInfo(LogDiscord) << "Invalid session, resumable:" << resumable;
+        if (!resumable) {
+            canResume = false;
+            sessionId.clear();
+        }
+        shouldReconnect = true;
+        break;
+    }
     }
 }
 
@@ -215,6 +237,13 @@ void Gateway::handleReady(const Inbound &data)
     qCDebug(LogDiscord) << "Received ready event";
 
     Ready msg = data.getData<Ready>();
+
+    if (msg.sessionId.hasValue())
+        sessionId = msg.sessionId.get();
+    if (msg.resumeGatewayUrl.hasValue())
+        resumeGatewayUrl = msg.resumeGatewayUrl.get();
+    canResume = !sessionId.isEmpty();
+    reconnectAttempts = 0;
 
     emit gatewayReady(msg);
 }
@@ -343,15 +372,18 @@ void Gateway::handleHello(const Inbound &data)
     Hello msg = data.getData<Hello>();
 
     heartbeatInterval = msg.heartbeatInterval;
+    heartbeatAckReceived = true;
 
-    if (heartbeatThread.joinable()) {
-        qCWarning(LogDiscord) << "Heartbeat thread already running";
-        return;
-    }
+    if (isResuming && canResume)
+        resume();
+    else
+        identify();
 
-    identify();
+    reconnectAttempts = 0;
+    isResuming = false;
 
-    heartbeatThread = std::thread(&Gateway::heartbeatLoop, this);
+    if (!heartbeatThread.joinable())
+        heartbeatThread = std::thread(&Gateway::heartbeatLoop, this);
 
     emit gatewayHello();
 }
@@ -393,116 +425,175 @@ static int curlDebug(CURL *, curl_infotype type, char *data, size_t size, void *
 
 void Gateway::networkLoop()
 {
-    curl = curl_easy_init();
-    if (!curl) {
-        qCCritical(LogDiscord) << "Failed to initialize curl";
-        return;
-    }
+    do {
+        shouldReconnect = false;
 
-    curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
-    printf("SSL backend: %s\n", info->ssl_version);
-
-    QString certPath = CurlUtils::getCertificatePath();
-    if (!certPath.isEmpty())
-        curl_easy_setopt(curl, CURLOPT_CAINFO, certPath.toUtf8().constData());
-
-    curl_easy_setopt(curl, CURLOPT_URL, gatewayUrl.toUtf8().constData());
-    curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);
-#ifdef IS_CURL_IMPERSONATE
-    curl_easy_impersonate(curl, CurlUtils::getImpersonateTarget().toUtf8().constData(), 1);
-#endif
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, CurlUtils::getUserAgent().toUtf8().constData());
-    // curl_easy_setopt(curl, CURLOPT_PROXY, "http://127.0.0.1:8888");
-    // dont verify
-    // curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    // curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-    // curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, curlDebug);
-
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-        qWarning() << "Failed to connect to gateway:" << curl_easy_strerror(res);
-        emit disconnected(CloseCode::INTERNAL,
-                          QString("Failed to connect to gateway: ") + curl_easy_strerror(res));
-        return;
-    }
-
-    emit connected();
-
-    char chunk[8192];
-    size_t rlen;
-    const curl_ws_frame *meta;
-
-    bool closeSent = false;
-    while (running) {
-        {
-            std::lock_guard lock(curlMutex);
-
-            if (wantToClose) {
-                if (!closeSent) {
-                    closeSent = true;
-                    uint8_t close_payload[2] = { 0x03, 0xE8 };
-                    size_t bytesSent = 0;
-                    curl_ws_send(curl, close_payload, sizeof(close_payload), &bytesSent, 0,
-                                 CURLWS_CLOSE);
-                }
-
-                auto now = std::chrono::steady_clock::now();
-                if (now - closeTime > closeTimeout) {
-                    running = false;
-                    qCDebug(LogDiscord) << "Gateway close timeout";
-                    break;
-                }
-            }
-
-            res = curl_ws_recv(curl, chunk, sizeof(chunk), &rlen, &meta);
+        // Choose URL: use resumeGatewayUrl if resuming, else gatewayUrl.
+        // resumeGatewayUrl from READY is a bare host (e.g. wss://gateway-us-east1-b.discord.gg)
+        // without query parameters — append them from the original gatewayUrl.
+        QString connectUrl = gatewayUrl;
+        if (isResuming && canResume && !resumeGatewayUrl.isEmpty()) {
+            QUrl resumeUrl(resumeGatewayUrl);
+            QUrl originalUrl(gatewayUrl);
+            resumeUrl.setQuery(originalUrl.query());
+            connectUrl = resumeUrl.toString();
         }
 
-        if (res == CURLE_AGAIN || res == CURLE_GOT_NOTHING || !meta) {
-            curl_socket_t sockfd;
+        curl = curl_easy_init();
+        if (!curl) {
+            qCCritical(LogDiscord) << "Failed to initialize curl";
+            return;
+        }
+
+        curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
+        printf("SSL backend: %s\n", info->ssl_version);
+
+        QString certPath = CurlUtils::getCertificatePath();
+        if (!certPath.isEmpty())
+            curl_easy_setopt(curl, CURLOPT_CAINFO, certPath.toUtf8().constData());
+
+        curl_easy_setopt(curl, CURLOPT_URL, connectUrl.toUtf8().constData());
+        curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);
+#ifdef IS_CURL_IMPERSONATE
+        curl_easy_impersonate(curl, CurlUtils::getImpersonateTarget().toUtf8().constData(), 1);
+#endif
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, CurlUtils::getUserAgent().toUtf8().constData());
+
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK) {
+            qWarning() << "Failed to connect to gateway:" << curl_easy_strerror(res);
+
+            // On connect failure during reconnect, retry with backoff
+            if (isResuming && reconnectAttempts < maxReconnectAttempts) {
+                std::lock_guard lock(curlMutex);
+                curl_easy_cleanup(curl);
+                curl = nullptr;
+
+                reconnectAttempts++;
+                int delay = 1000 + (std::rand() % 4000);
+                qCInfo(LogDiscord) << "Reconnect attempt" << reconnectAttempts
+                                   << "in" << delay << "ms";
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+                shouldReconnect = true;
+                continue;
+            }
+
+            emit disconnected(CloseCode::INTERNAL,
+                              QString("Failed to connect to gateway: ") + curl_easy_strerror(res));
+            return;
+        }
+
+        emit connected();
+
+        char chunk[8192];
+        size_t rlen;
+        const curl_ws_frame *meta;
+
+        bool closeSent = false;
+        while (running) {
+            if (shouldReconnect)
+                break;
+
             {
                 std::lock_guard lock(curlMutex);
-                curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
-            }
-            if (sockfd != CURL_SOCKET_BAD) {
-                timeval timeout{ 0, 10'000 };
-                fd_set readfds;
-                FD_ZERO(&readfds);
-                FD_SET(sockfd, &readfds);
-                select(sockfd + 1, &readfds, nullptr, nullptr, &timeout);
-            }
 
-            continue;
-        }
+                if (wantToClose) {
+                    if (!closeSent) {
+                        closeSent = true;
+                        uint8_t close_payload[2] = { 0x03, 0xE8 };
+                        size_t bytesSent = 0;
+                        curl_ws_send(curl, close_payload, sizeof(close_payload), &bytesSent, 0,
+                                     CURLWS_CLOSE);
+                    }
 
-        if (meta->flags & CURLWS_CLOSE) {
-            int closeCode = 1000;
-            QString closeReason;
-
-            if (rlen >= 2) {
-                closeCode = (uint8_t(chunk[0]) << 8) | uint8_t(chunk[1]);
-                if (rlen > 2) {
-                    closeReason = QString::fromUtf8(chunk + 2, rlen - 2);
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - closeTime > closeTimeout) {
+                        running = false;
+                        qCDebug(LogDiscord) << "Gateway close timeout";
+                        break;
+                    }
                 }
+
+                res = curl_ws_recv(curl, chunk, sizeof(chunk), &rlen, &meta);
             }
 
-            qCInfo(LogDiscord) << "Connection closed with code" << closeCode
-                               << "reason:" << closeReason;
-            emit disconnected(static_cast<CloseCode>(closeCode), closeReason);
-            break;
+            if (res == CURLE_AGAIN || res == CURLE_GOT_NOTHING || !meta) {
+                curl_socket_t sockfd;
+                {
+                    std::lock_guard lock(curlMutex);
+                    curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
+                }
+                if (sockfd != CURL_SOCKET_BAD) {
+                    timeval timeout{ 0, 10'000 };
+                    fd_set readfds;
+                    FD_ZERO(&readfds);
+                    FD_SET(sockfd, &readfds);
+                    select(sockfd + 1, &readfds, nullptr, nullptr, &timeout);
+                }
+
+                if (shouldReconnect)
+                    break;
+
+                continue;
+            }
+
+            if (meta->flags & CURLWS_CLOSE) {
+                int closeCode = 1000;
+                QString closeReason;
+
+                if (rlen >= 2) {
+                    closeCode = (uint8_t(chunk[0]) << 8) | uint8_t(chunk[1]);
+                    if (rlen > 2)
+                        closeReason = QString::fromUtf8(chunk + 2, rlen - 2);
+                }
+
+                qCInfo(LogDiscord) << "Connection closed with code" << closeCode
+                                   << "reason:" << closeReason;
+                CloseCode cc = static_cast<CloseCode>(closeCode);
+                emit disconnected(cc, closeReason);
+                if (!isFatalCloseCode(cc) && canResume)
+                    shouldReconnect = true;
+                break;
+            }
+
+            if (meta->flags & (CURLWS_PING | CURLWS_PONG))
+                continue;
+
+            ingest->push(QByteArray(chunk, rlen));
         }
 
-        if (meta->flags & (CURLWS_PING | CURLWS_PONG))
-            continue;
+        // Clean up current connection
+        {
+            std::lock_guard lock(curlMutex);
+            curl_easy_cleanup(curl);
+            curl = nullptr;
+        }
 
-        ingest->push(QByteArray(chunk, rlen));
-    }
+        // If shouldReconnect was set (by RECONNECT/INVALID_SESSION opcode handlers
+        // or by zombie detection), prepare for reconnection
+        if (shouldReconnect && running && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            isResuming = canResume;
 
-    {
-        std::lock_guard lock(curlMutex);
+            // Join the heartbeat thread if it exited (e.g. zombie detection broke the loop)
+            // so handleHello can start a fresh one on reconnect
+            if (heartbeatThread.joinable()) {
+                heartbeatCv.notify_all();
+                heartbeatThread.join();
+            }
 
-        curl_easy_cleanup(curl);
-        curl = nullptr;
-    }
+            // Reset the IngestThread's zlib stream — the new connection starts a fresh
+            // zlib context, so the old stream state would corrupt decompression
+            ingest->reset();
+
+            int delay = 1000 + (std::rand() % 4000);
+            qCInfo(LogDiscord) << "Reconnecting in" << delay << "ms (attempt"
+                               << reconnectAttempts << ")";
+            emit reconnecting(reconnectAttempts, maxReconnectAttempts);
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+        }
+
+    } while (shouldReconnect && running && reconnectAttempts <= maxReconnectAttempts);
 }
 
 void Gateway::heartbeatLoop()
@@ -510,6 +601,13 @@ void Gateway::heartbeatLoop()
     qCDebug(LogDiscord) << "Heartbeat loop started, interval:" << heartbeatInterval;
 
     while (running) {
+        if (!heartbeatAckReceived) {
+            qCWarning(LogDiscord) << "No heartbeat ACK received — zombie connection detected";
+            shouldReconnect = true;
+            break;
+        }
+        heartbeatAckReceived = false;
+
         QoSHeartbeat heartbeat;
         heartbeat.seq = lastReceivedSequence;
         heartbeat.qos->ver = 27;
@@ -521,11 +619,42 @@ void Gateway::heartbeatLoop()
         {
             std::unique_lock lock(heartbeatMutex);
             bool stop = heartbeatCv.wait_for(lock, std::chrono::milliseconds(heartbeatInterval),
-                                             [this] { return !running; });
+                                             [this] { return !running || shouldReconnect.load(); });
 
             if (stop)
                 break;
         }
+    }
+}
+
+void Gateway::debugForceReconnect()
+{
+    qCInfo(LogDiscord) << "DEBUG: Forcing reconnect (simulating op 7 RECONNECT)";
+    shouldReconnect = true;
+}
+
+void Gateway::resume()
+{
+    qCInfo(LogDiscord) << "Sending RESUME";
+    Resume resumeMsg;
+    resumeMsg.token = token;
+    resumeMsg.sessionId = sessionId;
+    resumeMsg.seq = lastReceivedSequence.load();
+    sendPayload(resumeMsg.toJson());
+}
+
+bool Gateway::isFatalCloseCode(CloseCode code) const
+{
+    switch (code) {
+    case CloseCode::AUTHENTICATION_FAILED:
+    case CloseCode::INVALID_SHARD:
+    case CloseCode::SHARDING_REQUIRED:
+    case CloseCode::INVALID_API_VERSION:
+    case CloseCode::INVALID_INTENTS:
+    case CloseCode::DISALLOWED_INTENTS:
+        return true;
+    default:
+        return false;
     }
 }
 

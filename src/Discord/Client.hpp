@@ -51,6 +51,11 @@ public:
     // void fetchAround(Snowflake channelId, Snowflake targetId, int limit = 50);
 
     void sendMessage(Snowflake channelId, const QString &content, const QString &nonce);
+    void editMessage(Snowflake channelId, Snowflake messageId, const QString &content);
+    void deleteMessage(Snowflake channelId, Snowflake messageId);
+    void pinMessage(Snowflake channelId, Snowflake messageId);
+    void unpinMessage(Snowflake channelId, Snowflake messageId);
+
     struct AckEntry
     {
         Snowflake channelId;
@@ -60,6 +65,8 @@ public:
 
     void ackMessage(Snowflake channelId, Snowflake messageId, int flags, int lastViewed);
     void ackBulk(const QList<AckEntry> &entries);
+
+    void debugForceReconnect();
 
     void ensureSubscriptionByGuild(Snowflake guildId);
     void ensureSubscriptionByChannel(Snowflake channelId);
@@ -88,6 +95,7 @@ signals:
     void userGuildSettingsUpdated(const UserGuildSettings &settings);
     void messageSendFailed(const QString &nonce, const QString &error);
 
+    void reconnecting(int attempt, int maxAttempts);
     void errorOccurred(const QString &errorStr);
 
 private slots:

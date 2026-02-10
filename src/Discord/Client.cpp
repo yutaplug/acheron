@@ -40,6 +40,10 @@ Client::Client(const QString &token, const QString &gatewayUrl, const QString &b
     connect(gateway, &Gateway::gatewayMessageAck, this, &Client::messageAcked);
     connect(gateway, &Gateway::gatewayUserGuildSettingsUpdate, this,
             &Client::userGuildSettingsUpdated);
+    connect(gateway, &Gateway::reconnecting, this, [this](int attempt, int maxAttempts) {
+        setState(Core::ConnectionState::Connecting);
+        emit reconnecting(attempt, maxAttempts);
+    });
 }
 
 void Client::start()
@@ -116,15 +120,23 @@ void Client::onDisconnected(CloseCode code, const QString &reason)
 {
     qWarning() << "Disconnected from gateway: " << code << reason;
 
-    setState(Core::ConnectionState::Disconnected);
-
-    if (code == CloseCode::AUTHENTICATION_FAILED) {
-        emit errorOccurred("Invalid token");
-        return;
-    } else {
-        emit errorOccurred("Disconnected from gateway");
+    // Fatal close codes — no reconnection, transition straight to Disconnected
+    if (code == CloseCode::AUTHENTICATION_FAILED ||
+        code == CloseCode::INVALID_SHARD ||
+        code == CloseCode::SHARDING_REQUIRED ||
+        code == CloseCode::INVALID_API_VERSION ||
+        code == CloseCode::INVALID_INTENTS ||
+        code == CloseCode::DISALLOWED_INTENTS) {
+        setState(Core::ConnectionState::Disconnected);
+        if (code == CloseCode::AUTHENTICATION_FAILED)
+            emit errorOccurred("Invalid token");
+        else
+            emit errorOccurred("Fatal gateway error: " + reason);
         return;
     }
+
+    // Non-fatal: Gateway will handle reconnection automatically
+    // stateChanged(Connecting) is emitted via the reconnecting signal
 }
 
 void Client::onGatewayReady(const Ready &data)
@@ -215,6 +227,70 @@ void Client::sendMessage(Snowflake channelId, const QString &content, const QStr
 
         qCInfo(LogDiscord) << "Message sent successfully to channel" << channelId;
     });
+}
+
+void Client::editMessage(Snowflake channelId, Snowflake messageId, const QString &content)
+{
+    QString endpoint = "/channels/" + QString::number(channelId) + "/messages/" +
+                       QString::number(messageId);
+
+    QJsonObject payload;
+    payload["content"] = content;
+
+    httpClient->patch(endpoint, payload, [this, channelId, messageId](const HttpResponse &response) {
+        if (!response.success)
+            qCWarning(LogDiscord) << "Failed to edit message" << messageId << "in channel"
+                                  << channelId << ":" << response.error;
+        else
+            qCInfo(LogDiscord) << "Message" << messageId << "edited in channel" << channelId;
+    });
+}
+
+void Client::deleteMessage(Snowflake channelId, Snowflake messageId)
+{
+    QString endpoint = "/channels/" + QString::number(channelId) + "/messages/" +
+                       QString::number(messageId);
+
+    httpClient->delete_(endpoint, [this, channelId, messageId](const HttpResponse &response) {
+        if (!response.success)
+            qCWarning(LogDiscord) << "Failed to delete message" << messageId << "in channel"
+                                  << channelId << ":" << response.error;
+        else
+            qCInfo(LogDiscord) << "Message" << messageId << "deleted from channel" << channelId;
+    });
+}
+
+void Client::pinMessage(Snowflake channelId, Snowflake messageId)
+{
+    QString endpoint = "/channels/" + QString::number(channelId) + "/pins/" +
+                       QString::number(messageId);
+
+    httpClient->put(endpoint, QJsonObject{}, [this, channelId, messageId](const HttpResponse &response) {
+        if (!response.success)
+            qCWarning(LogDiscord) << "Failed to pin message" << messageId << "in channel"
+                                  << channelId << ":" << response.error;
+        else
+            qCInfo(LogDiscord) << "Message" << messageId << "pinned in channel" << channelId;
+    });
+}
+
+void Client::unpinMessage(Snowflake channelId, Snowflake messageId)
+{
+    QString endpoint = "/channels/" + QString::number(channelId) + "/pins/" +
+                       QString::number(messageId);
+
+    httpClient->delete_(endpoint, [this, channelId, messageId](const HttpResponse &response) {
+        if (!response.success)
+            qCWarning(LogDiscord) << "Failed to unpin message" << messageId << "in channel"
+                                  << channelId << ":" << response.error;
+        else
+            qCInfo(LogDiscord) << "Message" << messageId << "unpinned from channel" << channelId;
+    });
+}
+
+void Client::debugForceReconnect()
+{
+    gateway->debugForceReconnect();
 }
 
 void Client::ackMessage(Snowflake channelId, Snowflake messageId, int flags, int lastViewed)

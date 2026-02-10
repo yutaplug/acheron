@@ -448,6 +448,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
             return QColor();
         return roleColorResolver(msg.author->id.get(), currentGuildId);
     }
+    case MessageIdRole:
+        return msg.id;
     default:
         return {};
     }

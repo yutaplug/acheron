@@ -44,24 +44,48 @@ void IngestThread::push(const QByteArray &data)
 {
     {
         std::lock_guard lock(mutex);
-        queue.push_back(data);
+        queue.push_back({ data, generation.load() });
     }
 
     cv.notify_one();
 }
 
+void IngestThread::reset()
+{
+    // Only touch queue (mutex-protected) and atomic generation.
+    // Do NOT touch zlib state — that's owned by the worker thread.
+    std::lock_guard lock(mutex);
+    generation++;
+    queue.clear();
+}
+
 void IngestThread::threadLoop()
 {
+    uint64_t activeGeneration = generation.load();
+
     while (true) {
         QByteArray data;
+        uint64_t dataGen;
         {
             std::unique_lock lock(mutex);
             cv.wait(lock, [this] { return !queue.empty() || !running; });
             if (!running)
                 break;
 
-            data = queue.front();
+            data = queue.front().data;
+            dataGen = queue.front().generation;
             queue.pop_front();
+        }
+
+        // Generation changed — reset zlib state on the worker thread (safe, no race)
+        if (dataGen != activeGeneration) {
+            if (streamActive) {
+                inflateEnd(&stream);
+                streamActive = false;
+            }
+            memset(&stream, 0, sizeof(stream));
+            decompressedBuffer.clear();
+            activeGeneration = dataGen;
         }
 
         if (data.isEmpty())

@@ -121,6 +121,7 @@ public:
         IsPendingRole,
         IsErroredRole,
         UsernameColorRole,
+        MessageIdRole,
     };
 
     using AvatarUrlResolver = std::function<QUrl(const Discord::User &)>;

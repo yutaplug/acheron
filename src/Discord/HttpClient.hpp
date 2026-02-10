@@ -17,6 +17,13 @@ struct HttpResponse
     bool success = false;
 };
 
+struct FileUpload
+{
+    QString filename;
+    QByteArray data;
+    QString mimeType;
+};
+
 using HttpCallback = std::function<void(const HttpResponse &)>;
 
 class HttpClient : public QObject
@@ -28,6 +35,12 @@ public:
 
     void get(const QString &endpoint, const QUrlQuery &query, HttpCallback callback);
     void post(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
+    void patch(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
+    void put(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
+    void delete_(const QString &endpoint, HttpCallback callback);
+    void delete_(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
+    void postMultipart(const QString &endpoint, const QJsonObject &jsonPayload,
+                       const QList<FileUpload> &files, HttpCallback callback);
 
 private:
     enum class Method {
@@ -44,6 +57,8 @@ private:
 
     void executeRequest(Method method, const QString &endpoint, const QByteArray &data,
                         HttpCallback callback);
+    void executeMultipartRequest(const QString &url, const QByteArray &jsonData,
+                                 const QList<FileUpload> &files, HttpCallback callback);
 
     CURLSH *share;
     static inline std::array<std::mutex, 3> shareMutexes;

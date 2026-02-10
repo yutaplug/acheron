@@ -2,7 +2,10 @@
 
 #include <QWidget>
 #include <QLabel>
-#include "ElidedLabel.hpp"
+#include <QColor>
+#include <functional>
+#include "Core/Snowflake.hpp"
+#include "Core/TypingTracker.hpp"
 
 namespace Acheron {
 namespace UI {
@@ -13,12 +16,17 @@ class TypingIndicator : public QWidget
 public:
     explicit TypingIndicator(QWidget *parent = nullptr);
 
-    void setTypers(const QStringList &names);
+    using RoleColorResolver = std::function<QColor(Core::Snowflake userId, Core::Snowflake guildId)>;
+    void setRoleColorResolver(RoleColorResolver resolver);
+
+    void setTypers(const QList<Core::TyperInfo> &typers);
 
 private:
-    ElidedLabel *label;
+    QLabel *label;
+    RoleColorResolver roleColorResolver;
 
-    QString formatText(const QStringList &names);
+    QString formatText(const QList<Core::TyperInfo> &typers);
+    QString coloredName(const Core::TyperInfo &typer);
 };
 
 } // namespace UI

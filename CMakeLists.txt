@@ -44,6 +44,7 @@ set(PROJECT_SOURCES
     src/Core/Markdown/Parser.cpp
     src/UI/MainWindow.cpp
     src/UI/TypingIndicator.cpp
+    src/UI/ConnectionBanner.cpp
     src/UI/ElidedLabel.cpp
     src/UI/ImageViewer.cpp
     src/UI/Accounts/AccountsWindow.cpp

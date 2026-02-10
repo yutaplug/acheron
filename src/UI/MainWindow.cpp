@@ -17,6 +17,8 @@
 #include "Core/ReadStateManager.hpp"
 #include "Discord/Events.hpp"
 #include "TypingIndicator.hpp"
+#include "ConnectionBanner.hpp"
+#include "Dialogs/ConfirmPopup.hpp"
 
 using namespace Acheron::Core;
 
@@ -49,50 +51,19 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
                                                                 : std::nullopt);
     });
 
-    chatModel->setRoleColorResolver([this](Snowflake userId, Snowflake guildId) -> QColor {
-        if (!currentInstance || guildId == Snowflake::Invalid)
-            return QColor();
-
-        if (cachedGuildId == guildId && userColorCache.contains(userId))
-            return userColorCache.value(userId);
-
-        if (!guildRolesCache.contains(guildId))
-            guildRolesCache[guildId] = currentInstance->getRolesForGuild(guildId);
-
-        const auto &roles = guildRolesCache[guildId];
-
-        Discord::Member *member = currentInstance->users()->getMember(guildId, userId);
-        if (!member || !member->roles.hasValue())
-            return QColor();
-
-        int highestPos = -1;
-        int colorValue = 0;
-        for (const auto &roleId : member->roles.get()) {
-            for (const auto &role : roles) {
-                if (role.id == roleId && role.color.hasValue() && role.color.get() != 0) {
-                    if (role.position.get() > highestPos) {
-                        highestPos = role.position.get();
-                        colorValue = role.color.get();
-                    }
-                }
-            }
-        }
-
-        QColor result = colorValue != 0 ? QColor::fromRgb(colorValue) : QColor();
-
-        if (cachedGuildId == guildId)
-            userColorCache[userId] = result;
-
-        return result;
-    });
+    chatModel->setRoleColorResolver(
+            [this](Snowflake userId, Snowflake guildId) { return resolveRoleColor(userId, guildId); });
 
     typingTracker = new TypingTracker(this);
 
     setupUi();
     setupMenu();
 
+    typingIndicator->setRoleColorResolver(
+            [this](Snowflake userId, Snowflake guildId) { return resolveRoleColor(userId, guildId); });
+
     connect(typingTracker, &TypingTracker::typersChanged, this,
-            [this]() { typingIndicator->setTypers(typingTracker->getActiveTyperNames()); });
+            [this]() { typingIndicator->setTypers(typingTracker->getActiveTypers()); });
 
     connect(session, &Session::ready, this, [this](const Discord::Ready &ready) {
         channelTreeModel->populateFromReady(ready);
@@ -182,11 +153,19 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     if (node->type == ChannelNode::Type::DMChannel) {
         messageInput->setEnabled(true);
         messageInput->setPlaceholder("Message @" + node->name);
+        chatView->setCanPinMessages(true);
+        chatView->setCanManageMessages(false);
     } else {
         bool canSend = selectedInstance->permissions()->hasChannelPermission(
                 userId, channelId, Discord::Permission::SEND_MESSAGES);
+        bool canPin = selectedInstance->permissions()->hasChannelPermission(
+                userId, channelId, Discord::Permission::PIN_MESSAGES);
+        bool canManage = selectedInstance->permissions()->hasChannelPermission(
+                userId, channelId, Discord::Permission::MANAGE_MESSAGES);
 
         messageInput->setEnabled(canSend);
+        chatView->setCanPinMessages(canPin);
+        chatView->setCanManageMessages(canManage);
 
         if (canSend)
             messageInput->setPlaceholder("Message #" + node->name);
@@ -232,6 +211,8 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
 
     currentInstance = newInstance;
     auto *msgs = currentInstance->messages();
+
+    chatView->setCurrentUserId(currentInstance->accountId());
 
     typingTracker->clear();
     typingTracker->setUserManager(currentInstance->users());
@@ -350,6 +331,17 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
             [this, instance](Core::Snowflake guildId) {
                 channelTreeModel->updateGuildSettings(guildId, instance->accountId());
             });
+
+    connect(instance, &Core::ClientInstance::reconnecting, this,
+            [this](int attempt, int maxAttempts) {
+                connectionBanner->showReconnecting(attempt, maxAttempts);
+            });
+
+    connect(instance, &Core::ClientInstance::stateChanged, this,
+            [this](Core::ConnectionState state) {
+                if (state == Core::ConnectionState::Connected)
+                    connectionBanner->hide();
+            });
 }
 
 void MainWindow::setupUi()
@@ -364,10 +356,12 @@ void MainWindow::setupUi()
     rightLayout->setContentsMargins(0, 0, 0, 0);
     rightLayout->setSpacing(0);
 
+    connectionBanner = new ConnectionBanner(rightSideWidget);
     chatView = new ChatView(rightSideWidget);
     messageInput = new MessageInput(rightSideWidget);
     typingIndicator = new TypingIndicator(rightSideWidget);
 
+    rightLayout->addWidget(connectionBanner, 0);
     rightLayout->addWidget(chatView, 1);
     rightLayout->addWidget(typingIndicator, 0);
     rightLayout->addWidget(messageInput, 0);
@@ -447,6 +441,47 @@ void MainWindow::setupUi()
                                                             oldestId);
     });
 
+    connect(chatView, &ChatView::deleteMessageRequested, this,
+            [this](Snowflake channelId, Snowflake messageId) {
+                if (!currentInstance)
+                    return;
+
+                if (QApplication::keyboardModifiers() & Qt::ShiftModifier) {
+                    currentInstance->discord()->deleteMessage(channelId, messageId);
+                    return;
+                }
+
+                ConfirmPopup dialog(tr("Delete Message"),
+                                    tr("Are you sure you want to delete this message?"),
+                                    tr("Delete"), this);
+                if (dialog.exec() == QDialog::Accepted)
+                    currentInstance->discord()->deleteMessage(channelId, messageId);
+            });
+
+    connect(chatView, &ChatView::pinMessageRequested, this,
+            [this](Snowflake channelId, Snowflake messageId) {
+                if (currentInstance)
+                    currentInstance->discord()->pinMessage(channelId, messageId);
+            });
+
+    connect(chatView, &ChatView::editMessageRequested, this,
+            [this](Snowflake channelId, Snowflake messageId, const QString &content) {
+                if (currentInstance)
+                    currentInstance->discord()->editMessage(channelId, messageId, content);
+            });
+
+    connect(chatView, &ChatView::replyToMessageRequested, this,
+            [this](Snowflake channelId, Snowflake messageId) {
+                qCInfo(LogCore) << "Reply requested for message" << messageId
+                                << "- UI not yet implemented";
+            });
+
+    connect(chatView, &ChatView::addReactionRequested, this,
+            [this](Snowflake channelId, Snowflake messageId) {
+                qCInfo(LogCore) << "Add reaction requested for message" << messageId
+                                << "- UI not yet implemented";
+            });
+
     connect(channelTree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             &MainWindow::onChannelSelectionChanged);
 
@@ -462,6 +497,15 @@ void MainWindow::setupMenu()
     auto *accountsAction = new QAction(tr("&Accounts"), this);
     connect(accountsAction, &QAction::triggered, this, &MainWindow::openAccountsWindow);
     viewMenu->addAction(accountsAction);
+
+    // DEBUG: Ctrl+Shift+R to force a Gateway reconnect
+    auto *debugReconnect = new QAction(this);
+    debugReconnect->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
+    addAction(debugReconnect);
+    connect(debugReconnect, &QAction::triggered, this, [this]() {
+        if (currentInstance)
+            currentInstance->discord()->debugForceReconnect();
+    });
 }
 
 void MainWindow::openAccountsWindow()
@@ -510,13 +554,57 @@ void MainWindow::onChannelPermissionsChanged(Core::Snowflake channelId)
     Core::Snowflake userId = currentInstance->accountId();
     bool canSend = currentInstance->permissions()->hasChannelPermission(
             userId, channelId, Discord::Permission::SEND_MESSAGES);
+    bool canPin = currentInstance->permissions()->hasChannelPermission(
+            userId, channelId, Discord::Permission::PIN_MESSAGES);
+    bool canManage = currentInstance->permissions()->hasChannelPermission(
+            userId, channelId, Discord::Permission::MANAGE_MESSAGES);
 
     messageInput->setEnabled(canSend);
+    chatView->setCanPinMessages(canPin);
+    chatView->setCanManageMessages(canManage);
 
     if (canSend)
         messageInput->setPlaceholder("Message #" + node->name);
     else
         messageInput->setPlaceholder("You do not have permission to send messages");
+}
+
+QColor MainWindow::resolveRoleColor(Snowflake userId, Snowflake guildId)
+{
+    if (!currentInstance || guildId == Snowflake::Invalid)
+        return QColor();
+
+    if (cachedGuildId == guildId && userColorCache.contains(userId))
+        return userColorCache.value(userId);
+
+    if (!guildRolesCache.contains(guildId))
+        guildRolesCache[guildId] = currentInstance->getRolesForGuild(guildId);
+
+    const auto &roles = guildRolesCache[guildId];
+
+    Discord::Member *member = currentInstance->users()->getMember(guildId, userId);
+    if (!member || !member->roles.hasValue())
+        return QColor();
+
+    int highestPos = -1;
+    int colorValue = 0;
+    for (const auto &roleId : member->roles.get()) {
+        for (const auto &role : roles) {
+            if (role.id == roleId && role.color.hasValue() && role.color.get() != 0) {
+                if (role.position.get() > highestPos) {
+                    highestPos = role.position.get();
+                    colorValue = role.color.get();
+                }
+            }
+        }
+    }
+
+    QColor result = colorValue != 0 ? QColor::fromRgb(colorValue) : QColor();
+
+    if (cachedGuildId == guildId)
+        userColorCache[userId] = result;
+
+    return result;
 }
 
 } // namespace UI

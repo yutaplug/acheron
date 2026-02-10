@@ -19,6 +19,8 @@ struct Ready : Core::JsonUtils::JsonObject
     Field<QList<Channel>, true> privateChannels;
     Field<QList<ReadStateEntry>, true> readState;
     Field<QList<UserGuildSettings>, true> userGuildSettings;
+    Field<QString> sessionId;
+    Field<QString> resumeGatewayUrl;
 
     static Ready fromJson(const QJsonObject &obj)
     {
@@ -29,6 +31,8 @@ struct Ready : Core::JsonUtils::JsonObject
         get(obj, "merged_members", ready.mergedMembers);
         get(obj, "users", ready.users);
         get(obj, "private_channels", ready.privateChannels);
+        get(obj, "session_id", ready.sessionId);
+        get(obj, "resume_gateway_url", ready.resumeGatewayUrl);
 
         if (obj.contains("read_state")) {
             QJsonObject rsObj = obj["read_state"].toObject();

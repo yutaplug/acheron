@@ -17,8 +17,9 @@ TypingIndicator::TypingIndicator(QWidget *parent) : QWidget(parent)
     // movie->start();
     // layout->addWidget(dots);
 
-    label = new ElidedLabel(this);
-    label->setStyleSheet("color: #dbdee1; font-weight: bold; font-size: 12px;");
+    label = new QLabel(this);
+    label->setTextFormat(Qt::RichText);
+    label->setStyleSheet("font-weight: bold; font-size: 12px;");
     layout->addWidget(label);
 
     layout->addStretch();
@@ -27,34 +28,52 @@ TypingIndicator::TypingIndicator(QWidget *parent) : QWidget(parent)
     setAttribute(Qt::WA_TransparentForMouseEvents);
 }
 
-void TypingIndicator::setTypers(const QStringList &names)
+void TypingIndicator::setRoleColorResolver(RoleColorResolver resolver)
 {
-    if (names.isEmpty()) {
+    roleColorResolver = std::move(resolver);
+}
+
+void TypingIndicator::setTypers(const QList<Core::TyperInfo> &typers)
+{
+    if (typers.isEmpty()) {
         setVisible(false);
         return;
     }
 
-    label->setText(formatText(names));
+    label->setText(formatText(typers));
     setVisible(true);
 }
 
-QString TypingIndicator::formatText(const QStringList &names)
+QString TypingIndicator::coloredName(const Core::TyperInfo &typer)
 {
-    if (names.isEmpty())
-        return "";
+    QString escapedName = typer.name.toHtmlEscaped();
 
-    const int count = names.size();
+    if (roleColorResolver && typer.guildId.has_value()) {
+        QColor color = roleColorResolver(typer.userId, typer.guildId.value());
+        if (color.isValid())
+            return QStringLiteral("<span style=\"color: %1\">%2</span>").arg(color.name(), escapedName);
+    }
+
+    return escapedName;
+}
+
+QString TypingIndicator::formatText(const QList<Core::TyperInfo> &typers)
+{
+    if (typers.isEmpty())
+        return {};
+
+    const int count = typers.size();
 
     if (count == 1)
-        return tr("%1 is typing").arg(names[0]);
+        return coloredName(typers[0]) + QStringLiteral(" is typing");
 
     if (count == 2)
-        return tr("%1 and %2 are typing").arg(names[0], names[1]);
+        return coloredName(typers[0]) + QStringLiteral(" and ") + coloredName(typers[1]) + QStringLiteral(" are typing");
 
     if (count == 3)
-        return tr("%1, %2, and %3 are typing").arg(names[0], names[1], names[2]);
+        return coloredName(typers[0]) + QStringLiteral(", ") + coloredName(typers[1]) + QStringLiteral(", and ") + coloredName(typers[2]) + QStringLiteral(" are typing");
 
-    return tr("Several people are typing");
+    return QStringLiteral("Several people are typing");
 }
 
 } // namespace UI

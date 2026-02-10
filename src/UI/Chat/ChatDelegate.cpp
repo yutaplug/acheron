@@ -500,15 +500,20 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 QSize ChatDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     int viewportWidth = 400;
+    const ChatView *chatView = nullptr;
     if (option.widget) {
-        if (auto view = qobject_cast<const QAbstractItemView *>(option.widget))
+        if (auto view = qobject_cast<const QAbstractItemView *>(option.widget)) {
             viewportWidth = view->viewport()->width();
-        else
+            chatView = qobject_cast<const ChatView *>(view);
+        } else {
             viewportWidth = option.widget->width();
+        }
     }
 
+    bool isEditing = chatView && chatView->editingRow() == index.row();
+
     QSize cached = index.data(ChatModel::CachedSizeRole).toSize();
-    if (cached.isValid() && cached.width() == viewportWidth)
+    if (cached.isValid() && cached.width() == viewportWidth && !isEditing)
         return cached;
 
     ChatLayout::LayoutContext ctx = buildLayoutContext(option, index);
@@ -517,12 +522,18 @@ QSize ChatDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelInd
 
     ChatLayout::MessageLayout layout = ChatLayout::calculateMessageLayout(ctx);
 
-    QSize size(viewportWidth, layout.totalHeight);
+    int height = layout.totalHeight;
+    if (isEditing)
+        height = qMax(height, height + ChatView::InlineEditMinHeight);
 
-    auto model = const_cast<QAbstractItemModel *>(index.model());
-    const auto prevSize = index.data(ChatModel::CachedSizeRole).toSize();
-    if (size != prevSize)
-        model->setData(index, size, ChatModel::CachedSizeRole);
+    QSize size(viewportWidth, height);
+
+    if (!isEditing) {
+        auto model = const_cast<QAbstractItemModel *>(index.model());
+        const auto prevSize = index.data(ChatModel::CachedSizeRole).toSize();
+        if (size != prevSize)
+            model->setData(index, size, ChatModel::CachedSizeRole);
+    }
 
     return size;
 }
