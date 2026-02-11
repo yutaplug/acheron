@@ -55,8 +55,6 @@ void Gateway::start()
 
 void Gateway::stop()
 {
-    // running = false;
-
     wantToClose = true;
     closeTime = std::chrono::steady_clock::now();
 
@@ -551,7 +549,7 @@ void Gateway::networkLoop()
                                    << "reason:" << closeReason;
                 CloseCode cc = static_cast<CloseCode>(closeCode);
                 emit disconnected(cc, closeReason);
-                if (!isFatalCloseCode(cc) && canResume)
+                if (!wantToClose && !isFatalCloseCode(cc) && canResume)
                     shouldReconnect = true;
                 break;
             }
@@ -594,6 +592,12 @@ void Gateway::networkLoop()
         }
 
     } while (shouldReconnect && running && reconnectAttempts <= maxReconnectAttempts);
+
+    // Ensure heartbeat thread exits when the network loop is done
+    running = false;
+    heartbeatCv.notify_all();
+    if (heartbeatThread.joinable())
+        heartbeatThread.join();
 }
 
 void Gateway::heartbeatLoop()

@@ -135,6 +135,12 @@ void Client::onDisconnected(CloseCode code, const QString &reason)
         return;
     }
 
+    // User-initiated disconnect (via stop()) — transition to Disconnected
+    if (state == Core::ConnectionState::Disconnecting) {
+        setState(Core::ConnectionState::Disconnected);
+        return;
+    }
+
     // Non-fatal: Gateway will handle reconnection automatically
     // stateChanged(Connecting) is emitted via the reconnecting signal
 }
