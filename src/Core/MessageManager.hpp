@@ -36,7 +36,8 @@ public:
 
     void requestLoadChannel(Snowflake channelId);
     void requestLoadHistory(Snowflake channelId, Snowflake beforeId);
-    void sendMessage(Snowflake channelId, const QString &content);
+    void sendMessage(Snowflake channelId, const QString &content,
+                     Snowflake replyToMessageId = Snowflake::Invalid);
 
 signals:
     void messagesReceived(const MessageRequestResult &result);

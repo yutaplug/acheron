@@ -211,7 +211,8 @@ void Client::onGatewayGuildRoleDelete(const GuildRoleDelete &event)
     emit guildRoleDeleted(event);
 }
 
-void Client::sendMessage(Snowflake channelId, const QString &content, const QString &nonce)
+void Client::sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
+                         Snowflake replyToMessageId)
 {
     QString endpoint = "/channels/" + QString::number(channelId) + "/messages";
 
@@ -222,6 +223,13 @@ void Client::sendMessage(Snowflake channelId, const QString &content, const QStr
     payload["mobile_network_type"] = "unknown";
     payload["nonce"] = nonce;
     payload["tts"] = false;
+
+    if (replyToMessageId.isValid()) {
+        QJsonObject messageReference;
+        messageReference["message_id"] = QString::number(replyToMessageId);
+        messageReference["channel_id"] = QString::number(channelId);
+        payload["message_reference"] = messageReference;
+    }
 
     httpClient->post(endpoint, payload, [this, channelId, nonce](const HttpResponse &response) {
         if (!response.success) {

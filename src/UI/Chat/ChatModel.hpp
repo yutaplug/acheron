@@ -61,6 +61,23 @@ enum class EmbedType {
     Video,
 };
 
+struct ReplyData
+{
+    enum class State {
+        None, // not a reply
+        Present, // referenced message is available
+        Deleted, // referenced message was deleted
+        Unknown, // backend didn't fetch referenced message
+    };
+
+    State state = State::None;
+    Core::Snowflake referencedMessageId;
+    QString authorName;
+    QColor authorColor;
+    Core::Snowflake authorId;
+    QString contentSnippet;
+};
+
 struct EmbedData
 {
     EmbedType type = EmbedType::Rich; // should this be default idk
@@ -122,6 +139,7 @@ public:
         IsErroredRole,
         UsernameColorRole,
         MessageIdRole,
+        ReplyDataRole,
     };
 
     using AvatarUrlResolver = std::function<QUrl(const Discord::User &)>;
@@ -181,6 +199,7 @@ private:
 } // namespace UI
 } // namespace Acheron
 
+Q_DECLARE_METATYPE(Acheron::ReplyData)
 Q_DECLARE_METATYPE(Acheron::AttachmentData)
 Q_DECLARE_METATYPE(QList<Acheron::AttachmentData>)
 Q_DECLARE_METATYPE(Acheron::EmbedFieldData)

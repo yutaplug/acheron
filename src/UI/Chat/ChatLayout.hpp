@@ -60,6 +60,14 @@ constexpr int maxAttachmentWidth() noexcept
 {
     return 400;
 }
+constexpr int replyBarHeight() noexcept
+{
+    return 18;
+}
+constexpr int replyBarSpacing() noexcept
+{
+    return 4;
+}
 
 struct AttachmentGridCell
 {
@@ -120,12 +128,14 @@ struct MessageLayout
 {
     QRect rowRect;
     QRect separatorRect;
+    QRect replyRect;
     QRect avatarRect;
     QRect headerRect;
     QRect textRect;
 
     bool showHeader;
     bool hasSeparator;
+    bool hasReply = false;
 
     int textHeight;
 
@@ -154,6 +164,7 @@ struct LayoutContext
     QString htmlContent;
     QList<AttachmentData> attachments;
     QList<EmbedData> embeds;
+    ReplyData replyData;
 };
 
 MessageLayout calculateMessageLayout(const LayoutContext &ctx);

@@ -258,7 +258,8 @@ void MessageManager::onMessageSendFailed(const QString &nonce, const QString &er
     emit messageErrored(nonce);
 }
 
-void MessageManager::sendMessage(Snowflake channelId, const QString &content)
+void MessageManager::sendMessage(Snowflake channelId, const QString &content,
+                                 Snowflake replyToMessageId)
 {
     Snowflake nonceId = Snowflake::generateNonce();
     QString nonce = QString::number(nonceId);
@@ -270,9 +271,18 @@ void MessageManager::sendMessage(Snowflake channelId, const QString &content)
     preview.content = content;
     preview.timestamp = QDateTime::currentDateTimeUtc();
     preview.author = client->getMe();
-    preview.type = Discord::MessageType::DEFAULT;
     preview.flags = Discord::MessageFlags(0);
     preview.isPendingOutbound = true;
+
+    if (replyToMessageId.isValid()) {
+        preview.type = Discord::MessageType::REPLY;
+        Discord::MessageReference ref;
+        ref.messageId = replyToMessageId;
+        ref.channelId = channelId;
+        preview.messageReference = ref;
+    } else {
+        preview.type = Discord::MessageType::DEFAULT;
+    }
 
     Markdown::ParseState state;
     state.isInline = true;
@@ -283,7 +293,7 @@ void MessageManager::sendMessage(Snowflake channelId, const QString &content)
     emit messagesReceived(
             { true, Discord::Client::MessageLoadType::Created, channelId, { preview } });
 
-    client->sendMessage(channelId, content, nonce);
+    client->sendMessage(channelId, content, nonce, replyToMessageId);
 }
 
 void MessageManager::onApiMessagesReceived(const QList<Discord::Message> &messages,

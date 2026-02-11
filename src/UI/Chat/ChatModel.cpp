@@ -186,6 +186,10 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         return {};
     }
     case ShowHeaderRole: {
+        // replies always show a header
+        if (msg.type == Discord::MessageType::REPLY)
+            return true;
+
         if (index.row() == 0)
             return true;
 
@@ -450,6 +454,46 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     }
     case MessageIdRole:
         return msg.id;
+    case ReplyDataRole: {
+        ReplyData reply;
+
+        if (msg.type != Discord::MessageType::REPLY) {
+            reply.state = ReplyData::State::None;
+            return QVariant::fromValue(reply);
+        }
+
+        if (!msg.referencedMessage) {
+            if (msg.referencedMessageNull) {
+                reply.state = ReplyData::State::Deleted;
+            } else {
+                reply.state = ReplyData::State::Unknown;
+            }
+            if (msg.messageReference.hasValue() && msg.messageReference->messageId.hasValue())
+                reply.referencedMessageId = *msg.messageReference->messageId;
+            return QVariant::fromValue(reply);
+        }
+
+        const auto &ref = msg.referencedMessage;
+        reply.state = ReplyData::State::Present;
+        reply.referencedMessageId = ref->id;
+        reply.authorId = ref->author->id;
+        reply.contentSnippet = ref->content;
+
+        if (roleColorResolver && currentGuildId != Snowflake::Invalid)
+            reply.authorColor = roleColorResolver(ref->author->id.get(), currentGuildId);
+
+        // resolve display name via the same resolver used for messages
+        if (displayNameResolver) {
+            QString name = displayNameResolver(ref->author->id.get(), currentGuildId);
+            if (!name.isEmpty()) {
+                reply.authorName = name;
+                return QVariant::fromValue(reply);
+            }
+        }
+        reply.authorName = ref->author->getDisplayName();
+
+        return QVariant::fromValue(reply);
+    }
     default:
         return {};
     }

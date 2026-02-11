@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QSqlDatabase>
+#include <QSqlQuery>
 
 #include "BaseRepository.hpp"
 #include "Core/Snowflake.hpp"
@@ -26,6 +27,7 @@ public:
 
 private:
     void loadAttachmentsForMessages(QList<Discord::Message> &messages, QSqlDatabase &db);
+    Discord::Message readMessageFromQuery(const QSqlQuery &q);
 
     UserRepository userRepository;
 };

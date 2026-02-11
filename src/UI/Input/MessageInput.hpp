@@ -2,6 +2,11 @@
 
 #include <QWidget>
 #include <QTextEdit>
+#include <QLabel>
+
+#include "Core/Snowflake.hpp"
+
+class QToolButton;
 
 namespace Acheron {
 namespace UI {
@@ -16,6 +21,7 @@ protected:
     void keyPressEvent(QKeyEvent *e) override;
 signals:
     void returnPressed();
+    void escapePressed();
 };
 
 class MessageInput : public QWidget
@@ -26,6 +32,11 @@ public:
     void clear();
     void setPlaceholder(const QString &name);
 
+    void setReplyTarget(Core::Snowflake messageId, const QString &authorName,
+                        const QString &contentSnippet);
+    void clearReplyTarget();
+    [[nodiscard]] Core::Snowflake replyTargetMessageId() const { return replyMessageId; }
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
 
@@ -34,6 +45,12 @@ signals:
 
 private:
     ChatTextEdit *textEdit;
+    QWidget *replyBar;
+    QLabel *replyLabel;
+    QToolButton *replyCancelButton;
+
+    Core::Snowflake replyMessageId;
+
     void adjustHeight();
 };
 

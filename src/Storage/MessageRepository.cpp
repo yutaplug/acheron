@@ -30,8 +30,10 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
     QSqlQuery qMsg(db);
     qMsg.prepare(R"(
         INSERT OR REPLACE INTO messages
-		(id, channel_id, author_id, content, timestamp, edited_timestamp, type, flags, embeds, deleted)
-		VALUES (:id, :channel_id, :author_id, :content, :timestamp, :edited_timestamp, :type, :flags, :embeds, 0)
+		(id, channel_id, author_id, content, timestamp, edited_timestamp, type, flags, embeds, deleted,
+		 referenced_message_id)
+		VALUES (:id, :channel_id, :author_id, :content, :timestamp, :edited_timestamp, :type, :flags, :embeds, 0,
+		        :ref_msg_id)
     )");
 
     QSqlQuery qAtt(db);
@@ -40,6 +42,9 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
         (id, message_id, filename, content_type, size, url, proxy_url, width, height)
         VALUES (:id, :message_id, :filename, :content_type, :size, :url, :proxy_url, :width, :height)
     )");
+
+    // Collect referenced messages to save as their own rows
+    QList<Discord::Message> referencedMessages;
 
     for (const auto &message : messages) {
         qMsg.bindValue(":id", static_cast<qint64>(message.id.get()));
@@ -51,6 +56,15 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
         qMsg.bindValue(":type", static_cast<qint64>(message.type.get()));
         qMsg.bindValue(":flags", static_cast<qint64>(message.flags.get()));
         qMsg.bindValue(":embeds", message.embedsJson.isEmpty() ? QVariant() : message.embedsJson);
+
+        if (message.referencedMessage) {
+            qMsg.bindValue(":ref_msg_id", static_cast<qint64>(message.referencedMessage->id.get()));
+            referencedMessages.append(*message.referencedMessage);
+        } else if (message.messageReference.hasValue() && message.messageReference->messageId.hasValue()) {
+            qMsg.bindValue(":ref_msg_id", static_cast<qint64>(message.messageReference->messageId.get()));
+        } else {
+            qMsg.bindValue(":ref_msg_id", QVariant());
+        }
 
         if (!qMsg.exec()) {
             qCWarning(LogDB) << "MessageRepository: Save messages failed:"
@@ -80,6 +94,36 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
         }
     }
 
+    // Save referenced messages as their own rows (INSERT OR IGNORE to not overwrite
+    // a potentially more complete version already in the DB)
+    if (!referencedMessages.isEmpty()) {
+        QSqlQuery qRef(db);
+        qRef.prepare(R"(
+            INSERT OR IGNORE INTO messages
+            (id, channel_id, author_id, content, timestamp, edited_timestamp, type, flags, embeds, deleted)
+            VALUES (:id, :channel_id, :author_id, :content, :timestamp, :edited_timestamp, :type, :flags, :embeds, 0)
+        )");
+
+        for (const auto &ref : referencedMessages) {
+            qRef.bindValue(":id", static_cast<qint64>(ref.id.get()));
+            qRef.bindValue(":channel_id", static_cast<qint64>(ref.channelId.get()));
+            qRef.bindValue(":author_id", static_cast<qint64>(ref.author->id.get()));
+            qRef.bindValue(":content", ref.content);
+            qRef.bindValue(":timestamp", ref.timestamp);
+            qRef.bindValue(":edited_timestamp", ref.editedTimestamp);
+            qRef.bindValue(":type", static_cast<qint64>(ref.type.get()));
+            qRef.bindValue(":flags", static_cast<qint64>(ref.flags.get()));
+            qRef.bindValue(":embeds", ref.embedsJson.isEmpty() ? QVariant() : ref.embedsJson);
+
+            if (!qRef.exec()) {
+                qCWarning(LogDB) << "MessageRepository: Save referenced message failed:"
+                                 << qRef.lastError().text();
+            }
+
+            userRepository.saveUser(ref.author.get(), db);
+        }
+    }
+
     db.commit();
 }
 
@@ -103,12 +147,16 @@ QList<Discord::Message> MessageRepository::getLatestMessages(Core::Snowflake cha
     QList<Discord::Message> messages;
     QSqlQuery q(db);
     q.prepare(R"(
-		SELECT m.id, channel_id, author_id, content, timestamp, edited_timestamp, type, flags, embeds,
-               u.id, u.username, u.global_name, u.avatar, u.bot
+		SELECT m.id, m.channel_id, m.author_id, m.content, m.timestamp, m.edited_timestamp, m.type, m.flags, m.embeds,
+               u.id, u.username, u.global_name, u.avatar, u.bot,
+               m.referenced_message_id,
+               rm.id, rm.channel_id, rm.author_id, rm.content, rm.timestamp, rm.edited_timestamp, rm.type, rm.flags, rm.embeds,
+               ru.id, ru.username, ru.global_name, ru.avatar, ru.bot
 		FROM messages m
-        INNER JOIN users u
-		ON m.author_id = u.id
-		WHERE channel_id = :channel_id AND m.deleted = 0
+        INNER JOIN users u ON m.author_id = u.id
+        LEFT JOIN messages rm ON m.referenced_message_id = rm.id
+        LEFT JOIN users ru ON rm.author_id = ru.id
+		WHERE m.channel_id = :channel_id AND m.deleted = 0
 		ORDER BY m.id DESC
         LIMIT :limit
     )");
@@ -122,33 +170,7 @@ QList<Discord::Message> MessageRepository::getLatestMessages(Core::Snowflake cha
     }
 
     while (q.next()) {
-        Discord::Message message;
-        message.id = static_cast<Core::Snowflake>(q.value(0).toLongLong());
-        message.channelId = static_cast<Core::Snowflake>(q.value(1).toLongLong());
-        message.content = q.value(3).toString();
-        message.timestamp = q.value(4).toDateTime();
-        message.editedTimestamp = q.value(5).toDateTime();
-        message.type = static_cast<Discord::MessageType>(q.value(6).toLongLong());
-        message.flags = static_cast<Discord::MessageFlags>(q.value(7).toLongLong());
-
-        QString embedsJson = q.value(8).toString();
-        if (!embedsJson.isEmpty()) {
-            message.embedsJson = embedsJson;
-            QJsonDocument doc = QJsonDocument::fromJson(embedsJson.toUtf8());
-            if (doc.isArray()) {
-                QList<Discord::Embed> embedList;
-                for (const QJsonValue &val : doc.array())
-                    embedList.append(Discord::Embed::fromJson(val.toObject()));
-                message.embeds = embedList;
-            }
-        }
-
-        message.author->id = static_cast<Core::Snowflake>(q.value(9).toLongLong());
-        message.author->username = q.value(10).toString();
-        message.author->globalName = q.value(11).toString();
-        message.author->avatar = q.value(12).toString();
-        message.author->bot = q.value(13).toBool();
-
+        Discord::Message message = readMessageFromQuery(q);
         messages.append(message);
     }
 
@@ -165,12 +187,16 @@ QList<Discord::Message> MessageRepository::getMessagesBefore(Core::Snowflake cha
     QList<Discord::Message> messages;
     QSqlQuery q(db);
     q.prepare(R"(
-		SELECT m.id, channel_id, author_id, content, timestamp, edited_timestamp, type, flags, embeds,
-			   u.id, u.username, u.global_name, u.avatar, u.bot
+		SELECT m.id, m.channel_id, m.author_id, m.content, m.timestamp, m.edited_timestamp, m.type, m.flags, m.embeds,
+			   u.id, u.username, u.global_name, u.avatar, u.bot,
+			   m.referenced_message_id,
+			   rm.id, rm.channel_id, rm.author_id, rm.content, rm.timestamp, rm.edited_timestamp, rm.type, rm.flags, rm.embeds,
+			   ru.id, ru.username, ru.global_name, ru.avatar, ru.bot
 		FROM messages m
-		INNER JOIN users u
-		ON m.author_id = u.id
-		WHERE channel_id = :channel_id AND m.id < :before_id AND m.deleted = 0
+		INNER JOIN users u ON m.author_id = u.id
+		LEFT JOIN messages rm ON m.referenced_message_id = rm.id
+		LEFT JOIN users ru ON rm.author_id = ru.id
+		WHERE m.channel_id = :channel_id AND m.id < :before_id AND m.deleted = 0
 		ORDER BY m.id DESC
 		LIMIT :limit
 	)");
@@ -185,39 +211,93 @@ QList<Discord::Message> MessageRepository::getMessagesBefore(Core::Snowflake cha
     }
 
     while (q.next()) {
-        Discord::Message message;
-        message.id = static_cast<Core::Snowflake>(q.value(0).toLongLong());
-        message.channelId = static_cast<Core::Snowflake>(q.value(1).toLongLong());
-        message.content = q.value(3).toString();
-        message.timestamp = q.value(4).toDateTime();
-        message.editedTimestamp = q.value(5).toDateTime();
-        message.type = static_cast<Discord::MessageType>(q.value(6).toLongLong());
-        message.flags = static_cast<Discord::MessageFlags>(q.value(7).toLongLong());
-
-        QString embedsJson = q.value(8).toString();
-        if (!embedsJson.isEmpty()) {
-            message.embedsJson = embedsJson;
-            QJsonDocument doc = QJsonDocument::fromJson(embedsJson.toUtf8());
-            if (doc.isArray()) {
-                QList<Discord::Embed> embedList;
-                for (const QJsonValue &val : doc.array())
-                    embedList.append(Discord::Embed::fromJson(val.toObject()));
-                message.embeds = embedList;
-            }
-        }
-
-        message.author->id = static_cast<Core::Snowflake>(q.value(9).toLongLong());
-        message.author->username = q.value(10).toString();
-        message.author->globalName = q.value(11).toString();
-        message.author->avatar = q.value(12).toString();
-        message.author->bot = q.value(13).toBool();
-
+        Discord::Message message = readMessageFromQuery(q);
         messages.append(message);
     }
 
     loadAttachmentsForMessages(messages, db);
 
     return messages;
+}
+
+Discord::Message MessageRepository::readMessageFromQuery(const QSqlQuery &q)
+{
+    // Columns 0-8: m.id, m.channel_id, m.author_id, m.content, m.timestamp, m.edited_timestamp, m.type, m.flags, m.embeds
+    // Columns 9-13: u.id, u.username, u.global_name, u.avatar, u.bot
+    // Column 14: m.referenced_message_id
+    // Columns 15-23: rm.id, rm.channel_id, rm.author_id, rm.content, rm.timestamp, rm.edited_timestamp, rm.type, rm.flags, rm.embeds
+    // Columns 24-28: ru.id, ru.username, ru.global_name, ru.avatar, ru.bot
+
+    Discord::Message message;
+    message.id = static_cast<Core::Snowflake>(q.value(0).toLongLong());
+    message.channelId = static_cast<Core::Snowflake>(q.value(1).toLongLong());
+    message.content = q.value(3).toString();
+    message.timestamp = q.value(4).toDateTime();
+    message.editedTimestamp = q.value(5).toDateTime();
+    message.type = static_cast<Discord::MessageType>(q.value(6).toLongLong());
+    message.flags = static_cast<Discord::MessageFlags>(q.value(7).toLongLong());
+
+    QString embedsJson = q.value(8).toString();
+    if (!embedsJson.isEmpty()) {
+        message.embedsJson = embedsJson;
+        QJsonDocument doc = QJsonDocument::fromJson(embedsJson.toUtf8());
+        if (doc.isArray()) {
+            QList<Discord::Embed> embedList;
+            for (const QJsonValue &val : doc.array())
+                embedList.append(Discord::Embed::fromJson(val.toObject()));
+            message.embeds = embedList;
+        }
+    }
+
+    message.author->id = static_cast<Core::Snowflake>(q.value(9).toLongLong());
+    message.author->username = q.value(10).toString();
+    message.author->globalName = q.value(11).toString();
+    message.author->avatar = q.value(12).toString();
+    message.author->bot = q.value(13).toBool();
+
+    // Load referenced message from the self-join
+    if (!q.value(14).isNull()) {
+        Discord::MessageReference ref;
+        ref.messageId = static_cast<Core::Snowflake>(q.value(14).toLongLong());
+        ref.channelId = message.channelId;
+        message.messageReference = ref;
+
+        // If the joined message row exists (rm.id is not null), reconstruct it
+        if (!q.value(15).isNull()) {
+            auto refMsg = std::make_shared<Discord::Message>();
+            refMsg->id = static_cast<Core::Snowflake>(q.value(15).toLongLong());
+            refMsg->channelId = static_cast<Core::Snowflake>(q.value(16).toLongLong());
+            refMsg->content = q.value(18).toString();
+            refMsg->timestamp = q.value(19).toDateTime();
+            refMsg->editedTimestamp = q.value(20).toDateTime();
+            refMsg->type = static_cast<Discord::MessageType>(q.value(21).toLongLong());
+            refMsg->flags = static_cast<Discord::MessageFlags>(q.value(22).toLongLong());
+
+            QString refEmbedsJson = q.value(23).toString();
+            if (!refEmbedsJson.isEmpty()) {
+                refMsg->embedsJson = refEmbedsJson;
+                QJsonDocument doc = QJsonDocument::fromJson(refEmbedsJson.toUtf8());
+                if (doc.isArray()) {
+                    QList<Discord::Embed> embedList;
+                    for (const QJsonValue &val : doc.array())
+                        embedList.append(Discord::Embed::fromJson(val.toObject()));
+                    refMsg->embeds = embedList;
+                }
+            }
+
+            if (!q.value(24).isNull()) {
+                refMsg->author->id = static_cast<Core::Snowflake>(q.value(24).toLongLong());
+                refMsg->author->username = q.value(25).toString();
+                refMsg->author->globalName = q.value(26).toString();
+                refMsg->author->avatar = q.value(27).toString();
+                refMsg->author->bot = q.value(28).toBool();
+            }
+
+            message.referencedMessage = refMsg;
+        }
+    }
+
+    return message;
 }
 
 void MessageRepository::loadAttachmentsForMessages(QList<Discord::Message> &messages,

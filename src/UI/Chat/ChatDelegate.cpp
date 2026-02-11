@@ -21,6 +21,7 @@ static ChatLayout::LayoutContext buildLayoutContext(const QStyleOptionViewItem &
     ctx.htmlContent = index.data(ChatModel::HtmlRole).toString();
     ctx.attachments = index.data(ChatModel::AttachmentsRole).value<QList<AttachmentData>>();
     ctx.embeds = index.data(ChatModel::EmbedsRole).value<QList<EmbedData>>();
+    ctx.replyData = index.data(ChatModel::ReplyDataRole).value<ReplyData>();
 
     QDateTime editedTime = index.data(ChatModel::EditedTimestampRole).toDateTime();
     if (editedTime.isValid()) {
@@ -78,6 +79,78 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         painter->fillRect(textBgRect, option.palette.base());
         painter->setPen(option.palette.text().color());
         painter->drawText(layout.separatorRect, Qt::AlignCenter, dateText);
+    }
+
+    if (layout.hasReply && !layout.replyRect.isNull()) {
+        ReplyData replyData = ctx.replyData;
+
+        // Compute reply text font/metrics first so the connector aligns with the text
+        QFont replyFont = option.font;
+        replyFont.setPointSizeF(replyFont.pointSizeF() * 0.85);
+        QFontMetrics replyFm(replyFont);
+
+        int textX = layout.replyRect.left() + 4;
+        int textY = layout.replyRect.top();
+        int availWidth = layout.replyRect.width() - 4;
+
+        // The vertical center of the reply text line
+        int textMidY = textY + replyFm.height() / 2;
+
+        // Draw the reply connector line (L-shaped)
+        QColor lineColor = option.palette.text().color();
+        lineColor.setAlpha(80);
+        QPen replyPen(lineColor, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        painter->setPen(replyPen);
+
+        int lineX = layout.avatarRect.center().x();
+        int lineBottom = layout.avatarRect.top();
+        int cornerRadius = 5;
+
+        QPainterPath replyPath;
+        replyPath.moveTo(lineX, lineBottom);
+        replyPath.lineTo(lineX, textMidY + cornerRadius);
+        replyPath.quadTo(lineX, textMidY, lineX + cornerRadius, textMidY);
+        replyPath.lineTo(layout.replyRect.left(), textMidY);
+        painter->drawPath(replyPath);
+
+        // Draw reply text
+        painter->setFont(replyFont);
+
+        QColor replyTextColor = option.palette.text().color();
+        replyTextColor.setAlpha(180);
+
+        if (replyData.state == ReplyData::State::Present) {
+            // Author name in bold, with role color if available
+            QFont authorFont = replyFont;
+            authorFont.setBold(true);
+            painter->setFont(authorFont);
+            QFontMetrics authorFm(authorFont);
+            QColor authorColor = replyData.authorColor.isValid() ? replyData.authorColor : replyTextColor;
+            painter->setPen(authorColor);
+            QString authorName = replyData.authorName;
+            int authorWidth = authorFm.horizontalAdvance(authorName);
+            painter->drawText(textX, textY + authorFm.ascent(), authorName);
+
+            // Content snippet
+            painter->setFont(replyFont);
+            painter->setPen(replyTextColor);
+            int snippetX = textX + authorWidth + 6;
+            int snippetWidth = availWidth - authorWidth - 6;
+            if (snippetWidth > 0) {
+                QString snippet = replyData.contentSnippet;
+                snippet.replace('\n', ' ');
+                QString elidedSnippet = replyFm.elidedText(snippet, Qt::ElideRight, snippetWidth);
+                painter->drawText(snippetX, textY + replyFm.ascent(), elidedSnippet);
+            }
+        } else if (replyData.state == ReplyData::State::Deleted) {
+            painter->setPen(replyTextColor);
+            painter->drawText(textX, textY + replyFm.ascent(),
+                              tr("Original message was deleted"));
+        } else {
+            painter->setPen(replyTextColor);
+            painter->drawText(textX, textY + replyFm.ascent(),
+                              tr("Unknown message"));
+        }
     }
 
     if (layout.showHeader) {

@@ -147,6 +147,7 @@ void DatabaseManager::setupCacheTables(const QString &connName)
 	        "flags" INTEGER NOT NULL,
 	        "embeds" TEXT,
 	        "deleted" INTEGER NOT NULL,
+	        "referenced_message_id" INTEGER,
 	        PRIMARY KEY("id")
         );
     )");

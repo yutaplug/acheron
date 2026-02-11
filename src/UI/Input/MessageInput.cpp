@@ -1,7 +1,9 @@
 #include "MessageInput.hpp"
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QKeyEvent>
 #include <QAbstractTextDocumentLayout>
+#include <QToolButton>
 
 namespace Acheron {
 namespace UI {
@@ -24,17 +26,49 @@ void ChatTextEdit::keyPressEvent(QKeyEvent *e)
             return;
         }
     }
+    if (e->key() == Qt::Key_Escape) {
+        emit escapePressed();
+        return;
+    }
     QTextEdit::keyPressEvent(e);
 }
 
 MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
 {
-    auto *layout = new QHBoxLayout(this);
+    auto *outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(4, 0, 4, 0);
+    outerLayout->setSpacing(0);
 
-    layout->setContentsMargins(4, 0, 4, 0);
-    layout->setSpacing(0);
+    // Reply bar
+    replyBar = new QWidget(this);
+    replyBar->setVisible(false);
+    auto *replyLayout = new QHBoxLayout(replyBar);
+    replyLayout->setContentsMargins(8, 4, 4, 2);
+    replyLayout->setSpacing(4);
 
-    textEdit = new ChatTextEdit(this);
+    replyLabel = new QLabel(replyBar);
+    replyLabel->setStyleSheet("color: #b5bac1; font-size: 12px;");
+    replyLayout->addWidget(replyLabel, 1);
+
+    replyCancelButton = new QToolButton(replyBar);
+    replyCancelButton->setText(QStringLiteral("\u00D7")); // multiplication sign as close icon
+    replyCancelButton->setFixedSize(16, 16);
+    replyCancelButton->setStyleSheet(
+            "QToolButton { border: none; color: #b5bac1; font-size: 14px; }"
+            "QToolButton:hover { color: #ffffff; }");
+    replyLayout->addWidget(replyCancelButton);
+
+    connect(replyCancelButton, &QToolButton::clicked, this, &MessageInput::clearReplyTarget);
+
+    outerLayout->addWidget(replyBar);
+
+    // Text edit
+    auto *inputContainer = new QWidget(this);
+    auto *inputLayout = new QHBoxLayout(inputContainer);
+    inputLayout->setContentsMargins(0, 0, 0, 0);
+    inputLayout->setSpacing(0);
+
+    textEdit = new ChatTextEdit(inputContainer);
     setFocusProxy(textEdit);
 
     connect(textEdit, &ChatTextEdit::returnPressed, [this]() {
@@ -45,10 +79,13 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
         }
     });
 
+    connect(textEdit, &ChatTextEdit::escapePressed, this, &MessageInput::clearReplyTarget);
+
     connect(textEdit->document(), &QTextDocument::contentsChanged, this,
             &MessageInput::adjustHeight);
 
-    layout->addWidget(textEdit);
+    inputLayout->addWidget(textEdit);
+    outerLayout->addWidget(inputContainer);
 
     adjustHeight();
 }
@@ -66,6 +103,32 @@ void MessageInput::resizeEvent(QResizeEvent *event)
 void MessageInput::clear()
 {
     textEdit->clear();
+    clearReplyTarget();
+    adjustHeight();
+}
+
+void MessageInput::setReplyTarget(Core::Snowflake messageId, const QString &authorName,
+                                  const QString &contentSnippet)
+{
+    replyMessageId = messageId;
+    QString snippet = contentSnippet;
+    snippet.replace('\n', ' ');
+    if (snippet.length() > 100)
+        snippet = snippet.left(100) + "...";
+
+    replyLabel->setText(tr("Replying to <b>%1</b> %2").arg(authorName, snippet));
+    replyBar->setVisible(true);
+    adjustHeight();
+    textEdit->setFocus();
+}
+
+void MessageInput::clearReplyTarget()
+{
+    if (!replyMessageId.isValid())
+        return;
+
+    replyMessageId = Core::Snowflake::Invalid;
+    replyBar->setVisible(false);
     adjustHeight();
 }
 
@@ -80,15 +143,18 @@ void MessageInput::adjustHeight()
     if (newHeight > 200)
         newHeight = 200;
 
-    if (newHeight >= 200) {
+    if (newHeight >= 200)
         textEdit->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    } else {
+    else
         textEdit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    }
 
     textEdit->setFixedHeight(newHeight);
 
-    setFixedHeight(newHeight + 12);
+    int totalHeight = newHeight + 12;
+    if (replyBar->isVisible())
+        totalHeight += replyBar->sizeHint().height();
+
+    setFixedHeight(totalHeight);
 }
 
 } // namespace UI

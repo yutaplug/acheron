@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <QString>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -374,6 +376,24 @@ struct Attachment : Core::JsonUtils::JsonObject
     }
 };
 
+struct MessageReference : Core::JsonUtils::JsonObject
+{
+    Field<int, true> type;
+    Field<Core::Snowflake, true> messageId;
+    Field<Core::Snowflake, true> channelId;
+    Field<Core::Snowflake, true> guildId;
+
+    static MessageReference fromJson(const QJsonObject &obj)
+    {
+        MessageReference ref;
+        get(obj, "type", ref.type);
+        get(obj, "message_id", ref.messageId);
+        get(obj, "channel_id", ref.channelId);
+        get(obj, "guild_id", ref.guildId);
+        return ref;
+    }
+};
+
 struct Message : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;
@@ -389,6 +409,15 @@ struct Message : Core::JsonUtils::JsonObject
     Field<QList<Embed>, true> embeds;
     Field<QList<User>, true> mentions;
     Field<QList<Core::Snowflake>, true> mentionRoles;
+
+    Field<MessageReference, true> messageReference;
+
+    // tri-state for referenced_message:
+    //   nullptr + referencedMessageNull=false  -> backend didn't fetch (unknown)
+    //   nullptr + referencedMessageNull=true   -> referenced message was deleted
+    //   non-null                               -> referenced message is present
+    std::shared_ptr<Message> referencedMessage;
+    bool referencedMessageNull = false;
 
     // TRANSIENT for MESSAGE_UPDATE
     Field<Core::Snowflake, true> guildId;
@@ -417,8 +446,20 @@ struct Message : Core::JsonUtils::JsonObject
         get(obj, "embeds", message.embeds);
         get(obj, "mentions", message.mentions);
         get(obj, "mention_roles", message.mentionRoles);
+        get(obj, "message_reference", message.messageReference);
         get(obj, "guild_id", message.guildId);
         get(obj, "channel_type", message.channelType);
+
+        // referenced_message: manually handle tri-state (absent / null / object)
+        auto refIt = obj.find("referenced_message");
+        if (refIt != obj.end()) {
+            if (refIt.value().isNull()) {
+                message.referencedMessageNull = true;
+            } else {
+                message.referencedMessage =
+                        std::make_shared<Message>(fromJson(refIt.value().toObject()));
+            }
+        }
 
         if (obj.contains("embeds")) {
             QJsonDocument doc(obj.value("embeds").toArray());

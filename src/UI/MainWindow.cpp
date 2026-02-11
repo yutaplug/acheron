@@ -190,6 +190,7 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
 
         chatModel->setActiveChannel(node->id, guildId);
         typingTracker->setActiveChannel(node->id);
+        messageInput->clearReplyTarget();
     }
 
     messages->requestLoadChannel(node->id);
@@ -430,7 +431,8 @@ void MainWindow::setupUi()
             return;
         }
 
-        currentInstance->messages()->sendMessage(channelId, text);
+        Snowflake replyTo = messageInput->replyTargetMessageId();
+        currentInstance->messages()->sendMessage(channelId, text, replyTo);
     });
 
     connect(chatView, &ChatView::historyRequested, this, [this]() {
@@ -472,8 +474,19 @@ void MainWindow::setupUi()
 
     connect(chatView, &ChatView::replyToMessageRequested, this,
             [this](Snowflake channelId, Snowflake messageId) {
-                qCInfo(LogCore) << "Reply requested for message" << messageId
-                                << "- UI not yet implemented";
+                // Find the message in the model to get author name and content
+                for (int row = 0; row < chatModel->rowCount(); ++row) {
+                    QModelIndex idx = chatModel->index(row, 0);
+                    Snowflake msgId = idx.data(ChatModel::MessageIdRole).toULongLong();
+                    if (msgId == messageId) {
+                        QString authorName = idx.data(ChatModel::UsernameRole).toString();
+                        QString content = idx.data(ChatModel::ContentRole).toString();
+                        messageInput->setReplyTarget(messageId, authorName, content);
+                        return;
+                    }
+                }
+                // Fallback if message not found in model
+                messageInput->setReplyTarget(messageId, tr("Unknown"), QString());
             });
 
     connect(chatView, &ChatView::addReactionRequested, this,

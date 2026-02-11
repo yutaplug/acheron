@@ -50,7 +50,8 @@ public:
     // void fetchFuture(Snowflake channelId, Snowflake afterId, int limit = 50);
     // void fetchAround(Snowflake channelId, Snowflake targetId, int limit = 50);
 
-    void sendMessage(Snowflake channelId, const QString &content, const QString &nonce);
+    void sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
+                     Snowflake replyToMessageId = Snowflake::Invalid);
     void editMessage(Snowflake channelId, Snowflake messageId, const QString &content);
     void deleteMessage(Snowflake channelId, Snowflake messageId);
     void pinMessage(Snowflake channelId, Snowflake messageId);

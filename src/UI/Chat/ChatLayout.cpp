@@ -486,15 +486,36 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
 
     layout.showHeader = ctx.showHeader;
     layout.hasSeparator = ctx.hasSeparator;
+    layout.hasReply = ctx.replyData.state != ReplyData::State::None;
 
     layout.separatorRect = ctx.hasSeparator ? dateSeparatorRectForRow(rowRect) : QRect();
-    layout.avatarRect = avatarRectForRow(rowRect, ctx.hasSeparator);
-    layout.headerRect = headerRectForRow(rowRect, fm, ctx.hasSeparator);
+
+    int replyOffset = 0;
+    if (layout.hasReply) {
+        int replyTop = ctx.rowTop + (ctx.hasSeparator ? separatorHeight() : 0);
+        int replyLeft = padding() + avatarSize() + padding();
+        int replyWidth = ctx.rowWidth - replyLeft - padding();
+        layout.replyRect = QRect(replyLeft, replyTop, replyWidth, replyBarHeight());
+        replyOffset = replyBarHeight();
+    }
 
     int textLeft = padding() + avatarSize() + padding();
     int textWidth = ctx.rowWidth - textLeft - padding();
     if (textWidth < 10)
         textWidth = 10;
+
+    int separatorOffset = ctx.hasSeparator ? separatorHeight() : 0;
+    int headerAreaTop = ctx.rowTop + separatorOffset + replyOffset;
+
+    if (layout.hasReply) {
+        // Reply messages: no extra top padding, reply bar provides the visual gap
+        layout.avatarRect = QRect(padding(), headerAreaTop, avatarSize(), avatarSize());
+        layout.headerRect = QRect(textLeft, headerAreaTop, textWidth, fm.height());
+    } else {
+        QRect baseRowRect(0, ctx.rowTop, ctx.rowWidth, 10000);
+        layout.avatarRect = avatarRectForRow(baseRowRect, ctx.hasSeparator);
+        layout.headerRect = headerRectForRow(baseRowRect, fm, ctx.hasSeparator);
+    }
 
     if (!ctx.htmlContent.isEmpty()) {
         QTextDocument doc;
@@ -502,19 +523,26 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
         layout.textHeight = int(std::ceil(doc.size().height()));
     }
 
-    int textTop = ctx.rowTop + (ctx.hasSeparator ? separatorHeight() : 0);
-    if (ctx.showHeader)
-        textTop += padding() + fm.height();
-    else
-        textTop += 1;
+    int textTop;
+    if (layout.hasReply) {
+        textTop = headerAreaTop;
+        if (ctx.showHeader)
+            textTop += fm.height();
+    } else {
+        textTop = ctx.rowTop + separatorOffset;
+        if (ctx.showHeader)
+            textTop += padding() + fm.height();
+        else
+            textTop += 1;
+    }
 
     layout.textRect = QRect(textLeft, textTop, textWidth, layout.textHeight);
 
     int totalHeight = 0;
-    if (ctx.showHeader) {
+    if (layout.hasReply) {
+        totalHeight = replyBarHeight() + fm.height() + layout.textHeight + padding();
+    } else if (ctx.showHeader) {
         int contentHeight = padding() + fm.height() + layout.textHeight + padding();
-        // int minHeight = padding() + avatarSize() + padding();
-        // totalHeight = std::max(contentHeight, minHeight);
         totalHeight = contentHeight;
     } else {
         totalHeight = layout.textHeight + padding() + 1;
@@ -665,12 +693,17 @@ int hitTestCharIndex(QAbstractItemView *view, const QModelIndex &index, const QP
     const bool showHeader = index.data(ChatModel::ShowHeaderRole).toBool();
     const QString html = index.data(ChatModel::HtmlRole).toString();
     const bool hasSeparator = index.data(ChatModel::DateSeparatorRole).toBool();
+    ReplyData reply = index.data(ChatModel::ReplyDataRole).value<ReplyData>();
+    bool hasReply = reply.state != ReplyData::State::None;
+    // For replies, the top padding is removed so offset is replyBarHeight - padding
+    int replyOffset = hasReply ? replyBarHeight() - padding() : 0;
 
     QFont docFont = getFontForIndex(view, index);
     QFontMetrics fm(docFont);
 
     QRect rowRect = view->visualRect(index);
     QRect textRect = textRectForRow(rowRect, showHeader, fm, hasSeparator);
+    textRect.translate(0, replyOffset);
 
     QTextDocument doc;
     setupDocument(doc, html, docFont, textRect.width());
@@ -721,10 +754,14 @@ QString getLinkAt(const QAbstractItemView *view, const QModelIndex &index, const
     QRect rowRect = view->visualRect(index);
     bool showHeader = index.data(ChatModel::ShowHeaderRole).toBool();
     bool hasSeparator = index.data(ChatModel::DateSeparatorRole).toBool();
+    ReplyData reply = index.data(ChatModel::ReplyDataRole).value<ReplyData>();
+    bool hasReply = reply.state != ReplyData::State::None;
+    int replyOffset = hasReply ? replyBarHeight() - padding() : 0;
     QFont font = view->font();
     QFontMetrics fm(font);
 
     QRect textRect = textRectForRow(rowRect, showHeader, fm, hasSeparator);
+    textRect.translate(0, replyOffset);
 
     if (!textRect.contains(mousePos))
         return {};
@@ -757,6 +794,7 @@ std::optional<AttachmentData> getAttachmentAt(const QAbstractItemView *view,
     ctx.hasSeparator = index.data(ChatModel::DateSeparatorRole).toBool();
     ctx.htmlContent = index.data(ChatModel::HtmlRole).toString();
     ctx.attachments = attachments;
+    ctx.replyData = index.data(ChatModel::ReplyDataRole).value<ReplyData>();
 
     MessageLayout layout = calculateMessageLayout(ctx);
 
@@ -793,6 +831,7 @@ std::optional<EmbedHitResult> getEmbedAt(const QAbstractItemView *view, const QM
     ctx.htmlContent = index.data(ChatModel::HtmlRole).toString();
     ctx.attachments = index.data(ChatModel::AttachmentsRole).value<QList<AttachmentData>>();
     ctx.embeds = embeds;
+    ctx.replyData = index.data(ChatModel::ReplyDataRole).value<ReplyData>();
 
     MessageLayout layout = calculateMessageLayout(ctx);
 
