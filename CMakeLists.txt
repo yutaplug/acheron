@@ -161,3 +161,14 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/certs/cacert.pem")
         COMMENT "Copying cacert.pem to build directory"
     )
 endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/TwemojiCOLRv0.ttf")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/fonts"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/TwemojiCOLRv0.ttf"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/fonts/TwemojiCOLRv0.ttf"
+        COMMENT "Copying TwemojiCOLRv0.ttf to build directory"
+    )
+endif()

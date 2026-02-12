@@ -6,7 +6,10 @@
 #include "Discord/CurlUtils.hpp"
 
 #include <curl/curl.h>
+
+#include <QtGlobal>
 #include <QNetworkAccessManager>
+#include <QFontDatabase>
 
 // potentially named after that river
 // or the honkai star rail character
@@ -166,6 +169,19 @@ int main(int argc, char *argv[])
     Acheron::Core::Logger::init();
 
     qCInfo(LogCore) << "Starting Acheron...";
+
+#ifdef Q_OS_WINDOWS
+    int emojiFontId = QFontDatabase::addApplicationFont(
+            QCoreApplication::applicationDirPath() + "/fonts/TwemojiCOLRv0.ttf");
+    if (emojiFontId != -1) {
+        QStringList families = QFontDatabase::applicationFontFamilies(emojiFontId);
+        qCInfo(LogCore) << "Loaded emoji font:" << families;
+        if (!families.isEmpty())
+            QFontDatabase::addApplicationEmojiFontFamily(families.first());
+    } else {
+        qCWarning(LogCore) << "Failed to load TwemojiCOLRv0.ttf";
+    }
+#endif
 
     if (!Storage::DatabaseManager::instance().init()) {
         QMessageBox::critical(nullptr, "Fatal error",
