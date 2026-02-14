@@ -25,18 +25,21 @@ QVariant ChannelFilterProxyModel::data(const QModelIndex &index, int role) const
     if (role == ChannelFilterProxyModel::SelectedRole) {
         QModelIndex sourceIndex = mapToSource(index);
         ChannelNode *node = static_cast<ChannelNode *>(sourceIndex.internalPointer());
-        if (node)
-            return node->id == selectedChannelId;
+        if (node && node->id == selectedChannelId) {
+            Core::Snowflake accountId = getUserIdForNode(sourceIndex);
+            return accountId == selectedAccountId;
+        }
         return false;
     }
     return QSortFilterProxyModel::data(index, role);
 }
 
-void ChannelFilterProxyModel::setSelectedChannel(Core::Snowflake channelId)
+void ChannelFilterProxyModel::setSelectedChannel(Core::Snowflake channelId, Core::Snowflake accountId)
 {
-    if (selectedChannelId == channelId)
+    if (selectedChannelId == channelId && selectedAccountId == accountId)
         return;
     selectedChannelId = channelId;
+    selectedAccountId = accountId;
     QSortFilterProxyModel::invalidateFilter();
 }
 
@@ -98,7 +101,7 @@ bool ChannelFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex 
         if (parentNode && parentNode->type == ChannelNode::Type::Category && parentNode->collapsed) {
             Core::Snowflake channelId =
                     Core::Snowflake(index.data(ChannelTreeModel::IdRole).toULongLong());
-            if (channelId == selectedChannelId)
+            if (channelId == selectedChannelId && userId == selectedAccountId)
                 return true;
             bool unread = index.data(ChannelTreeModel::IsUnreadRole).toBool();
             bool muted = index.data(ChannelTreeModel::IsMutedRole).toBool();

@@ -23,7 +23,7 @@ public:
     void setSourceModel(QAbstractItemModel *sourceModel) override;
     QVariant data(const QModelIndex &index, int role) const override;
 
-    void setSelectedChannel(Core::Snowflake channelId);
+    void setSelectedChannel(Core::Snowflake channelId, Core::Snowflake accountId);
     Core::Snowflake selectedChannel() const { return selectedChannelId; }
 
 public slots:
@@ -41,6 +41,7 @@ private:
     Core::Session *session;
     ChannelTreeModel *channelModel;
     Core::Snowflake selectedChannelId;
+    Core::Snowflake selectedAccountId;
 };
 
 } // namespace UI

@@ -149,14 +149,14 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
                   node->type != ChannelNode::Type::DMChannel))
         return;
 
-    channelFilterProxy->setSelectedChannel(node->id);
-    channelTree->viewport()->update();
-
     ChannelNode *accountNode = channelTreeModel->getAccountNodeFor(node);
     if (!accountNode) {
         messageInput->setEnabled(false);
         return;
     }
+
+    channelFilterProxy->setSelectedChannel(node->id, accountNode->id);
+    channelTree->viewport()->update();
 
     ClientInstance *selectedInstance = session->client(accountNode->id);
     if (!selectedInstance) {
@@ -626,7 +626,7 @@ void MainWindow::activateChannel(const TabEntry &entry)
 {
     // update the proxy selected channel so the delegate highlights correctly,
     // and clear the trees own selection so no stale highlight remains
-    channelFilterProxy->setSelectedChannel(entry.channelId);
+    channelFilterProxy->setSelectedChannel(entry.channelId, entry.accountId);
     {
         QSignalBlocker blocker(channelTree->selectionModel());
         channelTree->selectionModel()->clearSelection();
