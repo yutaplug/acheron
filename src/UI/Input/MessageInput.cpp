@@ -72,6 +72,8 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
     setFocusProxy(textEdit);
 
     connect(textEdit, &ChatTextEdit::returnPressed, [this]() {
+        if (sendBlocked)
+            return;
         QString txt = textEdit->toPlainText().trimmed();
         if (!txt.isEmpty()) {
             emit sendMessage(txt);
@@ -130,6 +132,11 @@ void MessageInput::clearReplyTarget()
     replyMessageId = Core::Snowflake::Invalid;
     replyBar->setVisible(false);
     adjustHeight();
+}
+
+void MessageInput::setSendBlocked(bool blocked)
+{
+    sendBlocked = blocked;
 }
 
 void MessageInput::adjustHeight()

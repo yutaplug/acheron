@@ -131,6 +131,7 @@ void DatabaseManager::setupCacheTables(const QString &connName)
 	        "last_message_id" INTEGER,
 	        "icon" TEXT,
 	        "owner_id" INTEGER,
+	        "rate_limit_per_user" INTEGER,
 	        PRIMARY KEY("id")
         );
     )");

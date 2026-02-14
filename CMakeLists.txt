@@ -63,6 +63,7 @@ set(PROJECT_SOURCES
     src/Core/Markdown/Parser.cpp
     src/UI/MainWindow.cpp
     src/UI/TypingIndicator.cpp
+    src/UI/SlowModeIndicator.cpp
     src/UI/ConnectionBanner.cpp
     src/UI/ElidedLabel.cpp
     src/UI/ImageViewer.cpp
@@ -72,6 +73,7 @@ set(PROJECT_SOURCES
     src/UI/ChannelList/ChannelTreeModel.cpp
     src/UI/ChannelList/ChannelFilterProxyModel.cpp
     src/UI/ChannelList/ChannelTreeView.cpp
+    src/UI/TabBar/TabBar.cpp
     src/UI/Chat/ChatModel.cpp
     src/UI/Chat/ChatDelegate.cpp
     src/UI/Chat/ChatView.cpp

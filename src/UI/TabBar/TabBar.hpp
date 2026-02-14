@@ -53,6 +53,7 @@ public:
 
     int tabCount() const { return tabs.size(); }
     const TabEntry &tabEntry(int index) const { return tabs[index].current(); }
+    QString activeTabName() const { return tabs.isEmpty() ? QString() : tabs[currentTabIndex].current().name; }
 
     void updateChannelReadState(Core::Snowflake channelId, bool unread, int mentionCount);
 

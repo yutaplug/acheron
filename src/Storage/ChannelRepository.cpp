@@ -20,8 +20,8 @@ void ChannelRepository::saveChannel(const Discord::Channel &channel, QSqlDatabas
 
     q.prepare(R"(
 		INSERT OR REPLACE INTO channels
-		(id, type, position, name, guild_id, parent_id, last_message_id, icon, owner_id)
-		VALUES (:id, :type, :position, :name, :guild_id, :parent_id, :last_message_id, :icon, :owner_id)
+		(id, type, position, name, guild_id, parent_id, last_message_id, icon, owner_id, rate_limit_per_user)
+		VALUES (:id, :type, :position, :name, :guild_id, :parent_id, :last_message_id, :icon, :owner_id, :rate_limit_per_user)
     )");
 
     q.bindValue(":id", static_cast<qint64>(channel.id.get()));
@@ -38,6 +38,8 @@ void ChannelRepository::saveChannel(const Discord::Channel &channel, QSqlDatabas
         q.bindValue(":icon", channel.icon.get());
     if (channel.ownerId.hasValue())
         q.bindValue(":owner_id", static_cast<qint64>(channel.ownerId.get()));
+    if (channel.rateLimitPerUser.hasValue())
+        q.bindValue(":rate_limit_per_user", channel.rateLimitPerUser.get());
 
     if (!q.exec())
         qCWarning(LogDB) << "ChannelRepository: Save failed:" << q.lastError().text();
@@ -228,7 +230,7 @@ std::optional<Discord::Channel> ChannelRepository::getChannel(Core::Snowflake ch
     auto db = getDb();
     QSqlQuery q(db);
     q.prepare(R"(
-        SELECT id, type, position, name, guild_id, parent_id, last_message_id, icon, owner_id
+        SELECT id, type, position, name, guild_id, parent_id, last_message_id, icon, owner_id, rate_limit_per_user
         FROM channels WHERE id = :id
     )");
     q.bindValue(":id", static_cast<qint64>(channelId));
@@ -253,6 +255,8 @@ std::optional<Discord::Channel> ChannelRepository::getChannel(Core::Snowflake ch
         channel.icon = q.value(7).toString();
     if (!q.value(8).isNull())
         channel.ownerId = static_cast<Core::Snowflake>(q.value(8).toLongLong());
+    if (!q.value(9).isNull())
+        channel.rateLimitPerUser = q.value(9).toInt();
 
     channel.permissionOverwrites = getPermissionOverwrites(channelId);
 
@@ -269,7 +273,7 @@ QList<Discord::Channel> ChannelRepository::getChannelsForGuild(Core::Snowflake g
     QSqlQuery q(db);
 
     q.prepare(R"(
-        SELECT id, type, position, name, guild_id, parent_id, last_message_id, icon, owner_id
+        SELECT id, type, position, name, guild_id, parent_id, last_message_id, icon, owner_id, rate_limit_per_user
         FROM channels WHERE guild_id = :guild_id
     )");
     q.bindValue(":guild_id", static_cast<qint64>(guildId));
@@ -297,6 +301,8 @@ QList<Discord::Channel> ChannelRepository::getChannelsForGuild(Core::Snowflake g
             channel.icon = q.value(7).toString();
         if (!q.value(8).isNull())
             channel.ownerId = static_cast<Core::Snowflake>(q.value(8).toLongLong());
+        if (!q.value(9).isNull())
+            channel.rateLimitPerUser = q.value(9).toInt();
 
         // todo: permission overwrites not loaded because the caller doesnt need it rn
         channels.append(channel);

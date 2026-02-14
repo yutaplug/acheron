@@ -127,7 +127,7 @@ void PermissionManager::invalidateChannelCache(Snowflake channelId)
     emit channelPermissionsChanged(channelId);
 }
 
-void PermissionManager::invalidateGuildCache(Snowflake guildId)
+void PermissionManager::invalidateUserGuildCache(Snowflake userId, Snowflake guildId)
 {
     auto channels = channelRepo.getChannelsForGuild(guildId);
 
@@ -136,18 +136,21 @@ void PermissionManager::invalidateGuildCache(Snowflake guildId)
     for (const auto &channel : channels)
         channelIds.insert(channel.id.get());
 
+    QList<Snowflake> invalidated;
     auto it = permissionCache.begin();
     while (it != permissionCache.end()) {
-        if (channelIds.contains(it.key().second))
+        if (it.key().first == userId && channelIds.contains(it.key().second)) {
+            invalidated.append(it.key().second);
             it = permissionCache.erase(it);
-        else
+        } else {
             ++it;
+        }
     }
 
-    for (Snowflake channelId : channelIds)
+    for (Snowflake channelId : invalidated)
         emit channelPermissionsChanged(channelId);
 
-    qCDebug(LogCore) << "Invalidated permission cache for" << channels.size() << "channels in guild:" << guildId;
+    qCDebug(LogCore) << "Invalidated" << invalidated.size() << "cached permissions for user" << userId << "in guild:" << guildId;
 }
 
 } // namespace Core

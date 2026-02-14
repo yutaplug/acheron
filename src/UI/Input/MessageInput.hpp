@@ -37,6 +37,9 @@ public:
     void clearReplyTarget();
     [[nodiscard]] Core::Snowflake replyTargetMessageId() const { return replyMessageId; }
 
+    void setSendBlocked(bool blocked);
+    [[nodiscard]] bool isSendBlocked() const { return sendBlocked; }
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
 
@@ -50,6 +53,7 @@ private:
     QToolButton *replyCancelButton;
 
     Core::Snowflake replyMessageId;
+    bool sendBlocked = false;
 
     void adjustHeight();
 };

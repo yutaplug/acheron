@@ -18,6 +18,7 @@
 #include "Core/ReadStateManager.hpp"
 #include "Discord/Events.hpp"
 #include "TypingIndicator.hpp"
+#include "SlowModeIndicator.hpp"
 #include "ConnectionBanner.hpp"
 #include "Dialogs/ConfirmPopup.hpp"
 #include "Core/MemberListManager.hpp"
@@ -174,9 +175,11 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
 
     if (node->type == ChannelNode::Type::DMChannel) {
         messageInput->setEnabled(true);
+        messageInput->setSendBlocked(false);
         messageInput->setPlaceholder("Message @" + node->name);
         chatView->setCanPinMessages(true);
         chatView->setCanManageMessages(false);
+        slowModeIndicator->setSlowMode(channelId, 0, false);
         memberListView->hide();
         selectedInstance->memberList()->clear();
     } else {
@@ -187,14 +190,23 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
         bool canManage = selectedInstance->permissions()->hasChannelPermission(
                 userId, channelId, Discord::Permission::MANAGE_MESSAGES);
 
+        int rateLimit = selectedInstance->getChannelRateLimit(channelId);
+        bool canBypass = selectedInstance->permissions()->hasChannelPermission(
+                userId, channelId, Discord::Permission::BYPASS_SLOWMODE);
+        slowModeIndicator->setSlowMode(channelId, rateLimit, canBypass);
+
+        bool onCooldown = rateLimit > 0 && !canBypass && slowModeIndicator->isOnCooldown(channelId);
         messageInput->setEnabled(canSend);
+        messageInput->setSendBlocked(onCooldown);
         chatView->setCanPinMessages(canPin);
         chatView->setCanManageMessages(canManage);
 
-        if (canSend)
-            messageInput->setPlaceholder("Message #" + node->name);
-        else
+        if (!canSend)
             messageInput->setPlaceholder("You do not have permission to send messages");
+        else if (onCooldown)
+            messageInput->setPlaceholder("Slowmode is active");
+        else
+            messageInput->setPlaceholder("Message #" + node->name);
 
         ChannelNode *gNode = node;
         while (gNode && gNode->type != ChannelNode::Type::Server)
@@ -316,6 +328,20 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
     connect(instance, &Core::ClientInstance::channelUpdated, this,
             [this, instance](const Discord::ChannelUpdate &update) {
                 channelTreeModel->updateChannel(update, instance->accountId());
+
+                if (!update.channel.hasValue())
+                    return;
+                const auto &ch = update.channel.get();
+                if (!ch.id.hasValue() || ch.id.get() != chatModel->getActiveChannelId())
+                    return;
+                if (instance != currentInstance)
+                    return;
+
+                int rateLimit = ch.rateLimitPerUser.hasValue() ? ch.rateLimitPerUser.get() : 0;
+                Snowflake userId = instance->accountId();
+                bool canBypass = instance->permissions()->hasChannelPermission(
+                        userId, ch.id.get(), Discord::Permission::BYPASS_SLOWMODE);
+                slowModeIndicator->setSlowMode(ch.id.get(), rateLimit, canBypass);
             });
 
     connect(instance, &Core::ClientInstance::channelDeleted, this,
@@ -419,11 +445,39 @@ void MainWindow::setupUi()
     chatView = new ChatView(rightSideWidget);
     messageInput = new MessageInput(rightSideWidget);
     typingIndicator = new TypingIndicator(rightSideWidget);
+    slowModeIndicator = new SlowModeIndicator(rightSideWidget);
+
+    auto *statusRow = new QWidget(rightSideWidget);
+    auto *statusRowLayout = new QHBoxLayout(statusRow);
+    statusRowLayout->setContentsMargins(0, 0, 0, 0);
+    statusRowLayout->setSpacing(0);
+    statusRowLayout->addWidget(typingIndicator, 1);
+    statusRowLayout->addWidget(slowModeIndicator, 0);
+    statusRow->setFixedHeight(typingIndicator->minimumHeight());
+
+    connect(slowModeIndicator, &SlowModeIndicator::cooldownChanged, this,
+            [this](bool onCooldown) {
+                if (!currentInstance)
+                    return;
+                Snowflake channelId = chatModel->getActiveChannelId();
+                if (!channelId.isValid())
+                    return;
+                messageInput->setSendBlocked(onCooldown);
+                if (!onCooldown) {
+                    QModelIndex current = channelTree->currentIndex();
+                    if (current.isValid()) {
+                        auto *node = channelTreeModel->nodeFromIndex(
+                                channelFilterProxy->mapToSource(current));
+                        if (node)
+                            messageInput->setPlaceholder("Message #" + node->name);
+                    }
+                }
+            });
 
     rightLayout->addWidget(connectionBanner, 0);
     rightLayout->addWidget(tabBar, 0);
     rightLayout->addWidget(chatView, 1);
-    rightLayout->addWidget(typingIndicator, 0);
+    rightLayout->addWidget(statusRow, 0);
     rightLayout->addWidget(messageInput, 0);
 
     memberListView = new MemberListView(central);
@@ -501,8 +555,23 @@ void MainWindow::setupUi()
             return;
         }
 
+        if (messageInput->isSendBlocked()) {
+            qCDebug(LogCore) << "Cannot send message: slowmode cooldown active";
+            return;
+        }
+
         Snowflake replyTo = messageInput->replyTargetMessageId();
         currentInstance->messages()->sendMessage(channelId, text, replyTo);
+
+        int rateLimit = currentInstance->getChannelRateLimit(channelId);
+        Snowflake userId = currentInstance->accountId();
+        bool canBypass = currentInstance->permissions()->hasChannelPermission(
+                userId, channelId, Discord::Permission::BYPASS_SLOWMODE);
+        if (rateLimit > 0 && !canBypass) {
+            slowModeIndicator->startCooldown(channelId, rateLimit);
+            messageInput->setSendBlocked(true);
+            messageInput->setPlaceholder("Slowmode is active");
+        }
     });
 
     connect(chatView, &ChatView::historyRequested, this, [this]() {
@@ -649,9 +718,11 @@ void MainWindow::activateChannel(const TabEntry &entry)
 
     if (entry.isDm) {
         messageInput->setEnabled(true);
+        messageInput->setSendBlocked(false);
         messageInput->setPlaceholder("Message @" + entry.name);
         chatView->setCanPinMessages(true);
         chatView->setCanManageMessages(false);
+        slowModeIndicator->setSlowMode(entry.channelId, 0, false);
         memberListView->hide();
         instance->memberList()->clear();
     } else {
@@ -659,14 +730,23 @@ void MainWindow::activateChannel(const TabEntry &entry)
         bool canPin = instance->permissions()->hasChannelPermission(userId, entry.channelId, Discord::Permission::PIN_MESSAGES);
         bool canManage = instance->permissions()->hasChannelPermission(userId, entry.channelId, Discord::Permission::MANAGE_MESSAGES);
 
+        int rateLimit = instance->getChannelRateLimit(entry.channelId);
+        bool canBypass = instance->permissions()->hasChannelPermission(
+                userId, entry.channelId, Discord::Permission::BYPASS_SLOWMODE);
+        slowModeIndicator->setSlowMode(entry.channelId, rateLimit, canBypass);
+
+        bool onCooldown = rateLimit > 0 && !canBypass && slowModeIndicator->isOnCooldown(entry.channelId);
         messageInput->setEnabled(canSend);
+        messageInput->setSendBlocked(onCooldown);
         chatView->setCanPinMessages(canPin);
         chatView->setCanManageMessages(canManage);
 
-        if (canSend)
-            messageInput->setPlaceholder("Message #" + entry.name);
-        else
+        if (!canSend)
             messageInput->setPlaceholder("You do not have permission to send messages");
+        else if (onCooldown)
+            messageInput->setPlaceholder("Slowmode is active");
+        else
+            messageInput->setPlaceholder("Message #" + entry.name);
 
         if (entry.guildId.isValid()) {
             memberListView->show();
@@ -764,14 +844,6 @@ void MainWindow::onChannelPermissionsChanged(Core::Snowflake channelId)
     if (!currentInstance)
         return;
 
-    QModelIndex current = channelTree->currentIndex();
-    if (!current.isValid())
-        return;
-
-    ChannelNode *node = channelTreeModel->nodeFromIndex(channelFilterProxy->mapToSource(current));
-    if (!node || node->type != ChannelNode::Type::Channel)
-        return;
-
     Core::Snowflake userId = currentInstance->accountId();
     bool canSend = currentInstance->permissions()->hasChannelPermission(
             userId, channelId, Discord::Permission::SEND_MESSAGES);
@@ -780,14 +852,34 @@ void MainWindow::onChannelPermissionsChanged(Core::Snowflake channelId)
     bool canManage = currentInstance->permissions()->hasChannelPermission(
             userId, channelId, Discord::Permission::MANAGE_MESSAGES);
 
+    int rateLimit = currentInstance->getChannelRateLimit(channelId);
+    bool canBypass = currentInstance->permissions()->hasChannelPermission(
+            userId, channelId, Discord::Permission::BYPASS_SLOWMODE);
+    slowModeIndicator->setSlowMode(channelId, rateLimit, canBypass);
+
+    bool onCooldown = rateLimit > 0 && !canBypass && slowModeIndicator->isOnCooldown(channelId);
     messageInput->setEnabled(canSend);
+    messageInput->setSendBlocked(onCooldown);
     chatView->setCanPinMessages(canPin);
     chatView->setCanManageMessages(canManage);
 
-    if (canSend)
-        messageInput->setPlaceholder("Message #" + node->name);
-    else
+    if (!canSend) {
         messageInput->setPlaceholder("You do not have permission to send messages");
+    } else if (onCooldown) {
+        messageInput->setPlaceholder("Slowmode is active");
+    } else {
+        QString channelName;
+        QModelIndex current = channelTree->currentIndex();
+        if (current.isValid()) {
+            auto *node = channelTreeModel->nodeFromIndex(channelFilterProxy->mapToSource(current));
+            if (node)
+                channelName = node->name;
+        }
+        if (channelName.isEmpty())
+            channelName = tabBar->activeTabName();
+        if (!channelName.isEmpty())
+            messageInput->setPlaceholder("Message #" + channelName);
+    }
 }
 
 QColor MainWindow::resolveRoleColor(Snowflake userId, Snowflake guildId)

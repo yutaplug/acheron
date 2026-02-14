@@ -334,7 +334,7 @@ void ClientInstance::onGuildRoleCreated(const Discord::GuildRoleCreate &event)
         return;
     }
 
-    permissionManager->invalidateGuildCache(guildId);
+    permissionManager->invalidateUserGuildCache(account.id, guildId);
     memberListManager->handleRoleCreated(guildId, role);
     emit guildRoleCreated(event);
 }
@@ -372,7 +372,7 @@ void ClientInstance::onGuildRoleUpdated(const Discord::GuildRoleUpdate &event)
         return;
     }
 
-    permissionManager->invalidateGuildCache(guildId);
+    permissionManager->invalidateUserGuildCache(account.id, guildId);
     memberListManager->handleRoleUpdated(guildId, role);
     emit guildRoleUpdated(event);
 }
@@ -405,7 +405,7 @@ void ClientInstance::onGuildRoleDeleted(const Discord::GuildRoleDelete &event)
         return;
     }
 
-    permissionManager->invalidateGuildCache(guildId);
+    permissionManager->invalidateUserGuildCache(account.id, guildId);
     memberListManager->handleRoleDeleted(guildId, roleId);
     emit guildRoleDeleted(event);
 }
@@ -447,6 +447,9 @@ void ClientInstance::onGuildMemberUpdate(const Discord::GuildMemberUpdate &event
     if (member.user.hasValue())
         userManager->saveUser(member.user.get());
     userManager->saveMember(guildId, userId, member);
+
+    if (userId == account.id)
+        permissionManager->invalidateUserGuildCache(userId, guildId);
 
     emit membersUpdated(guildId, { userId });
 }
@@ -604,6 +607,14 @@ MemberListManager *ClientInstance::memberList() const
 QList<Discord::Role> ClientInstance::getRolesForGuild(Snowflake guildId)
 {
     return roleRepo.getRolesForGuild(guildId);
+}
+
+int ClientInstance::getChannelRateLimit(Snowflake channelId)
+{
+    auto channelOpt = channelRepo.getChannel(channelId);
+    if (!channelOpt || !channelOpt->rateLimitPerUser.hasValue())
+        return 0;
+    return channelOpt->rateLimitPerUser.get();
 }
 
 ConnectionState ClientInstance::state() const

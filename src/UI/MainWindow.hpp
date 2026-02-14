@@ -27,6 +27,7 @@ class AccountsModel;
 class ChannelTreeView;
 struct ChannelNode;
 class TypingIndicator;
+class SlowModeIndicator;
 class ConnectionBanner;
 class TabBar;
 struct TabEntry;
@@ -75,6 +76,7 @@ private:
     TabBar *tabBar;
     MessageInput *messageInput;
     TypingIndicator *typingIndicator;
+    SlowModeIndicator *slowModeIndicator;
     ConnectionBanner *connectionBanner;
     MemberListView *memberListView;
     MemberListModel *memberListModel;

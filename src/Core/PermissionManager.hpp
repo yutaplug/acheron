@@ -32,7 +32,7 @@ public:
                                     const QList<Discord::Channel> &channels, Snowflake userId);
 
     void invalidateChannelCache(Snowflake channelId);
-    void invalidateGuildCache(Snowflake guildId);
+    void invalidateUserGuildCache(Snowflake userId, Snowflake guildId);
 
 signals:
     void channelPermissionsChanged(Snowflake channelId);

@@ -35,6 +35,7 @@ public:
     [[nodiscard]] MemberListManager *memberList() const;
 
     [[nodiscard]] QList<Discord::Role> getRolesForGuild(Snowflake guildId);
+    [[nodiscard]] int getChannelRateLimit(Snowflake channelId);
 
     [[nodiscard]] ConnectionState state() const;
 
