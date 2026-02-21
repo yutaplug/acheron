@@ -10,6 +10,18 @@
 namespace Acheron {
 namespace UI {
 
+static bool isChannelPrivate(const Discord::Channel &channel, Core::Snowflake guildId)
+{
+    if (!channel.permissionOverwrites.hasValue())
+        return false;
+
+    for (const auto &ow : channel.permissionOverwrites.get()) {
+        if (ow.type.get() == Discord::PermissionOverwrite::Type::Role && ow.id.get() == guildId)
+            return ow.deny->testFlag(Discord::Permission::VIEW_CHANNEL);
+    }
+    return false;
+}
+
 static QString getDMDisplayName(const Discord::Channel &channel, Storage::UserRepository &userRepo)
 {
     if (channel.name.hasValue() && !channel.name->isEmpty())
@@ -449,6 +461,7 @@ std::unique_ptr<ChannelNode> ChannelTreeModel::createGuildNode(const Discord::Ga
             node->position = channel.position;
             node->parentId =
                     channel.parentId.hasValue() ? channel.parentId.get() : Core::Snowflake();
+            node->isPrivate = isChannelPrivate(channel, guild.properties->id);
             if (isText) {
                 node->lastMessageId = channel.lastMessageId.hasValue()
                                               ? channel.lastMessageId.get()
@@ -671,6 +684,7 @@ void ChannelTreeModel::addChannel(const Discord::ChannelCreate &event, Snowflake
         bool isVoice = channel.type == Discord::ChannelType::GUILD_VOICE ||
                        channel.type == Discord::ChannelType::GUILD_STAGE_VOICE;
         node->type = isVoice ? ChannelNode::Type::VoiceChannel : ChannelNode::Type::Channel;
+        node->isPrivate = isChannelPrivate(channel, guildId);
 
         ChannelNode *parentNode = nullptr;
         if (node->parentId.isValid())
@@ -740,6 +754,7 @@ void ChannelTreeModel::updateChannel(const Discord::ChannelUpdate &update, Snowf
         node->name = channel.name.get();
         node->position = channel.position.get();
         node->parentId = newParentId;
+        node->isPrivate = isChannelPrivate(channel, guildNode->id);
 
         ChannelNode *newParent = nullptr;
         if (newParentId.isValid())
@@ -770,6 +785,10 @@ void ChannelTreeModel::updateChannel(const Discord::ChannelUpdate &update, Snowf
         channelNode->name = channel.name.get();
         channelNode->position = channel.position.get();
         channelNode->parentId = newParentId;
+
+        ChannelNode *guildNode = findGuildNode(channelNode);
+        if (guildNode)
+            channelNode->isPrivate = isChannelPrivate(channel, guildNode->id);
 
         QModelIndex idx = indexForNode(channelNode);
         if (idx.isValid())
