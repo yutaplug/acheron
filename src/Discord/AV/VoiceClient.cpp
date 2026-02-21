@@ -74,7 +74,6 @@ void VoiceClient::stop()
     localSsrc = 0;
     selectedMode.clear();
     sessionKey.clear();
-    ssrcToUser.clear();
 
     setState(State::Disconnected);
     // No emit disconnected() here — stop() is synchronous teardown,
@@ -310,24 +309,16 @@ void VoiceClient::onDatagram(const QByteArray &data)
 
 void VoiceClient::onSpeaking(const SpeakingData &data)
 {
-    if (data.userId->isValid() && data.ssrc != 0)
-        ssrcToUser.insert(data.ssrc, data.userId);
-
     emit speakingReceived(data);
 }
 
 void VoiceClient::onClientConnect(const ClientConnectData &data)
 {
-    if (data.userId->isValid() && data.audioSsrc != 0)
-        ssrcToUser.insert(data.audioSsrc, data.userId);
-
     emit clientConnected(data);
 }
 
 void VoiceClient::onClientDisconnect(Core::Snowflake userId)
 {
-    ssrcToUser.removeIf([userId](auto it) { return it.value() == userId; });
-
     emit clientDisconnected(userId);
 }
 
@@ -371,12 +362,6 @@ void VoiceClient::onIpDiscoveryFailed(const QString &error)
 {
     qCCritical(LogVoice) << "IP Discovery failed:" << error;
     stop();
-}
-
-Core::Snowflake VoiceClient::userIdForSsrc(quint32 ssrc) const
-{
-    auto it = ssrcToUser.constFind(ssrc);
-    return it != ssrcToUser.constEnd() ? it.value() : Core::Snowflake::Invalid;
 }
 
 void VoiceClient::setState(State state)

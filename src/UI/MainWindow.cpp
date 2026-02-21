@@ -324,6 +324,10 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
     if (!instance)
         return;
 
+    if (instancesSignalsConnected.contains(instance->accountId()))
+        return;
+    instancesSignalsConnected.insert(instance->accountId());
+
     connect(instance, &Core::ClientInstance::channelCreated, this,
             [this, instance](const Discord::ChannelCreate &event) {
                 channelTreeModel->addChannel(event, instance->accountId());
@@ -454,6 +458,7 @@ void MainWindow::setupUi()
     channelTree = new ChannelTreeView(leftSideWidget);
 
     voiceStatusBar = new VoiceStatusBar(leftSideWidget);
+    voiceStatusBar->setImageManager(session->getImageManager());
     connect(voiceStatusBar, &VoiceStatusBar::disconnectRequested, this, [this]() {
         for (const auto &inst : session->getClients()) {
             if (inst && inst->isInVoice()) {
@@ -780,6 +785,29 @@ void MainWindow::updateVoiceStatusLabel()
 
     Core::AV::VoiceManager *vm = voiceInstance ? voiceInstance->voice() : nullptr;
     voiceStatusBar->setVoiceManager(vm);
+
+    if (voiceInstance) {
+        QPointer<Core::UserManager> um = voiceInstance->users();
+        Core::Snowflake vGuildId = voiceInstance->voiceGuildId();
+        voiceStatusBar->setNameResolver([um, vGuildId](Core::Snowflake userId) -> QString {
+            if (!um)
+                return QString::number(userId);
+            return um->getDisplayName(userId, vGuildId.isValid() ? std::optional(vGuildId) : std::nullopt);
+        });
+        voiceStatusBar->setAvatarResolver([um](Core::Snowflake userId) -> QUrl {
+            if (!um)
+                return {};
+            Discord::User *user = um->getUser(userId);
+            if (!user || user->avatar.isNull() || user->avatar.get().isEmpty())
+                return {};
+            return QUrl(QStringLiteral("https://cdn.discordapp.com/avatars/%1/%2.png?size=32")
+                                .arg(quint64(userId))
+                                .arg(user->avatar.get()));
+        });
+    } else {
+        voiceStatusBar->setNameResolver(nullptr);
+        voiceStatusBar->setAvatarResolver(nullptr);
+    }
 
     QString channelName;
     if (voiceInstance) {

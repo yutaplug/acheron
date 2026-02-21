@@ -151,6 +151,16 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
                 }
 
                 db.commit();
+
+                for (const auto &guild : data.guilds.get()) {
+                    if (!guild.voiceStates.hasValue())
+                        continue;
+                    for (auto vs : guild.voiceStates.get()) {
+                        if (!vs.guildId.hasValue())
+                            vs.guildId = guild.id.get();
+                        voiceManager->handleVoiceStateUpdate(vs);
+                    }
+                }
             });
 
     connect(client, &Discord::Client::messageCreated, messageManager,

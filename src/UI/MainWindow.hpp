@@ -98,6 +98,7 @@ private:
     QHash<Core::Snowflake, QList<Discord::Role>> guildRolesCache;
     QHash<Core::Snowflake, QColor> userColorCache; // current guild
 
+    QSet<Core::Snowflake> instancesSignalsConnected;
     QSplitter *mainSplitter = nullptr;
 };
 

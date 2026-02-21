@@ -20,48 +20,102 @@ VoiceManager::~VoiceManager()
 
 void VoiceManager::handleVoiceStateUpdate(const Discord::VoiceState &state)
 {
-    if (state.userId.get() != accountId)
-        return;
+    Snowflake userId = state.userId.get();
+    bool isMe = (userId == accountId);
 
-    if (state.channelId.isNull() || !state.channelId.get().isValid()) {
-        qCInfo(LogVoice) << "Voice state: disconnected from channel";
-        voiceSessionId.clear();
-        channelId = Snowflake::Invalid;
-        guildId = Snowflake::Invalid;
-        pending = {};
-
-        if (voiceThread)
-            disconnect();
-        return;
-    }
-
-    voiceSessionId = state.sessionId.get();
-    channelId = state.channelId.get();
-    guildId = state.guildId.hasValue() ? state.guildId.get() : Snowflake::Invalid;
-
-    bool wasMuted = selfMute;
-    bool wasDeaf = selfDeaf;
-    selfMute = state.selfMute.get();
-    selfDeaf = state.selfDeaf.get();
-
-    qCInfo(LogVoice) << "Voice state: session =" << voiceSessionId
-                     << "channel =" << channelId << "guild =" << guildId;
-
-    if (audioPipeline && (selfMute != wasMuted || selfDeaf != wasDeaf)) {
-        if (selfMute || selfDeaf)
-            QMetaObject::invokeMethod(audioPipeline, &AudioPipeline::stopCapture);
+    // cache all non-self voice states so we can populate participants when joining a channel
+    if (!isMe) {
+        bool leftVoice = state.channelId.isNull() || !state.channelId.get().isValid();
+        if (leftVoice)
+            knownVoiceStates.remove(userId);
         else
-            QMetaObject::invokeMethod(audioPipeline, &AudioPipeline::startCapture);
-
-        if (selfDeaf != wasDeaf)
-            QMetaObject::invokeMethod(audioPipeline, [p = audioPipeline, deaf = selfDeaf]() { p->setDeafened(deaf); });
+            knownVoiceStates[userId] = state;
     }
 
-    pending.hasStateUpdate = true;
+    if (isMe) {
+        if (state.channelId.isNull() || !state.channelId.get().isValid()) {
+            qCInfo(LogVoice) << "Voice state: disconnected from channel";
+            voiceSessionId.clear();
+            channelId = Snowflake::Invalid;
+            guildId = Snowflake::Invalid;
+            pending = {};
 
-    if (pending.hasServerUpdate && pending.guildId == guildId) {
-        connectToVoiceServer(pending.endpoint, pending.token);
-        pending = {};
+            if (voiceThread)
+                disconnect();
+            return;
+        }
+
+        Snowflake newChannelId = state.channelId.get();
+        bool channelChanged = (channelId != newChannelId);
+
+        voiceSessionId = state.sessionId.get();
+        channelId = newChannelId;
+        guildId = state.guildId.hasValue() ? state.guildId.get() : Snowflake::Invalid;
+
+        if (channelChanged) {
+            if (!participants.isEmpty()) {
+                participants.clear();
+                emit participantsCleared();
+            }
+            populateParticipantsFromCache();
+        }
+
+        bool wasMuted = selfMute;
+        bool wasDeaf = selfDeaf;
+        selfMute = state.selfMute.get();
+        selfDeaf = state.selfDeaf.get();
+
+        qCInfo(LogVoice) << "Voice state: session =" << voiceSessionId
+                         << "channel =" << channelId << "guild =" << guildId;
+
+        if (audioPipeline && (selfMute != wasMuted || selfDeaf != wasDeaf)) {
+            if (selfMute || selfDeaf)
+                QMetaObject::invokeMethod(audioPipeline, &AudioPipeline::stopCapture);
+            else
+                QMetaObject::invokeMethod(audioPipeline, &AudioPipeline::startCapture);
+
+            if (selfDeaf != wasDeaf)
+                QMetaObject::invokeMethod(audioPipeline, [p = audioPipeline, deaf = selfDeaf]() { p->setDeafened(deaf); });
+        }
+
+        pending.hasStateUpdate = true;
+
+        if (pending.hasServerUpdate && pending.guildId == guildId) {
+            connectToVoiceServer(pending.endpoint, pending.token);
+            pending = {};
+        }
+    }
+
+    // others
+    if (!channelId.isValid() || isMe)
+        return;
+
+    bool userLeftChannel = state.channelId.isNull() || !state.channelId.get().isValid() || state.channelId.get() != channelId;
+
+    if (userLeftChannel) {
+        if (participants.remove(userId)) {
+            if (audioPipeline)
+                QMetaObject::invokeMethod(audioPipeline, [p = audioPipeline, userId]() { p->removeUser(userId); });
+            emit participantLeft(userId);
+        }
+    } else {
+        auto it = participants.find(userId);
+        bool isNew = (it == participants.end());
+
+        VoiceParticipant &p = isNew ? participants[userId] : it.value();
+        if (isNew)
+            p.userId = userId;
+
+        p.selfMute = state.selfMute.get();
+        p.selfDeaf = state.selfDeaf.get();
+        p.serverMute = state.mute.get();
+        p.serverDeaf = state.deaf.get();
+        p.suppress = state.suppress.get();
+
+        if (isNew)
+            emit participantJoined(userId);
+        else
+            emit participantUpdated(userId);
     }
 }
 
@@ -171,6 +225,34 @@ void VoiceManager::setOutputDevice(const QByteArray &deviceId)
         QMetaObject::invokeMethod(audioPipeline, [p = audioPipeline, deviceId]() { p->setOutputDevice(deviceId); });
 }
 
+QList<VoiceParticipant> VoiceManager::currentParticipants() const
+{
+    return participants.values();
+}
+
+const VoiceParticipant *VoiceManager::participant(Snowflake userId) const
+{
+    auto it = participants.constFind(userId);
+    if (it == participants.constEnd())
+        return nullptr;
+    return &it.value();
+}
+
+void VoiceManager::setUserMuted(Snowflake userId, bool muted)
+{
+    if (muted)
+        mutedUsers.insert(userId);
+    else
+        mutedUsers.remove(userId);
+
+    setUserVolume(userId, muted ? 0.0f : 1.0f);
+}
+
+bool VoiceManager::isUserMuted(Snowflake userId) const
+{
+    return mutedUsers.contains(userId);
+}
+
 void VoiceManager::connectToVoiceServer(const QString &endpoint, const QString &token)
 {
     if (voiceSessionId.isEmpty()) {
@@ -196,65 +278,91 @@ void VoiceManager::connectToVoiceServer(const QString &endpoint, const QString &
     audioPipeline->moveToThread(voiceThread);
     audioBackend->moveToThread(voiceThread);
 
-    voiceConnections.append(
-            connect(voiceClient, &Discord::AV::VoiceClient::audioReceived,
-                    audioPipeline, &AudioPipeline::onAudioReceived));
+    connect(voiceClient, &Discord::AV::VoiceClient::audioReceived, audioPipeline, &AudioPipeline::onAudioReceived);
 
-    voiceConnections.append(
-            connect(audioPipeline, &AudioPipeline::encodedAudioReady,
-                    voiceClient, &Discord::AV::VoiceClient::sendAudio));
+    connect(audioPipeline, &AudioPipeline::encodedAudioReady, voiceClient, &Discord::AV::VoiceClient::sendAudio);
 
-    voiceConnections.append(
-            connect(audioPipeline, &AudioPipeline::speakingChanged,
-                    voiceClient, &Discord::AV::VoiceClient::setSpeaking));
+    connect(audioPipeline, &AudioPipeline::speakingChanged, voiceClient, &Discord::AV::VoiceClient::setSpeaking);
 
-    voiceConnections.append(
-            connect(voiceClient, &Discord::AV::VoiceClient::speakingReceived, audioPipeline,
-                    [ap = audioPipeline](const Discord::AV::SpeakingData &data) {
-                        if (data.userId->isValid() && data.ssrc.get() != 0)
-                            ap->setSsrcUserId(data.ssrc, data.userId.get());
-                    }));
+    connect(voiceClient, &Discord::AV::VoiceClient::speakingReceived, audioPipeline,
+            [ap = audioPipeline](const Discord::AV::SpeakingData &data) {
+                if (data.userId.hasValue() && data.userId->isValid() && data.ssrc.get() != 0)
+                    ap->setSsrcUserId(data.ssrc, data.userId.get());
+            });
 
-    voiceConnections.append(
-            connect(voiceClient, &Discord::AV::VoiceClient::clientConnected, audioPipeline,
-                    [ap = audioPipeline](const Discord::AV::ClientConnectData &data) {
-                        if (data.userId->isValid() && data.audioSsrc.get() != 0)
-                            ap->setSsrcUserId(data.audioSsrc, data.userId);
-                    }));
+    connect(voiceClient, &Discord::AV::VoiceClient::clientConnected, audioPipeline,
+            [ap = audioPipeline](const Discord::AV::ClientConnectData &data) {
+                if (data.userId.hasValue() && data.userId->isValid() && data.audioSsrc.get() != 0)
+                    ap->setSsrcUserId(data.audioSsrc, data.userId.get());
+            });
 
-    // move to a new generation so old signals are ignored.
-    // for example if we get dragged to a different channel a disconnect can sneak in
+    // guard new connections (against eg channel moves)
     unsigned int gen = voiceGeneration;
 
-    voiceConnections.append(
-            connect(voiceClient, &Discord::AV::VoiceClient::connected,
-                    this, [this, gen]() {
-                        if (gen != voiceGeneration)
-                            return;
-                        onVoiceClientConnected();
-                    }));
+    connect(voiceClient, &Discord::AV::VoiceClient::clientConnected,
+            this, [this, gen](const Discord::AV::ClientConnectData &data) {
+                if (gen != voiceGeneration)
+                    return;
+                Snowflake userId = data.userId;
+                if (!userId.isValid() || userId == accountId || participants.contains(userId))
+                    return;
+                VoiceParticipant p;
+                p.userId = userId;
+                participants.insert(userId, p);
+                emit participantJoined(userId);
+            });
 
-    voiceConnections.append(
-            connect(voiceClient, &Discord::AV::VoiceClient::disconnected, this, [this, gen]() {
-                        if (gen != voiceGeneration)
-                            return;
-                        onVoiceClientDisconnected(); }, Qt::QueuedConnection));
+    connect(voiceClient, &Discord::AV::VoiceClient::clientDisconnected,
+            this, [this, gen](Snowflake userId) {
+                if (gen != voiceGeneration)
+                    return;
+                if (participants.remove(userId)) {
+                    if (audioPipeline)
+                        QMetaObject::invokeMethod(audioPipeline, [p = audioPipeline, userId]() { p->removeUser(userId); });
+                    emit participantLeft(userId);
+                }
+            });
 
-    voiceConnections.append(
-            connect(voiceClient, &Discord::AV::VoiceClient::stateChanged,
-                    this, [this, gen](Discord::AV::VoiceClient::State state) {
-                        if (gen != voiceGeneration)
-                            return;
-                        onVoiceClientStateChanged(state);
-                    }));
+    connect(voiceClient, &Discord::AV::VoiceClient::speakingReceived,
+            this, [this, gen](const Discord::AV::SpeakingData &data) {
+                if (gen != voiceGeneration)
+                    return;
+                if (!data.userId.hasValue() || !data.userId->isValid())
+                    return;
+                Snowflake userId = data.userId.get();
+                auto it = participants.find(userId);
+                if (it == participants.end())
+                    return;
+                bool wasSpeaking = it->speaking;
+                it->speaking = (data.speaking.get() != 0);
+                if (it->speaking != wasSpeaking)
+                    emit participantSpeakingChanged(userId, it->speaking);
+            });
 
-    voiceConnections.append(
-            connect(audioPipeline, &AudioPipeline::audioLevelChanged,
-                    this, &VoiceManager::audioLevelChanged));
+    connect(audioPipeline, &AudioPipeline::userAudioLevelChanged, this, &VoiceManager::userAudioLevelChanged);
 
-    voiceConnections.append(
-            connect(audioPipeline, &AudioPipeline::speakingChanged,
-                    this, &VoiceManager::speakingChanged));
+    connect(voiceClient, &Discord::AV::VoiceClient::connected,
+            this, [this, gen]() {
+                if (gen != voiceGeneration)
+                    return;
+                onVoiceClientConnected();
+            });
+
+    connect(voiceClient, &Discord::AV::VoiceClient::disconnected, this, [this, gen]() {
+                if (gen != voiceGeneration)
+                    return;
+                onVoiceClientDisconnected(); }, Qt::QueuedConnection);
+
+    connect(voiceClient, &Discord::AV::VoiceClient::stateChanged,
+            this, [this, gen](Discord::AV::VoiceClient::State state) {
+                if (gen != voiceGeneration)
+                    return;
+                onVoiceClientStateChanged(state);
+            });
+
+    connect(audioPipeline, &AudioPipeline::audioLevelChanged, this, &VoiceManager::audioLevelChanged);
+
+    connect(audioPipeline, &AudioPipeline::speakingChanged, this, &VoiceManager::speakingChanged);
 
     voiceThread->start();
     QMetaObject::invokeMethod(voiceClient, &Discord::AV::VoiceClient::start);
@@ -266,10 +374,11 @@ void VoiceManager::stopVoiceThread()
         return;
 
     voiceGeneration++;
-
-    for (auto &conn : voiceConnections)
-        QObject::disconnect(conn);
-    voiceConnections.clear();
+    bool hadParticipants = !participants.isEmpty();
+    participants.clear();
+    mutedUsers.clear();
+    if (hadParticipants)
+        emit participantsCleared();
 
     AudioPipeline *ap = audioPipeline;
     Discord::AV::VoiceClient *vc = voiceClient;
@@ -301,6 +410,27 @@ void VoiceManager::stopVoiceThread()
     qCDebug(LogVoice) << "Voice thread stopped";
 }
 
+void VoiceManager::populateParticipantsFromCache()
+{
+    for (auto it = knownVoiceStates.constBegin(); it != knownVoiceStates.constEnd(); ++it) {
+        const auto &vs = it.value();
+        if (vs.channelId.isNull() || vs.channelId.get() != channelId)
+            continue;
+        if (participants.contains(it.key()))
+            continue;
+
+        VoiceParticipant p;
+        p.userId = it.key();
+        p.selfMute = vs.selfMute.get();
+        p.selfDeaf = vs.selfDeaf.get();
+        p.serverMute = vs.mute.get();
+        p.serverDeaf = vs.deaf.get();
+        p.suppress = vs.suppress.get();
+        participants.insert(it.key(), p);
+        emit participantJoined(it.key());
+    }
+}
+
 void VoiceManager::onVoiceClientConnected()
 {
     if (!audioPipeline)
@@ -313,12 +443,14 @@ void VoiceManager::onVoiceClientConnected()
     QByteArray outputId = currentOutputDeviceId;
     IAudioBackend *backend = audioBackend.get();
     QMetaObject::invokeMethod(audioPipeline, [p = audioPipeline, backend, capturing, inputId, outputId]() {
+        p->start(backend, capturing);
         if (!inputId.isEmpty())
             p->setInputDevice(inputId);
         if (!outputId.isEmpty())
             p->setOutputDevice(outputId);
-        p->start(backend, capturing);
     });
+
+    populateParticipantsFromCache();
 
     emit voiceConnected();
     emit voiceStateChanged();

@@ -2,7 +2,9 @@
 
 #include <QObject>
 #include <QThread>
+#include <QHash>
 #include <QList>
+#include <QSet>
 
 #include <memory>
 
@@ -16,6 +18,17 @@ namespace Core {
 namespace AV {
 
 class AudioPipeline;
+
+struct VoiceParticipant
+{
+    Snowflake userId;
+    bool selfMute = false;
+    bool selfDeaf = false;
+    bool serverMute = false;
+    bool serverDeaf = false;
+    bool suppress = false;
+    bool speaking = false;
+};
 
 class VoiceManager : public QObject
 {
@@ -46,6 +59,12 @@ public:
     void setInputDevice(const QByteArray &deviceId);
     void setOutputDevice(const QByteArray &deviceId);
 
+    [[nodiscard]] QList<VoiceParticipant> currentParticipants() const;
+    [[nodiscard]] const VoiceParticipant *participant(Snowflake userId) const;
+
+    void setUserMuted(Snowflake userId, bool muted);
+    [[nodiscard]] bool isUserMuted(Snowflake userId) const;
+
 signals:
     void voiceConnected();
     void voiceDisconnected();
@@ -53,6 +72,13 @@ signals:
     void audioLevelChanged(float rms);
     void speakingChanged(bool speaking);
     void devicesChanged();
+
+    void participantJoined(Snowflake userId);
+    void participantLeft(Snowflake userId);
+    void participantUpdated(Snowflake userId);
+    void participantSpeakingChanged(Snowflake userId, bool speaking);
+    void participantsCleared();
+    void userAudioLevelChanged(Snowflake userId, float rms);
 
 private slots:
     void onVoiceClientConnected();
@@ -63,6 +89,7 @@ private slots:
 private:
     void connectToVoiceServer(const QString &endpoint, const QString &token);
     void stopVoiceThread();
+    void populateParticipantsFromCache();
 
 private:
     Snowflake accountId;
@@ -90,10 +117,13 @@ private:
     QList<AudioDeviceInfo> cachedInputDevices;
     QList<AudioDeviceInfo> cachedOutputDevices;
 
+    QHash<Snowflake, VoiceParticipant> participants;
+    QSet<Snowflake> mutedUsers;
+    QHash<Snowflake, Discord::VoiceState> knownVoiceStates;
+
     QThread *voiceThread = nullptr;
     Discord::AV::VoiceClient *voiceClient = nullptr;
     AudioPipeline *audioPipeline = nullptr;
-    QList<QMetaObject::Connection> voiceConnections;
     unsigned int voiceGeneration = 0;
 
     std::unique_ptr<IAudioBackend> audioBackend;

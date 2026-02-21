@@ -24,7 +24,6 @@ struct SpeakerState
 {
     std::unique_ptr<OpusDecoder> decoder;
     std::unique_ptr<JitterBuffer> jitterBuffer;
-    qint64 lastReceivedTime = 0;
 };
 
 class AudioPipeline : public QObject
@@ -44,6 +43,7 @@ public slots:
     void onAudioReceived(quint32 ssrc, uint16_t sequence, uint32_t timestamp, const QByteArray &opusData);
 
     void setSsrcUserId(quint32 ssrc, Snowflake userId);
+    void removeUser(Snowflake userId);
     void setDeafened(bool deafened);
     void setUserVolume(Snowflake userId, float volume);
     void setInputDevice(const QByteArray &deviceId);
@@ -56,6 +56,7 @@ signals:
     void encodedAudioReady(const QByteArray &opusData);
     void speakingChanged(bool speaking);
     void audioLevelChanged(float rms);
+    void userAudioLevelChanged(Snowflake userId, float rms);
 
 private slots:
     void onAudioCaptured(const QByteArray &pcmData);
@@ -63,6 +64,8 @@ private slots:
 
 private:
     bool detectVoiceActivity(const QByteArray &pcmFrame, float &outRms) const;
+    void sendTrailingSilence();
+    static float computeRms(const int16_t *samples, int count);
 
     IAudioBackend *audioBackend = nullptr;
     QTimer *mixTimer = nullptr;
@@ -79,9 +82,10 @@ private:
     int vadHoldoffCounter = 0;
 
     QElapsedTimer rmsThrottleTimer;
+    QElapsedTimer userRmsThrottleTimer;
+    QHash<Snowflake, float> pendingUserRms;
 
     static constexpr int TRAILING_SILENCE_FRAMES = 5;
-    static constexpr qint64 SPEAKER_TIMEOUT_MS = 5000;
     static constexpr qint64 RMS_EMIT_INTERVAL_MS = 60;
 };
 

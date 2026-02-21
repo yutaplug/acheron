@@ -20,20 +20,14 @@ VoiceEncryption::VoiceEncryption(EncryptionMode mode, const QByteArray &secretKe
 
 bool VoiceEncryption::initialize()
 {
-    static bool initialized = false;
-    static bool success = false;
-
-    if (initialized)
-        return success;
-
-    initialized = true;
-    int result = sodium_init();
-    if (result < 0) {
-        qCCritical(LogVoice) << "Failed to initialize libsodium";
-        success = false;
-    } else {
-        success = true;
-    }
+    static bool success = []() {
+        int result = sodium_init();
+        if (result < 0) {
+            qCCritical(LogVoice) << "Failed to initialize libsodium";
+            return false;
+        }
+        return true;
+    }();
     return success;
 }
 

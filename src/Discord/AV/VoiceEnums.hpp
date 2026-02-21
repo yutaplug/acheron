@@ -105,20 +105,6 @@ inline EncryptionMode encryptionModeFromString(const QString &str)
     return EncryptionMode::UNKNOWN;
 }
 
-inline EncryptionMode selectBestEncryptionMode(const QStringList &serverModes)
-{
-    static const std::array preferred{
-        "aead_aes256_gcm_rtpsize",
-        "aead_xchacha20_poly1305_rtpsize",
-    };
-
-    for (const auto &mode : preferred)
-        if (serverModes.contains(mode))
-            return encryptionModeFromString(mode);
-
-    return EncryptionMode::UNKNOWN;
-}
-
 static constexpr int VOICE_GATEWAY_VERSION = 9;
 
 } // namespace AV

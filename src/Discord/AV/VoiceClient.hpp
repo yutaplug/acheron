@@ -48,8 +48,6 @@ public:
     [[nodiscard]] const QString &encryptionMode() const { return selectedMode; }
     [[nodiscard]] const QByteArray &secretKey() const { return sessionKey; }
 
-    [[nodiscard]] Core::Snowflake userIdForSsrc(quint32 ssrc) const;
-
     void sendAudio(const QByteArray &opusData);
 
     void setSpeaking(bool speaking);
@@ -105,8 +103,6 @@ private:
     // protocol selection
     QString selectedMode;
     QByteArray sessionKey;
-
-    QHash<quint32, Core::Snowflake> ssrcToUser;
 
     std::unique_ptr<VoiceEncryption> encryption;
     QTimer *keepaliveTimer = nullptr;

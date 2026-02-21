@@ -205,23 +205,13 @@ void VoiceGateway::handleHello(const QJsonObject &data)
 void VoiceGateway::handleReady(const QJsonObject &data)
 {
     VoiceReady ready = VoiceReady::fromJson(data);
-
-    qCInfo(LogVoice) << "Voice Ready: SSRC =" << ready.ssrc
-                     << "IP =" << ready.ip << "port =" << ready.port
-                     << "modes =" << ready.modes.get();
-
     canResume = true;
-
     emit readyReceived(ready);
 }
 
 void VoiceGateway::handleSessionDescription(const QJsonObject &data)
 {
     SessionDescription desc = SessionDescription::fromJson(data);
-
-    qCInfo(LogVoice) << "Session Description: mode =" << desc.mode
-                     << "key length =" << desc.secretKey->size();
-
     emit sessionDescriptionReceived(desc);
 }
 

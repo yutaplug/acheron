@@ -14,6 +14,13 @@ VoiceStatusBar::VoiceStatusBar(QWidget *parent) : QWidget(parent)
 {
     setupUi();
     hide();
+
+    closeTimer.setSingleShot(true);
+    closeTimer.setInterval(500);
+    connect(&closeTimer, &QTimer::timeout, this, [this]() {
+        if (voiceWindow)
+            voiceWindow->close();
+    });
 }
 
 void VoiceStatusBar::setupUi()
@@ -27,10 +34,6 @@ void VoiceStatusBar::setupUi()
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(10, 0, 6, 0);
     layout->setSpacing(6);
-
-    auto *border = new QWidget(this);
-    border->setFixedHeight(1);
-    border->setStyleSheet("background-color: #2a2a3e;");
 
     statusDot = new QLabel(this);
     statusDot->setFixedSize(8, 8);
@@ -80,18 +83,38 @@ void VoiceStatusBar::setVoiceManager(Core::AV::VoiceManager *manager)
     voiceManager = manager;
 
     if (!voiceManager) {
+        if (voiceWindow)
+            voiceWindow->setVoiceManager(nullptr);
         updateConnectionState();
         return;
     }
 
-    managerConnections.append(
-            connect(voiceManager, &Core::AV::VoiceManager::voiceStateChanged,
-                    this, &VoiceStatusBar::updateConnectionState));
+    connect(voiceManager, &Core::AV::VoiceManager::voiceStateChanged,
+            this, &VoiceStatusBar::updateConnectionState);
 
-    if (voiceWindow)
-        voiceWindow->setVoiceManager(manager);
-
+    configureVoiceWindow();
     updateConnectionState();
+}
+
+void VoiceStatusBar::setNameResolver(NameResolver resolver)
+{
+    nameResolver = std::move(resolver);
+    if (voiceWindow)
+        voiceWindow->setNameResolver(nameResolver);
+}
+
+void VoiceStatusBar::setAvatarResolver(AvatarResolver resolver)
+{
+    avatarResolver = std::move(resolver);
+    if (voiceWindow)
+        voiceWindow->setAvatarResolver(avatarResolver);
+}
+
+void VoiceStatusBar::setImageManager(Core::ImageManager *manager)
+{
+    imageManager = manager;
+    if (voiceWindow)
+        voiceWindow->setImageManager(manager);
 }
 
 void VoiceStatusBar::setChannelName(const QString &name)
@@ -148,13 +171,16 @@ void VoiceStatusBar::updateConnectionState()
     setVisible(active);
 
     if (active && wasDisconnected) {
+        closeTimer.stop();
         showVoiceWindow();
         if (voiceWindow)
             voiceWindow->refreshDevices();
+    } else if (active) {
+        closeTimer.stop();
     }
 
     if (!active && voiceWindow)
-        voiceWindow->close();
+        closeTimer.start();
 
     wasDisconnected = !active;
 }
@@ -181,8 +207,7 @@ void VoiceStatusBar::showVoiceWindow()
 {
     if (!voiceWindow) {
         voiceWindow = new VoiceWindow(window());
-        if (voiceManager)
-            voiceWindow->setVoiceManager(voiceManager);
+        configureVoiceWindow();
     }
 
     voiceWindow->show();
@@ -190,11 +215,24 @@ void VoiceStatusBar::showVoiceWindow()
     voiceWindow->activateWindow();
 }
 
+void VoiceStatusBar::configureVoiceWindow()
+{
+    if (!voiceWindow)
+        return;
+    if (imageManager)
+        voiceWindow->setImageManager(imageManager);
+    if (nameResolver)
+        voiceWindow->setNameResolver(nameResolver);
+    if (avatarResolver)
+        voiceWindow->setAvatarResolver(avatarResolver);
+    if (voiceManager)
+        voiceWindow->setVoiceManager(voiceManager);
+}
+
 void VoiceStatusBar::disconnectManager()
 {
-    for (auto &conn : managerConnections)
-        QObject::disconnect(conn);
-    managerConnections.clear();
+    if (voiceManager)
+        disconnect(voiceManager, nullptr, this, nullptr);
     voiceManager = nullptr;
 }
 
