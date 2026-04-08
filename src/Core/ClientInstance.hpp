@@ -15,9 +15,11 @@
 namespace Acheron {
 namespace Core {
 
+#ifndef ACHERON_NO_VOICE
 namespace AV {
 class VoiceManager;
 }
+#endif
 
 class ReadStateManager;
 
@@ -37,7 +39,9 @@ public:
     [[nodiscard]] PermissionManager *permissions() const;
     [[nodiscard]] ReadStateManager *readState() const;
     [[nodiscard]] MemberListManager *memberList() const;
+#ifndef ACHERON_NO_VOICE
     [[nodiscard]] AV::VoiceManager *voice() const;
+#endif
 
     [[nodiscard]] QList<Discord::Role> getRolesForGuild(Snowflake guildId);
     [[nodiscard]] int getChannelRateLimit(Snowflake channelId);
@@ -93,7 +97,9 @@ private:
     PermissionManager *permissionManager;
     ReadStateManager *readStateManager;
     MemberListManager *memberListManager;
+#ifndef ACHERON_NO_VOICE
     AV::VoiceManager *voiceManager;
+#endif
 
     Storage::RoleRepository roleRepo;
     Storage::GuildRepository guildRepo;

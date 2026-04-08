@@ -112,18 +112,26 @@ void ChannelTreeView::contextMenuEvent(QContextMenuEvent *event)
     if (isVoiceChannel || isDMChannel) {
         QString joinText = isDMChannel ? tr("Join Call") : tr("Join Voice Channel");
         QAction *joinAction = menu.addAction(joinText);
+#ifdef ACHERON_NO_VOICE
+        joinAction->setEnabled(false);
+#else
         connect(joinAction, &QAction::triggered, this, [this, proxyIndex]() {
             emit joinVoiceChannelRequested(proxyIndex);
         });
+#endif
 
         Core::Snowflake acctId = findAccountIdForIndex(sourceIndex);
         bool inVoice = isAccountInVoice(acctId);
 
         QAction *disconnectAction = menu.addAction(tr("Disconnect from Voice"));
+#ifdef ACHERON_NO_VOICE
+        disconnectAction->setEnabled(false);
+#else
         disconnectAction->setEnabled(inVoice);
         connect(disconnectAction, &QAction::triggered, this, [this, proxyIndex]() {
             emit disconnectVoiceRequested(proxyIndex);
         });
+#endif
 
         menu.addSeparator();
     }

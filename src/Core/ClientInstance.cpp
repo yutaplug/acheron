@@ -1,6 +1,8 @@
 #include "ClientInstance.hpp"
 #include "ReadStateManager.hpp"
-#include "Core/AV/VoiceManager.hpp"
+#ifndef ACHERON_NO_VOICE
+#  include "Core/AV/VoiceManager.hpp"
+#endif
 
 #include <QTimer>
 
@@ -32,7 +34,9 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
     permissionManager = new PermissionManager(info.id, this);
     readStateManager = new ReadStateManager(info.id, permissionManager, this);
     memberListManager = new MemberListManager(channelRepo, roleRepo, this);
+#ifndef ACHERON_NO_VOICE
     voiceManager = new AV::VoiceManager(info.id, this);
+#endif
 
     connect(client, &Discord::Client::stateChanged, this, &ClientInstance::stateChanged);
     connect(client, &Discord::Client::reconnecting, this, &ClientInstance::reconnecting);
@@ -152,6 +156,7 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
 
                 db.commit();
 
+#ifndef ACHERON_NO_VOICE
                 for (const auto &guild : data.guilds.get()) {
                     if (!guild.voiceStates.hasValue())
                         continue;
@@ -161,6 +166,7 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
                         voiceManager->handleVoiceStateUpdate(vs);
                     }
                 }
+#endif
             });
 
     connect(client, &Discord::Client::messageCreated, messageManager,
@@ -235,9 +241,12 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
                     emit voiceStateChanged(currentVoiceChannelId, currentVoiceGuildId);
                 }
 
+#ifndef ACHERON_NO_VOICE
                 voiceManager->handleVoiceStateUpdate(event);
+#endif
             });
 
+#ifndef ACHERON_NO_VOICE
     connect(client, &Discord::Client::voiceServerUpdated, this,
             [this](const Discord::VoiceServerUpdate &event) {
                 qCInfo(LogVoice) << "VOICE_SERVER_UPDATE: guild" << event.guildId.get()
@@ -246,6 +255,7 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
 
                 voiceManager->handleVoiceServerUpdate(event);
             });
+#endif
 }
 
 void ClientInstance::onChannelCreated(const Discord::ChannelCreate &event)
@@ -617,7 +627,9 @@ void ClientInstance::stop()
 {
     if (isInVoice()) {
         discord()->sendVoiceStateUpdate(currentVoiceGuildId, Snowflake::Invalid, false, false);
+#ifndef ACHERON_NO_VOICE
         voiceManager->disconnect();
+#endif
     }
     discord()->stop();
 }
@@ -652,10 +664,12 @@ MemberListManager *ClientInstance::memberList() const
     return memberListManager;
 }
 
+#ifndef ACHERON_NO_VOICE
 AV::VoiceManager *ClientInstance::voice() const
 {
     return voiceManager;
 }
+#endif
 
 QList<Discord::Role> ClientInstance::getRolesForGuild(Snowflake guildId)
 {

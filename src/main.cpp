@@ -11,8 +11,10 @@
 #include <QNetworkAccessManager>
 #include <QFontDatabase>
 
-#include <dave/dave.h>
-#include <dave/logger.h>
+#ifndef ACHERON_NO_VOICE
+#  include <dave/dave.h>
+#  include <dave/logger.h>
+#endif
 
 // potentially named after that river
 // or the honkai star rail character
@@ -26,6 +28,7 @@ void registerMetatypes()
             [](const Snowflake &s) { return s.toString(); });
 }
 
+#ifndef ACHERON_NO_VOICE
 static void DaveLogSink(discord::dave::LoggingSeverity severity, const char *file, int line, const std::string &message)
 {
     switch (severity) {
@@ -45,6 +48,7 @@ static void DaveLogSink(discord::dave::LoggingSeverity severity, const char *fil
         break;
     }
 }
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -191,7 +195,9 @@ int main(int argc, char *argv[])
 
     Acheron::Core::Logger::init();
 
+#ifndef ACHERON_NO_VOICE
     discord::dave::SetLogSink(DaveLogSink);
+#endif
 
     qCInfo(LogCore) << "Starting Acheron...";
 

@@ -17,13 +17,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTORCC ON)
 
 option(BUILD_TESTS "Build test targets" ON)
+option(ENABLE_VOICE "Build with voice/audio support" ON)
 if(BUILD_TESTS)
     enable_testing()
 endif()
 
 find_package(CURL REQUIRED)
-find_package(unofficial-sodium CONFIG REQUIRED)
-find_package(Opus CONFIG REQUIRED)
+if(ENABLE_VOICE)
+    find_package(unofficial-sodium CONFIG REQUIRED)
+    find_package(Opus CONFIG REQUIRED)
+endif()
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Widgets Network Sql Test LinguistTools)
 find_package(Qt${QT_VERSION_MAJOR}
@@ -72,13 +75,15 @@ else()
     add_subdirectory(vendor/qtkeychain EXCLUDE_FROM_ALL)
 endif()
 
-# libdave (Discord Audio/Video E2E Encryption)
-set(TESTING OFF CACHE BOOL "" FORCE)
-set(PERSISTENT_KEYS OFF CACHE BOOL "" FORCE)
-# Prevent libdave's own vcpkg manifest from being processed; our
-# project-level vcpkg.json already provides all required packages.
-set(VCPKG_MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH "" FORCE)
-add_subdirectory(vendor/libdave/cpp EXCLUDE_FROM_ALL)
+if(ENABLE_VOICE)
+    # libdave (Discord Audio/Video E2E Encryption)
+    set(TESTING OFF CACHE BOOL "" FORCE)
+    set(PERSISTENT_KEYS OFF CACHE BOOL "" FORCE)
+    # Prevent libdave's own vcpkg manifest from being processed; our
+    # project-level vcpkg.json already provides all required packages.
+    set(VCPKG_MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH "" FORCE)
+    add_subdirectory(vendor/libdave/cpp EXCLUDE_FROM_ALL)
+endif()
 
 set(PROJECT_SOURCES
     resources.qrc
@@ -99,8 +104,6 @@ set(PROJECT_SOURCES
     src/Core/EmojiSegmenter.cpp
     src/Core/Markdown/Parser.cpp
     src/UI/MainWindow.cpp
-    src/UI/VoiceStatusBar.cpp
-    src/UI/VoiceWindow.cpp
     src/UI/TypingIndicator.cpp
     src/UI/SlowModeIndicator.cpp
     src/UI/ConnectionBanner.cpp
@@ -139,25 +142,32 @@ set(PROJECT_SOURCES
     src/Discord/HttpClient.cpp
     src/Discord/CurlUtils.cpp
     src/Discord/ClientIdentity.cpp
-    src/Discord/AV/VoiceGateway.cpp
-    src/Discord/AV/UdpTransport.cpp
-    src/Discord/AV/VoiceClient.cpp
-    src/Discord/AV/RtpPacket.cpp
-    src/Discord/AV/VoiceEncryption.cpp
-    src/Discord/AV/DaveSession.cpp
-    src/Core/AV/VoiceManager.cpp
-    src/Core/AV/AudioPipeline.cpp
-    src/Core/AV/IAudioBackend.cpp
-    src/Core/AV/MiniaudioAudioBackend.cpp
-    src/Core/AV/OpusEncoder.cpp
-    src/Core/AV/OpusDecoder.cpp
-    src/Core/AV/JitterBuffer.cpp
-    src/Core/AV/AudioMixer.cpp
     src/Proto/ProtoReader.cpp
     src/Proto/UserSettings.cpp
     src/Core/TokenStore.cpp
     src/App.cpp
 )
+
+if(ENABLE_VOICE)
+    list(APPEND PROJECT_SOURCES
+        src/UI/VoiceStatusBar.cpp
+        src/UI/VoiceWindow.cpp
+        src/Discord/AV/VoiceGateway.cpp
+        src/Discord/AV/UdpTransport.cpp
+        src/Discord/AV/VoiceClient.cpp
+        src/Discord/AV/RtpPacket.cpp
+        src/Discord/AV/VoiceEncryption.cpp
+        src/Discord/AV/DaveSession.cpp
+        src/Core/AV/VoiceManager.cpp
+        src/Core/AV/AudioPipeline.cpp
+        src/Core/AV/IAudioBackend.cpp
+        src/Core/AV/MiniaudioAudioBackend.cpp
+        src/Core/AV/OpusEncoder.cpp
+        src/Core/AV/OpusDecoder.cpp
+        src/Core/AV/JitterBuffer.cpp
+        src/Core/AV/AudioMixer.cpp
+    )
+endif()
 
 qt_add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
 
@@ -192,6 +202,9 @@ set_target_properties(${PROJECT_NAME}
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX)
+if(NOT ENABLE_VOICE)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ACHERON_NO_VOICE)
+endif()
 
 target_link_libraries(${PROJECT_NAME}
     PUBLIC
@@ -204,16 +217,20 @@ target_link_libraries(${PROJECT_NAME}
         CURL::libcurl
     PRIVATE
         qt${QT_VERSION_MAJOR}keychain
+)
+if(ENABLE_VOICE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
         unofficial-sodium::sodium
         Opus::opus
-)
+        libdave
+    )
+    target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/vendor/miniaudio")
+endif()
 if(TARGET Qt::ZlibPrivate)
     target_link_libraries(${PROJECT_NAME} PRIVATE Qt::ZlibPrivate)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE QtZlibCompat)
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE libdave)
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/vendor/miniaudio")
 target_precompile_headers(${PROJECT_NAME} PUBLIC src/pch.h)
 
 include(CheckSymbolExists)
