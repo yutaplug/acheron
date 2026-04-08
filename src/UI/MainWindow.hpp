@@ -29,7 +29,9 @@ struct ChannelNode;
 class TypingIndicator;
 class SlowModeIndicator;
 class ConnectionBanner;
+#ifndef ACHERON_NO_VOICE
 class VoiceStatusBar;
+#endif
 class TabBar;
 struct TabEntry;
 } // namespace UI
@@ -60,7 +62,9 @@ private:
     void activateChannel(const TabEntry &entry);
     void refreshTabReadStates();
     QColor resolveRoleColor(Core::Snowflake userId, Core::Snowflake guildId);
+#ifndef ACHERON_NO_VOICE
     void updateVoiceStatusLabel();
+#endif
 
 private:
     void setupUi();
@@ -84,7 +88,9 @@ private:
     MemberListModel *memberListModel;
     Core::TypingTracker *typingTracker;
 
+#ifndef ACHERON_NO_VOICE
     VoiceStatusBar *voiceStatusBar;
+#endif
     AccountsWindow *accountsWindow = nullptr;
 
 private slots:

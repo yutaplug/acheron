@@ -22,8 +22,10 @@
 #include "ConnectionBanner.hpp"
 #include "Dialogs/ConfirmPopup.hpp"
 #include "Core/MemberListManager.hpp"
-#include "Core/AV/VoiceManager.hpp"
-#include "VoiceStatusBar.hpp"
+#ifndef ACHERON_NO_VOICE
+#  include "Core/AV/VoiceManager.hpp"
+#  include "VoiceStatusBar.hpp"
+#endif
 
 using namespace Acheron::Core;
 
@@ -316,7 +318,9 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
                 chatModel->refreshUsersInView(userIds);
             });
 
+#ifndef ACHERON_NO_VOICE
     updateVoiceStatusLabel();
+#endif
 }
 
 void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
@@ -438,9 +442,12 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
     connect(instance, &Core::ClientInstance::voiceStateChanged, this,
             [this, instance](Core::Snowflake channelId, Core::Snowflake) {
                 channelTree->setAccountVoiceChannel(instance->accountId(), channelId);
+#ifndef ACHERON_NO_VOICE
                 updateVoiceStatusLabel();
+#endif
             });
 
+#ifndef ACHERON_NO_VOICE
     connect(instance->voice(), &Core::AV::VoiceManager::voiceStateChanged,
             this, &MainWindow::updateVoiceStatusLabel);
 
@@ -449,6 +456,7 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
                 int count = instance->voice()->channelVoiceUserCount(channelId);
                 channelTreeModel->updateVoiceCount(channelId, count, instance->accountId());
             });
+#endif
 }
 
 void MainWindow::setupUi()
@@ -463,6 +471,7 @@ void MainWindow::setupUi()
 
     channelTree = new ChannelTreeView(leftSideWidget);
 
+#ifndef ACHERON_NO_VOICE
     voiceStatusBar = new VoiceStatusBar(leftSideWidget);
     voiceStatusBar->setImageManager(session->getImageManager());
     connect(voiceStatusBar, &VoiceStatusBar::disconnectRequested, this, [this]() {
@@ -473,9 +482,12 @@ void MainWindow::setupUi()
             }
         }
     });
+#endif
 
     leftLayout->addWidget(channelTree, 1);
+#ifndef ACHERON_NO_VOICE
     leftLayout->addWidget(voiceStatusBar, 0);
+#endif
 
     auto *rightSideWidget = new QWidget(central);
     auto *rightLayout = new QVBoxLayout(rightSideWidget);
@@ -720,6 +732,7 @@ void MainWindow::setupUi()
                 tabBar->openNewTab(entry);
             });
 
+#ifndef ACHERON_NO_VOICE
     connect(channelTree, &ChannelTreeView::joinVoiceChannelRequested, this,
             [this](const QModelIndex &proxyIndex) {
                 QModelIndex sourceIndex = channelFilterProxy->mapToSource(proxyIndex);
@@ -774,12 +787,14 @@ void MainWindow::setupUi()
                 qCInfo(LogVoice) << "Disconnecting from voice";
                 instance->discord()->sendVoiceStateUpdate(instance->voiceGuildId(), Snowflake::Invalid, false, false);
             });
+#endif
 
     layout->addWidget(mainSplitter);
     layout->setContentsMargins(0, 0, 4, 0);
     setCentralWidget(central);
 }
 
+#ifndef ACHERON_NO_VOICE
 void MainWindow::updateVoiceStatusLabel()
 {
     using VState = Discord::AV::VoiceClient::State;
@@ -834,6 +849,7 @@ void MainWindow::updateVoiceStatusLabel()
     }
     voiceStatusBar->setChannelName(channelName);
 }
+#endif
 
 void MainWindow::switchToTabEntry(const TabEntry &entry)
 {
