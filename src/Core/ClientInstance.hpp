@@ -72,6 +72,7 @@ signals:
     void guildSettingsChanged(Snowflake guildId);
     void channelLastMessageUpdated(Snowflake channelId, Snowflake messageId);
     void voiceStateChanged(Snowflake channelId, Snowflake guildId);
+    void authenticationFailed(const AccountInfo &info);
 
 private slots:
     void onChannelCreated(const Discord::ChannelCreate &event);

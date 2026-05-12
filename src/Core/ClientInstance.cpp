@@ -46,6 +46,8 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
 
     connect(client, &Discord::Client::stateChanged, this, &ClientInstance::stateChanged);
     connect(client, &Discord::Client::reconnecting, this, &ClientInstance::reconnecting);
+    connect(client, &Discord::Client::authenticationFailed, this,
+            [this]() { emit authenticationFailed(account); });
 
     connect(client, &Discord::Client::ready, this, [this](const Discord::Ready &ready) {
         QString connName = Storage::DatabaseManager::instance().getCacheConnectionName(account.id);

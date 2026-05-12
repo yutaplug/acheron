@@ -114,6 +114,7 @@ signals:
 
     void reconnecting(int attempt, int maxAttempts);
     void errorOccurred(const QString &errorStr);
+    void authenticationFailed();
 
 private slots:
     void onConnected();

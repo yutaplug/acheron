@@ -136,10 +136,12 @@ void Client::onDisconnected(CloseCode code, const QString &reason)
         code == CloseCode::INVALID_INTENTS ||
         code == CloseCode::DISALLOWED_INTENTS) {
         setState(Core::ConnectionState::Disconnected);
-        if (code == CloseCode::AUTHENTICATION_FAILED)
+        if (code == CloseCode::AUTHENTICATION_FAILED) {
             emit errorOccurred("Invalid token");
-        else
+            emit authenticationFailed();
+        } else {
             emit errorOccurred("Fatal gateway error: " + reason);
+        }
         return;
     }
 

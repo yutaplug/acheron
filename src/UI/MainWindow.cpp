@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 
+#include <QMessageBox>
+
 #include "Chat/ChatModel.hpp"
 #include "Chat/ChatDelegate.hpp"
 #include "Chat/ChatView.hpp"
@@ -438,6 +440,22 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
             [this](Core::ConnectionState state) {
                 if (state == Core::ConnectionState::Connected)
                     connectionBanner->hide();
+            });
+
+    connect(instance, &Core::ClientInstance::authenticationFailed, this,
+            [this](const Core::AccountInfo &info) {
+                connectionBanner->hide();
+                const QString accountLabel = info.displayName.isEmpty() ? info.username
+                                                                        : info.displayName;
+                auto *box = new QMessageBox(this);
+                box->setAttribute(Qt::WA_DeleteOnClose);
+                box->setIcon(QMessageBox::Critical);
+                box->setWindowTitle(tr("Authentication Failed"));
+                box->setText(tr("Discord rejected the token for account \"%1\".").arg(accountLabel));
+                box->setInformativeText(tr("Discord's gateway rejected your token. The stored token is invalid. Check or update your token and try again."));
+                box->setStandardButtons(QMessageBox::Ok);
+                box->setWindowModality(Qt::ApplicationModal);
+                box->show();
             });
 
     connect(instance, &Core::ClientInstance::voiceStateChanged, this,
