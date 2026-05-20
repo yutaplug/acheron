@@ -121,7 +121,7 @@ set(PROJECT_SOURCES
     src/UI/Chat/ChatDelegate.cpp
     src/UI/Chat/ChatView.cpp
     src/UI/Chat/ChatLayout.cpp
-    src/UI/Dialogs/AddAccountDialog.cpp
+    src/UI/Dialogs/TokenInputDialog.cpp
     src/UI/Dialogs/BasePopup.cpp
     src/UI/Dialogs/ConfirmPopup.cpp
     src/UI/MemberList/MemberListModel.cpp
