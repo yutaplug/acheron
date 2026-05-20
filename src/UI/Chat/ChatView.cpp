@@ -382,10 +382,36 @@ void ChatView::contextMenuEvent(QContextMenuEvent *event)
     Core::Snowflake messageId = index.data(ChatModel::MessageIdRole).toULongLong();
     Core::Snowflake authorId = index.data(ChatModel::UserIdRole).toULongLong();
     Core::Snowflake channelId = chatModel->getActiveChannelId();
-    QString content = index.data(ChatModel::ContentRole).toString();
     bool isOwnMessage = (authorId == currentUserId);
 
+    QString linkUrl;
+    ChatLayout::ResolvedLayout resolved = ChatLayout::resolveLayout(this, index);
+    auto region = ChatLayout::hitTest(resolved, event->pos());
+    if (region) {
+        using Kind = ChatLayout::HitRegion::Kind;
+        switch (region->kind) {
+        case Kind::TextLink:
+        case Kind::EmbedLink:
+        case Kind::EmbedAuthor:
+        case Kind::EmbedTitle:
+        case Kind::EmbedThumbnail:
+        case Kind::EmbedVideoThumbnail:
+            linkUrl = region->url;
+            break;
+        default:
+            break;
+        }
+    }
+
     QMenu menu(this);
+
+    if (!linkUrl.isEmpty()) {
+        QAction *copyLinkAction = menu.addAction(tr("Copy Link"));
+        connect(copyLinkAction, &QAction::triggered, this, [linkUrl]() {
+            QGuiApplication::clipboard()->setText(linkUrl);
+        });
+        menu.addSeparator();
+    }
 
     QAction *copyAction = menu.addAction(tr("Copy Text"));
     copyAction->setShortcut(QKeySequence::Copy);
