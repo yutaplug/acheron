@@ -131,6 +131,116 @@ static void drawSpeakerIcon(QPainter *painter, const QRect &contentRect, const Q
     painter->restore();
 }
 
+static void drawMutedMicIcon(QPainter *painter, const QRectF &rect, const QColor &color,
+                             const QColor &bgColor)
+{
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+
+    qreal w = rect.width();
+    qreal h = rect.height();
+    qreal cx = rect.left() + w / 2.0;
+
+    // pill
+    qreal capW = w * 0.40;
+    qreal capTopY = rect.top() + h * 0.05;
+    qreal capBotY = rect.top() + h * 0.55;
+    QRectF cap(cx - capW / 2.0, capTopY, capW, capBotY - capTopY);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(color);
+    painter->drawRoundedRect(cap, capW / 2.0, capW / 2.0);
+
+    // U-shaped holder
+    qreal uW = w * 0.78;
+    qreal uTipsY = rect.top() + h * 0.42;
+    qreal uBottomY = rect.top() + h * 0.72;
+    qreal uHalfH = uBottomY - uTipsY;
+    QRectF uRect(cx - uW / 2.0, uTipsY - uHalfH, uW, uHalfH * 2.0);
+    qreal stroke = qMax(1.3, w * 0.11);
+    QPen uPen(color, stroke);
+    uPen.setCapStyle(Qt::FlatCap);
+    painter->setPen(uPen);
+    painter->setBrush(Qt::NoBrush);
+    painter->drawArc(uRect, 180 * 16, 180 * 16);
+
+    // vertical stem
+    qreal stemBotY = rect.top() + h * 0.86;
+    QPen stemPen(color, stroke);
+    stemPen.setCapStyle(Qt::FlatCap);
+    painter->setPen(stemPen);
+    painter->drawLine(QPointF(cx, uBottomY - stroke / 2.0), QPointF(cx, stemBotY));
+
+    // base
+    qreal baseW = w * 0.50;
+    qreal baseH = qMax(1.6, h * 0.11);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(color);
+    QRectF base(cx - baseW / 2.0, stemBotY - baseH / 2.0, baseW, baseH);
+    painter->drawRoundedRect(base, baseH / 2.0, baseH / 2.0);
+
+    // slash
+    qreal slashWidth = qMax(1.4, w * 0.12);
+    QPointF p1(rect.left() + w * 0.08, rect.bottom() - h * 0.08);
+    QPointF p2(rect.right() - w * 0.08, rect.top() + h * 0.08);
+
+    QPen knockoutPen(bgColor, slashWidth * 2.2);
+    knockoutPen.setCapStyle(Qt::RoundCap);
+    painter->setPen(knockoutPen);
+    painter->drawLine(p1, p2);
+
+    QPen slashPen(color, slashWidth);
+    slashPen.setCapStyle(Qt::RoundCap);
+    painter->setPen(slashPen);
+    painter->drawLine(p1, p2);
+
+    painter->restore();
+}
+
+static void drawDeafenedIcon(QPainter *painter, const QRectF &rect, const QColor &color,
+                             const QColor &bgColor)
+{
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+
+    qreal w = rect.width();
+    qreal h = rect.height();
+    qreal cy = rect.top() + h / 2.0;
+
+    // headphone arc
+    QPen arcPen(color, qMax(1.2, w * 0.1));
+    arcPen.setCapStyle(Qt::RoundCap);
+    painter->setPen(arcPen);
+    painter->setBrush(Qt::NoBrush);
+    QRectF arcRect(rect.left() + w * 0.12, rect.top() + h * 0.18, w * 0.76, h * 0.6);
+    painter->drawArc(arcRect, 0, 180 * 16);
+
+    // earcups
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(color);
+    qreal cupW = w * 0.22;
+    qreal cupH = h * 0.32;
+    painter->drawRoundedRect(QRectF(rect.left() + w * 0.1, cy, cupW, cupH), cupW / 3.0, cupW / 3.0);
+    painter->drawRoundedRect(QRectF(rect.right() - w * 0.1 - cupW, cy, cupW, cupH),
+                             cupW / 3.0, cupW / 3.0);
+
+    // slash
+    qreal slashWidth = qMax(1.4, w * 0.12);
+    QPointF p1(rect.left() + w * 0.08, rect.bottom() - h * 0.08);
+    QPointF p2(rect.right() - w * 0.08, rect.top() + h * 0.08);
+
+    QPen knockoutPen(bgColor, slashWidth * 2.2);
+    knockoutPen.setCapStyle(Qt::RoundCap);
+    painter->setPen(knockoutPen);
+    painter->drawLine(p1, p2);
+
+    QPen slashPen(color, slashWidth);
+    slashPen.setCapStyle(Qt::RoundCap);
+    painter->setPen(slashPen);
+    painter->drawLine(p1, p2);
+
+    painter->restore();
+}
+
 static void drawMentionBadge(QPainter *painter, const QStyleOptionViewItem &option, int count)
 {
     int badgeHeight = option.fontMetrics.height();
@@ -187,6 +297,69 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         painter->fillRect(contentOpt.rect, option.palette.alternateBase().color());
         painter->setPen(option.palette.brightText().color());
         painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, node->name);
+        painter->restore();
+        return;
+    }
+
+    if (node->type == ChannelNode::Type::VoiceParticipant) {
+        constexpr int avatarSize = 16;
+        constexpr int participantIndent = 24;
+        int avatarX = contentOpt.rect.left() + participantIndent;
+        int avatarY = contentOpt.rect.top() + (contentOpt.rect.height() - avatarSize) / 2;
+        QRect avatarRect(avatarX, avatarY, avatarSize, avatarSize);
+
+        constexpr qreal avatarRadius = 3.0;
+        QPixmap avatar = qvariant_cast<QPixmap>(index.data(Qt::DecorationRole));
+        if (!avatar.isNull()) {
+            painter->save();
+            QPainterPath clip;
+            clip.addRoundedRect(avatarRect, avatarRadius, avatarRadius);
+            painter->setClipPath(clip);
+            painter->drawPixmap(avatarRect, avatar);
+            painter->restore();
+        } else {
+            painter->save();
+            painter->setPen(Qt::NoPen);
+            QColor defaultColor = option.palette.text().color();
+            defaultColor.setAlphaF(0.35f);
+            painter->setBrush(defaultColor);
+            painter->drawRoundedRect(avatarRect, avatarRadius, avatarRadius);
+            painter->restore();
+        }
+
+        bool muted = index.data(ChannelTreeModel::IsVoiceMutedRole).toBool();
+        bool deafened = index.data(ChannelTreeModel::IsVoiceDeafenedRole).toBool();
+        constexpr int statusIconSize = 14;
+        int iconCount = (muted ? 1 : 0) + (deafened ? 1 : 0);
+        int rightReserve = iconCount > 0 ? (iconCount * (statusIconSize + 4) + 4) : 4;
+
+        QColor textColor = option.palette.text().color();
+        QRect textRect =
+                contentOpt.rect.adjusted(participantIndent + avatarSize + 6, 0, -rightReserve, 0);
+        painter->setPen(textColor);
+        QString elidedName = painter->fontMetrics().elidedText(
+                index.data(Qt::DisplayRole).toString(), Qt::ElideRight, textRect.width());
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+
+        if (muted || deafened) {
+            QColor iconColor = option.palette.text().color();
+            iconColor.setAlphaF(0.7f);
+            QColor bgColor = option.palette.base().color();
+            int iconY = contentOpt.rect.top() + (contentOpt.rect.height() - statusIconSize) / 2;
+            int iconX = contentOpt.rect.right() - statusIconSize - 4;
+            if (deafened) {
+                drawDeafenedIcon(painter,
+                                 QRectF(iconX, iconY, statusIconSize, statusIconSize), iconColor,
+                                 bgColor);
+                iconX -= (statusIconSize + 4);
+            }
+            if (muted) {
+                drawMutedMicIcon(painter,
+                                 QRectF(iconX, iconY, statusIconSize, statusIconSize), iconColor,
+                                 bgColor);
+            }
+        }
+
         painter->restore();
         return;
     }

@@ -146,6 +146,7 @@ enum class GatewayEvent {
     USER_GUILD_SETTINGS_UPDATE,
     GUILD_MEMBER_LIST_UPDATE,
     VOICE_STATE_UPDATE,
+    VOICE_STATE_UPDATE_BATCH,
     VOICE_SERVER_UPDATE,
 };
 
@@ -175,6 +176,7 @@ inline GatewayEvent parseGatewayEvent(const QString &event)
         { "USER_GUILD_SETTINGS_UPDATE", GatewayEvent::USER_GUILD_SETTINGS_UPDATE },
         { "GUILD_MEMBER_LIST_UPDATE", GatewayEvent::GUILD_MEMBER_LIST_UPDATE },
         { "VOICE_STATE_UPDATE", GatewayEvent::VOICE_STATE_UPDATE },
+        { "VOICE_STATE_UPDATE_BATCH", GatewayEvent::VOICE_STATE_UPDATE_BATCH },
         { "VOICE_SERVER_UPDATE", GatewayEvent::VOICE_SERVER_UPDATE },
     };
 

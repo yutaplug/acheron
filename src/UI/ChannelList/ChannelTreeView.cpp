@@ -13,6 +13,22 @@ ChannelTreeView::ChannelTreeView(QWidget *parent)
 {
 }
 
+void ChannelTreeView::setModel(QAbstractItemModel *m)
+{
+    QTreeView::setModel(m);
+    if (m) {
+        connect(m, &QAbstractItemModel::rowsInserted, this,
+                [this](const QModelIndex &parent, int, int) {
+                    if (!parent.isValid())
+                        return;
+                    auto nodeType = static_cast<ChannelNode::Type>(
+                            parent.data(ChannelTreeModel::TypeRole).toInt());
+                    if (nodeType == ChannelNode::Type::VoiceChannel && !isExpanded(parent))
+                        expand(parent);
+                });
+    }
+}
+
 void ChannelTreeView::performDefaultExpansion()
 {
     std::function<void(const QModelIndex &)> walk = [this, &walk](const QModelIndex &parent) {
@@ -20,7 +36,8 @@ void ChannelTreeView::performDefaultExpansion()
         for (int i = 0; i < rows; ++i) {
             QModelIndex idx = model()->index(i, 0, parent);
             auto nodeType = static_cast<ChannelNode::Type>(idx.data(ChannelTreeModel::TypeRole).toInt());
-            if (nodeType == ChannelNode::Type::Category || nodeType == ChannelNode::Type::Account)
+            if (nodeType == ChannelNode::Type::Category || nodeType == ChannelNode::Type::Account ||
+                nodeType == ChannelNode::Type::VoiceChannel)
                 expand(idx);
             if (model()->hasChildren(idx))
                 walk(idx);

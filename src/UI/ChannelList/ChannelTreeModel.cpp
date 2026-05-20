@@ -7,6 +7,10 @@
 #include <Storage/ChannelRepository.hpp>
 #include <Storage/UserRepository.hpp>
 
+#ifndef ACHERON_NO_VOICE
+#  include <Core/AV/VoiceManager.hpp>
+#endif
+
 namespace Acheron {
 namespace UI {
 
@@ -182,6 +186,34 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
             }
         }
 
+        if (node->type == ChannelNode::Type::VoiceParticipant &&
+            node->dmRecipientId.isValid() && !node->dmAvatarHash.isEmpty()) {
+            const QSize desiredSize(32, 32);
+            QUrl avatarUrl = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=%3")
+                                          .arg(quint64(node->dmRecipientId))
+                                          .arg(node->dmAvatarHash)
+                                          .arg(desiredSize.width()));
+
+            QPixmap pixmap = session->getImageManager()->get(avatarUrl, desiredSize, Core::PinGroup::ChannelList);
+
+            if (!session->getImageManager()->isCached(avatarUrl, desiredSize)) {
+                bool alreadyWaiting = false;
+                auto it = pendingRequests.constFind(avatarUrl);
+                while (it != pendingRequests.cend() && it.key() == avatarUrl) {
+                    if (it.value() == index) {
+                        alreadyWaiting = true;
+                        break;
+                    }
+                    it++;
+                }
+
+                if (!alreadyWaiting)
+                    pendingRequests.insert(avatarUrl, QPersistentModelIndex(index));
+            }
+
+            return pixmap;
+        }
+
         return {};
     }
 
@@ -205,6 +237,27 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
         return node->voiceParticipantCount;
     if (role == UserLimitRole)
         return node->userLimit;
+
+    if (role == IsVoiceMutedRole || role == IsVoiceDeafenedRole) {
+        if (node->type != ChannelNode::Type::VoiceParticipant)
+            return false;
+#ifndef ACHERON_NO_VOICE
+        ChannelNode *accNode = getAccountNodeFor(node);
+        if (!accNode)
+            return false;
+        auto *instance = session->client(accNode->id);
+        if (!instance)
+            return false;
+        auto state = instance->voice()->voiceStateForUser(node->id);
+        if (!state.has_value())
+            return false;
+        if (role == IsVoiceMutedRole)
+            return state->selfMute.get() || state->mute.get();
+        return state->selfDeaf.get() || state->deaf.get();
+#else
+        return false;
+#endif
+    }
 
     return {};
 }
@@ -1101,6 +1154,106 @@ void ChannelTreeModel::updateVoiceCount(Snowflake channelId, int count, Snowflak
     QModelIndex idx = indexForNode(channelNode);
     if (idx.isValid())
         emit dataChanged(idx, idx, { VoiceParticipantCountRole });
+}
+
+void ChannelTreeModel::updateVoiceParticipant(Snowflake channelId, Snowflake userId, bool joined,
+                                              Snowflake accountId)
+{
+    ChannelNode *accNode = accountNodes.value(accountId, nullptr);
+    if (!accNode)
+        return;
+
+    ChannelNode *channelNode = findChannelTreeNode(channelId, accNode);
+    if (!channelNode || channelNode->type != ChannelNode::Type::VoiceChannel)
+        return;
+
+    int existingRow = -1;
+    for (size_t i = 0; i < channelNode->children.size(); ++i) {
+        if (channelNode->children[i]->type == ChannelNode::Type::VoiceParticipant &&
+            channelNode->children[i]->id == userId) {
+            existingRow = static_cast<int>(i);
+            break;
+        }
+    }
+
+    QModelIndex channelIndex = indexForNode(channelNode);
+
+    if (joined) {
+        if (existingRow != -1)
+            return;
+
+        auto *instance = session->client(accountId);
+        if (!instance)
+            return;
+
+        ChannelNode *guildNode = findGuildNode(channelNode);
+        std::optional<Snowflake> guildIdOpt;
+        if (guildNode)
+            guildIdOpt = guildNode->id;
+
+        QString displayName;
+        QString avatarHash;
+        Discord::User *user = instance->users()->getUser(userId);
+        if (user) {
+            displayName = instance->users()->getDisplayName(userId, guildIdOpt);
+            if (user->avatar.hasValue())
+                avatarHash = user->avatar.get();
+        }
+        if (displayName.isEmpty())
+            displayName = QString::number(static_cast<quint64>(userId));
+
+        int insertRow = 0;
+        for (size_t i = 0; i < channelNode->children.size(); ++i) {
+            const auto &child = channelNode->children[i];
+            if (child->type != ChannelNode::Type::VoiceParticipant)
+                continue;
+            if (QString::compare(child->name, displayName, Qt::CaseInsensitive) < 0)
+                insertRow = static_cast<int>(i) + 1;
+            else
+                break;
+        }
+
+        auto participantNode = std::make_unique<ChannelNode>();
+        participantNode->id = userId;
+        participantNode->parentId = channelId;
+        participantNode->type = ChannelNode::Type::VoiceParticipant;
+        participantNode->name = displayName;
+        participantNode->dmRecipientId = userId;
+        participantNode->dmAvatarHash = avatarHash;
+        participantNode->parent = channelNode;
+
+        beginInsertRows(channelIndex, insertRow, insertRow);
+        channelNode->children.insert(channelNode->children.begin() + insertRow,
+                                     std::move(participantNode));
+        endInsertRows();
+    } else {
+        if (existingRow == -1)
+            return;
+        beginRemoveRows(channelIndex, existingRow, existingRow);
+        channelNode->children.erase(channelNode->children.begin() + existingRow);
+        endRemoveRows();
+    }
+}
+
+void ChannelTreeModel::updateVoiceParticipantState(Snowflake channelId, Snowflake userId,
+                                                   Snowflake accountId)
+{
+    ChannelNode *accNode = accountNodes.value(accountId, nullptr);
+    if (!accNode)
+        return;
+
+    ChannelNode *channelNode = findChannelTreeNode(channelId, accNode);
+    if (!channelNode || channelNode->type != ChannelNode::Type::VoiceChannel)
+        return;
+
+    for (auto &child : channelNode->children) {
+        if (child->type == ChannelNode::Type::VoiceParticipant && child->id == userId) {
+            QModelIndex idx = indexForNode(child.get());
+            if (idx.isValid())
+                emit dataChanged(idx, idx, { IsVoiceMutedRole, IsVoiceDeafenedRole });
+            return;
+        }
+    }
 }
 
 void ChannelTreeModel::collectMarkableChannels(ChannelNode *node,

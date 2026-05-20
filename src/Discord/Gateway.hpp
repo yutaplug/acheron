@@ -102,6 +102,7 @@ private:
     void handleUserGuildSettingsUpdate(const Inbound &data);
     void handleGuildMemberListUpdate(const Inbound &data);
     void handleVoiceStateUpdate(const Inbound &data);
+    void handleVoiceStateUpdateBatch(const Inbound &data);
     void handleVoiceServerUpdate(const Inbound &data);
     void handleHello(const Inbound &data);
     void identify();

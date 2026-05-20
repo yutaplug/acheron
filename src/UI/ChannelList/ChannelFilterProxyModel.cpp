@@ -101,6 +101,10 @@ bool ChannelFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex 
 
     auto nodeType = static_cast<ChannelNode::Type>(index.data(ChannelTreeModel::TypeRole).toInt());
 
+    // voice participants are always visible when their parent voice channel is visible
+    if (nodeType == ChannelNode::Type::VoiceParticipant)
+        return true;
+
     Core::Snowflake userId = getUserIdForNode(index);
     if (!userId.isValid())
         return true;

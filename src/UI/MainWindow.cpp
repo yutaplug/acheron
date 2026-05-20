@@ -474,9 +474,17 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
             this, &MainWindow::updateVoiceStatusLabel);
 
     connect(instance->voice(), &Core::AV::VoiceManager::channelVoiceMemberChanged,
-            this, [this, instance](Core::Snowflake channelId, Core::Snowflake, bool) {
+            this, [this, instance](Core::Snowflake channelId, Core::Snowflake userId, bool joined) {
                 int count = instance->voice()->channelVoiceUserCount(channelId);
                 channelTreeModel->updateVoiceCount(channelId, count, instance->accountId());
+                channelTreeModel->updateVoiceParticipant(channelId, userId, joined,
+                                                         instance->accountId());
+            });
+
+    connect(instance->voice(), &Core::AV::VoiceManager::participantVoiceStateChanged,
+            this, [this, instance](Core::Snowflake channelId, Core::Snowflake userId) {
+                channelTreeModel->updateVoiceParticipantState(channelId, userId,
+                                                              instance->accountId());
             });
 #endif
 }

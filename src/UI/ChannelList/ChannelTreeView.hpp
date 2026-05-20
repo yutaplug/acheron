@@ -14,6 +14,7 @@ class ChannelTreeView : public QTreeView
 public:
     ChannelTreeView(QWidget *parent = nullptr);
 
+    void setModel(QAbstractItemModel *m) override;
     void performDefaultExpansion();
 
     void setAccountVoiceChannel(Core::Snowflake accountId, Core::Snowflake channelId);

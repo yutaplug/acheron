@@ -248,6 +248,9 @@ void Gateway::handleDispatch(const Inbound &data)
     case GatewayEvent::VOICE_STATE_UPDATE:
         handleVoiceStateUpdate(data);
         break;
+    case GatewayEvent::VOICE_STATE_UPDATE_BATCH:
+        handleVoiceStateUpdateBatch(data);
+        break;
     case GatewayEvent::VOICE_SERVER_UPDATE:
         handleVoiceServerUpdate(data);
         break;
@@ -429,6 +432,16 @@ void Gateway::handleVoiceStateUpdate(const Inbound &data)
     VoiceState event = data.getData<VoiceState>();
 
     emit gatewayVoiceStateUpdate(event);
+}
+
+void Gateway::handleVoiceStateUpdateBatch(const Inbound &data)
+{
+    VoiceStateUpdateBatch batch = data.getData<VoiceStateUpdateBatch>();
+    if (!batch.voiceStates.hasValue())
+        return;
+
+    for (const VoiceState &state : batch.voiceStates.get())
+        emit gatewayVoiceStateUpdate(state);
 }
 
 void Gateway::handleVoiceServerUpdate(const Inbound &data)

@@ -36,6 +36,8 @@ public:
         CollapsedRole = Qt::UserRole + 7,
         VoiceParticipantCountRole = Qt::UserRole + 8,
         UserLimitRole = Qt::UserRole + 9,
+        IsVoiceMutedRole = Qt::UserRole + 10,
+        IsVoiceDeafenedRole = Qt::UserRole + 11,
     };
 
     QModelIndex index(int row, int column, const QModelIndex &parentIndex) const override;
@@ -50,7 +52,7 @@ public:
 
     void populateFromReady(const Discord::Ready &ready);
 
-    ChannelNode *getAccountNodeFor(ChannelNode *node);
+    static ChannelNode *getAccountNodeFor(ChannelNode *node);
 
     ChannelNode *nodeFromIndex(const QModelIndex &index) const;
     void addChannel(const Discord::ChannelCreate &event, Snowflake accountId);
@@ -61,6 +63,8 @@ public:
     void updateGuildSettings(Snowflake guildId, Snowflake accountId);
     void updateChannelLastMessageId(Snowflake channelId, Snowflake messageId, Snowflake accountId);
     void updateVoiceCount(Snowflake channelId, int count, Snowflake accountId);
+    void updateVoiceParticipant(Snowflake channelId, Snowflake userId, bool joined, Snowflake accountId);
+    void updateVoiceParticipantState(Snowflake channelId, Snowflake userId, Snowflake accountId);
     void toggleCollapsed(const QModelIndex &index);
 
     QList<QPair<Snowflake, Snowflake>> getMarkableChannels(const QModelIndex &index);

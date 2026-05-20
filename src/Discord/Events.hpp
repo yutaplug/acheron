@@ -495,5 +495,17 @@ struct VoiceServerUpdate : Core::JsonUtils::JsonObject
     }
 };
 
+struct VoiceStateUpdateBatch : Core::JsonUtils::JsonObject
+{
+    Field<QList<VoiceState>, true> voiceStates;
+
+    static VoiceStateUpdateBatch fromJson(const QJsonObject &obj)
+    {
+        VoiceStateUpdateBatch event;
+        get(obj, "voice_states", event.voiceStates);
+        return event;
+    }
+};
+
 } // namespace Discord
 } // namespace Acheron

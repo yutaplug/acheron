@@ -26,9 +26,15 @@ void VoiceManager::handleVoiceStateUpdate(const Discord::VoiceState &state)
     // cache all non-self voice states so we can populate participants when joining a channel
     if (!isMe) {
         Snowflake oldChannel;
+        bool hadOld = false;
+        Discord::VoiceState oldState;
         auto oldIt = knownVoiceStates.constFind(userId);
-        if (oldIt != knownVoiceStates.constEnd() && !oldIt->channelId.isNull())
-            oldChannel = oldIt->channelId.get();
+        if (oldIt != knownVoiceStates.constEnd()) {
+            hadOld = true;
+            oldState = oldIt.value();
+            if (!oldIt->channelId.isNull())
+                oldChannel = oldIt->channelId.get();
+        }
 
         bool leftVoice = state.channelId.isNull() || !state.channelId.get().isValid();
         Snowflake newChannel = leftVoice ? Snowflake::Invalid : state.channelId.get();
@@ -43,6 +49,14 @@ void VoiceManager::handleVoiceStateUpdate(const Discord::VoiceState &state)
                 emit channelVoiceMemberChanged(oldChannel, userId, false);
             if (newChannel.isValid())
                 emit channelVoiceMemberChanged(newChannel, userId, true);
+        } else if (newChannel.isValid() && hadOld) {
+            bool stateDiffers = oldState.selfMute.get() != state.selfMute.get() ||
+                                oldState.selfDeaf.get() != state.selfDeaf.get() ||
+                                oldState.mute.get() != state.mute.get() ||
+                                oldState.deaf.get() != state.deaf.get() ||
+                                oldState.suppress.get() != state.suppress.get();
+            if (stateDiffers)
+                emit participantVoiceStateChanged(newChannel, userId);
         }
     }
 
@@ -90,6 +104,9 @@ void VoiceManager::handleVoiceStateUpdate(const Discord::VoiceState &state)
 
         qCInfo(LogVoice) << "Voice state: session =" << voiceSessionId
                          << "channel =" << channelId << "guild =" << guildId;
+
+        if (!channelChanged && channelId.isValid() && (selfMute != wasMuted || selfDeaf != wasDeaf))
+            emit participantVoiceStateChanged(channelId, accountId);
 
         if (audioPipeline && (selfMute != wasMuted || selfDeaf != wasDeaf)) {
             if (selfMute || selfDeaf)
@@ -357,6 +374,26 @@ QList<Snowflake> VoiceManager::channelVoiceUsers(Snowflake targetChannelId) cons
     }
 
     return users;
+}
+
+std::optional<Discord::VoiceState> VoiceManager::voiceStateForUser(Snowflake userId) const
+{
+    if (userId == accountId && channelId.isValid()) {
+        Discord::VoiceState state;
+        state.userId = accountId;
+        state.channelId = channelId;
+        if (guildId.isValid())
+            state.guildId = guildId;
+        state.selfMute = selfMute;
+        state.selfDeaf = selfDeaf;
+        state.sessionId = voiceSessionId;
+        return state;
+    }
+
+    auto it = knownVoiceStates.constFind(userId);
+    if (it == knownVoiceStates.constEnd())
+        return std::nullopt;
+    return it.value();
 }
 
 bool VoiceManager::isDaveEnabled() const

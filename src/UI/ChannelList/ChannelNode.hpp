@@ -21,6 +21,7 @@ struct ChannelNode
         Category,
         Channel,
         VoiceChannel,
+        VoiceParticipant,
         DMChannel,
     };
 
