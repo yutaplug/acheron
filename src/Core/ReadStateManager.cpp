@@ -84,7 +84,7 @@ bool ReadStateManager::isChannelUnread(Snowflake channelId, Snowflake channelLas
         return canSendMessages;
 
     const auto &entry = it.value();
-    if (!entry.lastMessageId.hasValue() || entry.lastMessageId.isNull())
+    if (!entry.lastMessageId.hasValue())
         return true;
 
     return entry.lastMessageId.get() < channelLastMessageId;
@@ -108,9 +108,7 @@ bool ReadStateManager::isChannelMuted(Snowflake channelId) const
     const auto &override = it.value();
     bool muted = override.muted.hasValue() && override.muted.get();
     const Discord::MuteConfig *mc =
-            (override.muteConfig.hasValue() && !override.muteConfig.isNull())
-                    ? &override.muteConfig.get()
-                    : nullptr;
+            override.muteConfig.hasValue() ? &override.muteConfig.get() : nullptr;
     return isMuteActive(muted, mc);
 }
 
@@ -123,9 +121,7 @@ bool ReadStateManager::isGuildMuted(Snowflake guildId) const
     const auto &settings = it.value();
     bool muted = settings.muted.hasValue() && settings.muted.get();
     const Discord::MuteConfig *mc =
-            (settings.muteConfig.hasValue() && !settings.muteConfig.isNull())
-                    ? &settings.muteConfig.get()
-                    : nullptr;
+            settings.muteConfig.hasValue() ? &settings.muteConfig.get() : nullptr;
     return isMuteActive(muted, mc);
 }
 
@@ -137,7 +133,7 @@ bool ReadStateManager::isMuteActive(bool muted, const Discord::MuteConfig *muteC
     if (!muteConfig)
         return true;
 
-    if (!muteConfig->endTime.hasValue() || muteConfig->endTime.isNull())
+    if (!muteConfig->endTime.hasValue())
         return true;
 
     QString endTimeStr = muteConfig->endTime.get();

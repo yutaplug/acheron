@@ -1,14 +1,19 @@
 #pragma once
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 
+#include <functional>
 #include <memory>
+
+class QSqlDatabase;
 
 #include "AccountInfo.hpp"
 #include "Discord/Client.hpp"
 #include "MessageManager.hpp"
 #include "MemberListManager.hpp"
+#include "RelationshipManager.hpp"
 #include "UserManager.hpp"
 #include "PermissionManager.hpp"
 
@@ -39,11 +44,15 @@ public:
     [[nodiscard]] PermissionManager *permissions() const;
     [[nodiscard]] ReadStateManager *readState() const;
     [[nodiscard]] MemberListManager *memberList() const;
+    [[nodiscard]] RelationshipManager *relationships() const;
 #ifndef ACHERON_NO_VOICE
     [[nodiscard]] AV::VoiceManager *voice() const;
 #endif
 
     [[nodiscard]] QList<Discord::Role> getRolesForGuild(Snowflake guildId);
+    [[nodiscard]] QList<Discord::Role> getMemberRolesSorted(Snowflake guildId, Snowflake userId);
+    [[nodiscard]] std::optional<Discord::Guild> getGuild(Snowflake guildId);
+    [[nodiscard]] std::optional<Snowflake> findDmChannelWithUser(Snowflake userId);
     [[nodiscard]] int getChannelRateLimit(Snowflake channelId);
 
     [[nodiscard]] ConnectionState state() const;
@@ -83,6 +92,7 @@ private slots:
     void onGuildRoleDeleted(const Discord::GuildRoleDelete &event);
     void onGuildMembersChunk(const Discord::GuildMembersChunk &chunk);
     void onGuildMemberUpdate(const Discord::GuildMemberUpdate &event);
+    void onGuildMemberListUpdate(const Discord::GuildMemberListUpdate &update);
     void onMessagesReceived(const MessageRequestResult &result);
     void onMessageCreated(const Discord::Message &msg);
     void handleAckRequest(Snowflake channelId, Snowflake messageId);
@@ -90,6 +100,8 @@ private slots:
     bool isMessageMentioningMe(const Discord::Message &msg) const;
 
 private:
+    bool runInCacheTransaction(const char *what, const std::function<void(QSqlDatabase &)> &op);
+
     AccountInfo account;
 
     MessageManager *messageManager;
@@ -98,6 +110,7 @@ private:
     PermissionManager *permissionManager;
     ReadStateManager *readStateManager;
     MemberListManager *memberListManager;
+    RelationshipManager *relationshipManager;
 #ifndef ACHERON_NO_VOICE
     AV::VoiceManager *voiceManager;
 #endif
@@ -106,6 +119,8 @@ private:
     Storage::GuildRepository guildRepo;
     Storage::ChannelRepository channelRepo;
     Storage::MemberRepository memberRepo;
+
+    QHash<Snowflake, QList<Discord::Role>> rolesCacheByGuild;
 
     Snowflake currentVoiceChannelId;
     Snowflake currentVoiceGuildId;

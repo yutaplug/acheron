@@ -4,6 +4,7 @@
 #include "Core/TokenStore.hpp"
 
 #include "Core/Session.hpp"
+#include "Discord/CdnUrls.hpp"
 #include <QMimeData>
 
 namespace Acheron {
@@ -80,10 +81,7 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const
     }
     case Qt::DecorationRole: {
         const QSize desiredSize(32, 32);
-        QUrl TEMPORARY = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=%3")
-                                      .arg(quint64(acc.id))
-                                      .arg(acc.avatar)
-                                      .arg(desiredSize.width()));
+        QUrl TEMPORARY = Discord::Cdn::userAvatar(acc.id, acc.avatar, desiredSize.width());
 
         QPixmap pixmap = session->getImageManager()->get(TEMPORARY, desiredSize);
 

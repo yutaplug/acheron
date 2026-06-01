@@ -48,6 +48,10 @@ Client::Client(const QString &token, const QString &gatewayUrl, const QString &b
     connect(gateway, &Gateway::gatewayGuildMemberListUpdate, this, &Client::guildMemberListUpdate);
     connect(gateway, &Gateway::gatewayVoiceStateUpdate, this, &Client::voiceStateUpdated);
     connect(gateway, &Gateway::gatewayVoiceServerUpdate, this, &Client::voiceServerUpdated);
+    connect(gateway, &Gateway::gatewayRelationshipAdd, this, &Client::relationshipAdded);
+    connect(gateway, &Gateway::gatewayRelationshipUpdate, this, &Client::relationshipUpdated);
+    connect(gateway, &Gateway::gatewayRelationshipRemove, this, &Client::relationshipRemoved);
+    connect(gateway, &Gateway::gatewayUserNoteUpdate, this, &Client::userNoteUpdated);
     connect(gateway, &Gateway::reconnecting, this, [this](int attempt, int maxAttempts) {
         setState(Core::ConnectionState::Connecting);
         emit reconnecting(attempt, maxAttempts);
@@ -114,6 +118,43 @@ void Client::fetchHistory(Snowflake channelId, Snowflake beforeId, int limit,
             results.append(Message::fromJson(val.toObject()));
 
         callback({ results });
+    });
+}
+
+void Client::fetchUserProfile(Snowflake userId, Snowflake guildId, ProfileCallback callback)
+{
+    QString endpoint = "/users/" + QString::number(userId) + "/profile";
+    QUrlQuery query;
+    query.addQueryItem("type", "popout");
+    query.addQueryItem("with_mutual_guilds", "true");
+    query.addQueryItem("with_mutual_friends", "true");
+    query.addQueryItem("with_mutual_friends_count", "false");
+    if (guildId.isValid())
+        query.addQueryItem("guild_id", QString::number(guildId));
+
+    httpClient->get(endpoint, query, [userId, callback](const HttpResponse &response) {
+        if (!response.success) {
+            qCWarning(LogDiscord) << "Failed to fetch user profile for" << userId << ":"
+                                  << response.error;
+            callback({ {}, "Failed to fetch user profile: " + response.error });
+            return;
+        }
+
+        UserProfile profile = UserProfile::fromJson(QJsonDocument::fromJson(response.body).object());
+        callback({ profile });
+    });
+}
+
+void Client::setUserNote(Snowflake userId, const QString &note)
+{
+    QString endpoint = "/users/@me/notes/" + QString::number(userId);
+    QJsonObject payload;
+    payload["note"] = note;
+
+    httpClient->put(endpoint, payload, [userId](const HttpResponse &response) {
+        if (!response.success)
+            qCWarning(LogDiscord) << "Failed to set note for user" << userId << ":"
+                                  << response.error;
     });
 }
 

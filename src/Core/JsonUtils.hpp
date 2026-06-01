@@ -244,6 +244,22 @@ protected:
             for (const QJsonValue &element : array)
                 result.append(static_cast<char>(element.toInt()));
             return result;
+        } else if constexpr (MapLike<T>) {
+            using KeyType = typename T::key_type;
+            using MappedType = typename T::mapped_type;
+
+            T map;
+            const QJsonObject object = value.toObject();
+            for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
+                KeyType key;
+                if constexpr (std::is_same_v<KeyType, Snowflake>) {
+                    key = Snowflake(it.key().toULongLong());
+                } else {
+                    key = it.key();
+                }
+                map.insert(key, fromJsonValue<MappedType>(it.value()));
+            }
+            return map;
         } else if constexpr (ListLike<T>) {
             using InnerType = typename T::value_type;
 

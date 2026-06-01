@@ -23,6 +23,9 @@ struct User : Core::JsonUtils::JsonObject
     Field<QString, false, true> globalName;
     Field<QString, false, true> avatar;
     Field<bool, true> bot;
+    Field<QString, true, true> banner;
+    Field<int, true, true> accentColor;
+    Field<int, true> publicFlags;
 
     static User fromJson(const QJsonObject &obj)
     {
@@ -32,6 +35,9 @@ struct User : Core::JsonUtils::JsonObject
         get(obj, "global_name", user.globalName);
         get(obj, "avatar", user.avatar);
         get(obj, "bot", user.bot);
+        get(obj, "banner", user.banner);
+        get(obj, "accent_color", user.accentColor);
+        get(obj, "public_flags", user.publicFlags);
         return user;
     }
 
@@ -440,7 +446,7 @@ struct Emoji : Core::JsonUtils::JsonObject
         return emoji;
     }
 
-    bool isUnicode() const { return !id.hasValue() || id.isNull(); }
+    bool isUnicode() const { return !id.hasValue(); }
 
     QString getImageUrl(int size = 48) const
     {
@@ -685,6 +691,32 @@ struct UserGuildSettings : Core::JsonUtils::JsonObject
     }
 };
 
+struct Relationship : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> id;
+    Field<RelationshipType> type;
+    Field<User> user;
+    Field<QString, false, true> nickname;
+    Field<bool> userIgnored;
+    Field<bool, true> isSpamRequest;
+    Field<bool, true> strangerRequest;
+    Field<QDateTime, true> since;
+
+    static Relationship fromJson(const QJsonObject &obj)
+    {
+        Relationship r;
+        get(obj, "id", r.id);
+        get(obj, "type", r.type);
+        get(obj, "user", r.user);
+        get(obj, "nickname", r.nickname);
+        get(obj, "user_ignored", r.userIgnored);
+        get(obj, "is_spam_request", r.isSpamRequest);
+        get(obj, "stranger_request", r.strangerRequest);
+        get(obj, "since", r.since);
+        return r;
+    }
+};
+
 struct ReadStateEntry : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;
@@ -706,6 +738,130 @@ struct ReadStateEntry : Core::JsonUtils::JsonObject
         get(obj, "last_viewed", entry.lastViewed);
         get(obj, "last_pin_timestamp", entry.lastPinTimestamp);
         return entry;
+    }
+};
+
+struct ConnectedAccount : Core::JsonUtils::JsonObject
+{
+    Field<QString> id;
+    Field<QString> type;
+    Field<QString> name;
+    Field<bool> verified;
+
+    static ConnectedAccount fromJson(const QJsonObject &obj)
+    {
+        ConnectedAccount c;
+        get(obj, "id", c.id);
+        get(obj, "type", c.type);
+        get(obj, "name", c.name);
+        get(obj, "verified", c.verified);
+        return c;
+    }
+};
+
+struct MutualGuildEntry : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> id;
+    Field<QString, false, true> nick;
+
+    static MutualGuildEntry fromJson(const QJsonObject &obj)
+    {
+        MutualGuildEntry m;
+        get(obj, "id", m.id);
+        get(obj, "nick", m.nick);
+        return m;
+    }
+};
+
+struct UserProfileBadge : Core::JsonUtils::JsonObject
+{
+    Field<QString> id;
+    Field<QString> description;
+    Field<QString> icon;
+    Field<QString, true> link;
+
+    static UserProfileBadge fromJson(const QJsonObject &obj)
+    {
+        UserProfileBadge b;
+        get(obj, "id", b.id);
+        get(obj, "description", b.description);
+        get(obj, "icon", b.icon);
+        get(obj, "link", b.link);
+        return b;
+    }
+};
+
+struct UserProfileData : Core::JsonUtils::JsonObject
+{
+    Field<QString, true> bio;
+    Field<int, true, true> accentColor;
+    Field<QString, true, true> banner;
+    Field<QString> pronouns;
+
+    static UserProfileData fromJson(const QJsonObject &obj)
+    {
+        UserProfileData p;
+        get(obj, "bio", p.bio);
+        get(obj, "accent_color", p.accentColor);
+        get(obj, "banner", p.banner);
+        get(obj, "pronouns", p.pronouns);
+        return p;
+    }
+};
+
+struct GuildMemberProfile : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake, true> guildId;
+    Field<QString, true> bio;
+    Field<int, true, true> accentColor;
+    Field<QString, true, true> banner;
+    Field<QString> pronouns;
+
+    static GuildMemberProfile fromJson(const QJsonObject &obj)
+    {
+        GuildMemberProfile p;
+        get(obj, "guild_id", p.guildId);
+        get(obj, "bio", p.bio);
+        get(obj, "accent_color", p.accentColor);
+        get(obj, "banner", p.banner);
+        get(obj, "pronouns", p.pronouns);
+        return p;
+    }
+};
+
+struct UserProfile : Core::JsonUtils::JsonObject
+{
+    Field<User> user;
+    Field<UserProfileData> userProfile;
+    Field<int, false, true> premiumType;
+    Field<QDateTime, false, true> premiumSince;
+    Field<QDateTime, false, true> premiumGuildSince;
+    Field<QList<ConnectedAccount>> connectedAccounts;
+    Field<QList<MutualGuildEntry>, true> mutualGuilds;
+    Field<QList<User>, true> mutualFriends;
+    Field<int, true> mutualFriendsCount;
+    Field<Member, true> guildMember;
+    Field<GuildMemberProfile, true> guildMemberProfile;
+    Field<QList<UserProfileBadge>> badges;
+    Field<QString, true, true> legacyUsername;
+
+    static UserProfile fromJson(const QJsonObject &obj)
+    {
+        UserProfile p;
+        get(obj, "user", p.user);
+        get(obj, "user_profile", p.userProfile);
+        get(obj, "premium_type", p.premiumType);
+        get(obj, "premium_since", p.premiumSince);
+        get(obj, "premium_guild_since", p.premiumGuildSince);
+        get(obj, "connected_accounts", p.connectedAccounts);
+        get(obj, "mutual_guilds", p.mutualGuilds);
+        get(obj, "mutual_friends", p.mutualFriends);
+        get(obj, "mutual_friends_count", p.mutualFriendsCount);
+        get(obj, "guild_member", p.guildMember);
+        get(obj, "guild_member_profile", p.guildMemberProfile);
+        get(obj, "badges", p.badges);
+        get(obj, "legacy_username", p.legacyUsername);
+        return p;
     }
 };
 

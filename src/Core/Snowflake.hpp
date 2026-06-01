@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QMetaType>
 
 namespace Acheron {
@@ -19,6 +20,8 @@ public:
     // operator QString() const noexcept;
 
     operator quint64() const noexcept;
+
+    [[nodiscard]] QDateTime toDateTime() const noexcept;
 
     const static Snowflake Invalid;
     const static quint64 SecondsInterval = 4194304000ULL;

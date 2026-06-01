@@ -32,11 +32,9 @@ void RoleRepository::saveRole(Core::Snowflake guildId, const Discord::Role &role
     q.bindValue(":position", role.position.get());
     q.bindValue(":color", role.color.hasValue() ? QVariant(role.color.get()) : QVariant());
     q.bindValue(":hoist", role.hoist.hasValue() ? QVariant(role.hoist.get()) : QVariant());
-    q.bindValue(":icon", role.icon.hasValue() && !role.icon.isNull() ? QVariant(role.icon.get())
-                                                                     : QVariant());
-    q.bindValue(":unicode_emoji", role.unicodeEmoji.hasValue() && !role.unicodeEmoji.isNull()
-                                          ? QVariant(role.unicodeEmoji.get())
-                                          : QVariant());
+    q.bindValue(":icon", role.icon.hasValue() ? QVariant(role.icon.get()) : QVariant());
+    q.bindValue(":unicode_emoji",
+                role.unicodeEmoji.hasValue() ? QVariant(role.unicodeEmoji.get()) : QVariant());
     q.bindValue(":managed", role.managed.hasValue() ? QVariant(role.managed.get()) : QVariant());
     q.bindValue(":mentionable",
                 role.mentionable.hasValue() ? QVariant(role.mentionable.get()) : QVariant());
@@ -68,11 +66,9 @@ void RoleRepository::saveRoles(Core::Snowflake guildId, const QList<Discord::Rol
         q.bindValue(":position", role.position.get());
         q.bindValue(":color", role.color.hasValue() ? QVariant(role.color.get()) : QVariant());
         q.bindValue(":hoist", role.hoist.hasValue() ? QVariant(role.hoist.get()) : QVariant());
-        q.bindValue(":icon", role.icon.hasValue() && !role.icon.isNull() ? QVariant(role.icon.get())
-                                                                         : QVariant());
-        q.bindValue(":unicode_emoji", role.unicodeEmoji.hasValue() && !role.unicodeEmoji.isNull()
-                                              ? QVariant(role.unicodeEmoji.get())
-                                              : QVariant());
+        q.bindValue(":icon", role.icon.hasValue() ? QVariant(role.icon.get()) : QVariant());
+        q.bindValue(":unicode_emoji",
+                    role.unicodeEmoji.hasValue() ? QVariant(role.unicodeEmoji.get()) : QVariant());
         q.bindValue(":managed",
                     role.managed.hasValue() ? QVariant(role.managed.get()) : QVariant());
         q.bindValue(":mentionable",

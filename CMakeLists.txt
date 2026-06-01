@@ -100,6 +100,7 @@ set(PROJECT_SOURCES
     src/Core/PermissionComputer.cpp
     src/Core/ReadStateManager.cpp
     src/Core/MemberListManager.cpp
+    src/Core/RelationshipManager.cpp
     src/Core/MurmurHash3.cpp
     src/Core/EmojiSegmenter.cpp
     src/Core/Markdown/Parser.cpp
@@ -124,6 +125,7 @@ set(PROJECT_SOURCES
     src/UI/Dialogs/TokenInputDialog.cpp
     src/UI/Dialogs/BasePopup.cpp
     src/UI/Dialogs/ConfirmPopup.cpp
+    src/UI/Dialogs/UserProfilePopup.cpp
     src/UI/MemberList/MemberListModel.cpp
     src/UI/MemberList/MemberListDelegate.cpp
     src/UI/MemberList/MemberListView.cpp
@@ -142,6 +144,7 @@ set(PROJECT_SOURCES
     src/Discord/IngestThread.cpp
     src/Discord/HttpClient.cpp
     src/Discord/CurlUtils.cpp
+    src/Discord/CdnUrls.cpp
     src/Discord/ClientIdentity.cpp
     src/Proto/ProtoReader.cpp
     src/Proto/UserSettings.cpp

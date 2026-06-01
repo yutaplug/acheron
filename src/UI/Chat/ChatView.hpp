@@ -74,6 +74,7 @@ signals:
     void toggleReactionClicked(Core::Snowflake channelId, Core::Snowflake messageId,
                                const QString &emoji, bool currentlyReacted, bool isBurst);
     void channelMentionClicked(Core::Snowflake channelId);
+    void userContextMenuRequested(Core::Snowflake userId, QPoint globalPos);
 
 public slots:
     void onHistoryRequestFinished();

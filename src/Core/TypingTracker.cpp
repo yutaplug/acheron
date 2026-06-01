@@ -88,7 +88,7 @@ QList<TyperInfo> TypingTracker::getActiveTypers() const
         TyperInfo info;
         info.userId = entry.userId;
         info.guildId = entry.guildId;
-        info.name = userManager->getDisplayName(entry.userId, entry.guildId);
+        info.name = userManager->getDisplayName(entry.userId, entry.guildId.value_or(Snowflake::Invalid));
         typers.append(info);
     }
     return typers;

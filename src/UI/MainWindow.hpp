@@ -63,6 +63,9 @@ private:
     void activateChannel(const TabEntry &entry);
     void refreshTabReadStates();
     QColor resolveRoleColor(Core::Snowflake userId, Core::Snowflake guildId);
+    void refreshGuildRoleData(Core::Snowflake guildId);
+    void showUserContextMenu(Core::Snowflake userId, Core::Snowflake guildId, QPoint globalPos);
+    void selectChannelInTree(Core::Snowflake channelId);
 #ifndef ACHERON_NO_VOICE
     void updateVoiceStatusLabel();
 #endif
@@ -104,7 +107,6 @@ private:
     Core::ClientInstance *currentInstance = nullptr;
 
     Core::Snowflake cachedGuildId = Core::Snowflake::Invalid;
-    QHash<Core::Snowflake, QList<Discord::Role>> guildRolesCache;
     QHash<Core::Snowflake, QColor> userColorCache; // current guild
 
     QSet<Core::Snowflake> instancesSignalsConnected;

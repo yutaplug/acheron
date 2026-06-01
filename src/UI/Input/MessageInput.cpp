@@ -140,6 +140,12 @@ void MessageInput::setSendBlocked(bool blocked)
     sendBlocked = blocked;
 }
 
+void MessageInput::insertText(const QString &text)
+{
+    textEdit->insertPlainText(text);
+    textEdit->setFocus();
+}
+
 void MessageInput::adjustHeight()
 {
     int contentHeight = textEdit->document()->size().height();

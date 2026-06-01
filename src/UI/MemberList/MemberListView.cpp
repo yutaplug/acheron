@@ -13,6 +13,7 @@ MemberListView::MemberListView(QWidget *parent)
     setFocusPolicy(Qt::NoFocus);
     setMouseTracking(true);
     setUniformItemSizes(false);
+    setContextMenuPolicy(Qt::CustomContextMenu);
 
     setStyleSheet(
             "QListView {"

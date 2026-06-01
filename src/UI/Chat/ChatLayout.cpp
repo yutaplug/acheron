@@ -511,6 +511,11 @@ MessageLayout calculateMessageLayout(const LayoutContext &ctx)
         layout.headerRect = QRect(textLeft, avatarTop - capDrop, textWidth, fm.height());
     }
 
+    if (layout.showHeader) {
+        layout.hitRegions.append({ HitRegion::Kind::Avatar, layout.avatarRect, -1, -1, {} });
+        layout.hitRegions.append({ HitRegion::Kind::UsernameHeader, layout.headerRect, -1, -1, {} });
+    }
+
     if (!ctx.htmlContent.isEmpty()) {
         QTextDocument *cached = ctx.model ? ctx.model->getCachedDocument(bodyDocKey(ctx.messageId))
                                           : nullptr;

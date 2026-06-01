@@ -48,6 +48,11 @@ public:
     void fetchHistory(Snowflake channelId, Snowflake beforeId, int limit,
                       MessagesCallback callback);
 
+    using ProfileCallback = std::function<void(const Core::Result<UserProfile> &)>;
+    void fetchUserProfile(Snowflake userId, Snowflake guildId, ProfileCallback callback);
+
+    void setUserNote(Snowflake userId, const QString &note);
+
     void sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
                      Snowflake replyToMessageId = Snowflake::Invalid);
     void editMessage(Snowflake channelId, Snowflake messageId, const QString &content);
@@ -110,6 +115,10 @@ signals:
     void guildMemberListUpdate(const GuildMemberListUpdate &event);
     void voiceStateUpdated(const VoiceState &event);
     void voiceServerUpdated(const VoiceServerUpdate &event);
+    void relationshipAdded(const Relationship &event);
+    void relationshipUpdated(const RelationshipPartial &event);
+    void relationshipRemoved(const RelationshipPartial &event);
+    void userNoteUpdated(const UserNoteUpdate &event);
     void messageSendFailed(const QString &nonce, const QString &error);
 
     void reconnecting(int attempt, int maxAttempts);

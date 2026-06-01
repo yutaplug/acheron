@@ -29,6 +29,14 @@ Snowflake::operator quint64() const noexcept
     return value;
 }
 
+QDateTime Snowflake::toDateTime() const noexcept
+{
+    if (!isValid())
+        return {};
+    const qint64 ms = static_cast<qint64>((value >> 22) + DISCORD_EPOCH);
+    return QDateTime::fromMSecsSinceEpoch(ms);
+}
+
 Snowflake Snowflake::generateNonce()
 {
     qint64 timestamp = QDateTime::currentMSecsSinceEpoch();

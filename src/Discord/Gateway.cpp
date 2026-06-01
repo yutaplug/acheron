@@ -254,6 +254,18 @@ void Gateway::handleDispatch(const Inbound &data)
     case GatewayEvent::VOICE_SERVER_UPDATE:
         handleVoiceServerUpdate(data);
         break;
+    case GatewayEvent::RELATIONSHIP_ADD:
+        handleRelationshipAdd(data);
+        break;
+    case GatewayEvent::RELATIONSHIP_UPDATE:
+        handleRelationshipUpdate(data);
+        break;
+    case GatewayEvent::RELATIONSHIP_REMOVE:
+        handleRelationshipRemove(data);
+        break;
+    case GatewayEvent::USER_NOTE_UPDATE:
+        handleUserNoteUpdate(data);
+        break;
     case GatewayEvent::UNKNOWN:
         qCInfo(LogDiscord) << "Unknown gateway event: " << t;
         break;
@@ -449,6 +461,30 @@ void Gateway::handleVoiceServerUpdate(const Inbound &data)
     VoiceServerUpdate event = data.getData<VoiceServerUpdate>();
 
     emit gatewayVoiceServerUpdate(event);
+}
+
+void Gateway::handleRelationshipAdd(const Inbound &data)
+{
+    Relationship event = data.getData<Relationship>();
+    emit gatewayRelationshipAdd(event);
+}
+
+void Gateway::handleRelationshipUpdate(const Inbound &data)
+{
+    RelationshipPartial event = data.getData<RelationshipPartial>();
+    emit gatewayRelationshipUpdate(event);
+}
+
+void Gateway::handleRelationshipRemove(const Inbound &data)
+{
+    RelationshipPartial event = data.getData<RelationshipPartial>();
+    emit gatewayRelationshipRemove(event);
+}
+
+void Gateway::handleUserNoteUpdate(const Inbound &data)
+{
+    UserNoteUpdate event = data.getData<UserNoteUpdate>();
+    emit gatewayUserNoteUpdate(event);
 }
 
 void Gateway::requestGuildMembers(Core::Snowflake guildId, const QList<Core::Snowflake> &userIds)

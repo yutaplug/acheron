@@ -40,6 +40,8 @@ public:
     void setSendBlocked(bool blocked);
     [[nodiscard]] bool isSendBlocked() const { return sendBlocked; }
 
+    void insertText(const QString &text);
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
 

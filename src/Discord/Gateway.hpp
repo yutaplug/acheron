@@ -71,6 +71,10 @@ signals:
     void gatewayGuildMemberListUpdate(const GuildMemberListUpdate &data);
     void gatewayVoiceStateUpdate(const VoiceState &data);
     void gatewayVoiceServerUpdate(const VoiceServerUpdate &data);
+    void gatewayRelationshipAdd(const Relationship &data);
+    void gatewayRelationshipUpdate(const RelationshipPartial &data);
+    void gatewayRelationshipRemove(const RelationshipPartial &data);
+    void gatewayUserNoteUpdate(const UserNoteUpdate &data);
 
 private:
     void sendPayload(const QJsonObject &obj);
@@ -104,6 +108,10 @@ private:
     void handleVoiceStateUpdate(const Inbound &data);
     void handleVoiceStateUpdateBatch(const Inbound &data);
     void handleVoiceServerUpdate(const Inbound &data);
+    void handleRelationshipAdd(const Inbound &data);
+    void handleRelationshipUpdate(const Inbound &data);
+    void handleRelationshipRemove(const Inbound &data);
+    void handleUserNoteUpdate(const Inbound &data);
     void handleHello(const Inbound &data);
     void identify();
     void resume();

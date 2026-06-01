@@ -82,6 +82,13 @@ int main(int argc, char *argv[])
     darkCoolPurple.setColor(QPalette::Highlight, QColor(124, 92, 192)); // selection / focus
     darkCoolPurple.setColor(QPalette::HighlightedText, QColor(245, 244, 255)); // selected text
 
+    const QColor disabledText(126, 124, 153); // #7e7c99
+    darkCoolPurple.setColor(QPalette::Disabled, QPalette::WindowText, disabledText);
+    darkCoolPurple.setColor(QPalette::Disabled, QPalette::Text, disabledText);
+    darkCoolPurple.setColor(QPalette::Disabled, QPalette::ButtonText, disabledText);
+    darkCoolPurple.setColor(QPalette::Disabled, QPalette::HighlightedText, disabledText);
+    darkCoolPurple.setColor(QPalette::Disabled, QPalette::PlaceholderText, disabledText);
+
     qApp->setPalette(darkCoolPurple);
 
     qApp->setStyleSheet(

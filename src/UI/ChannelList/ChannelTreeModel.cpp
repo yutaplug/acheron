@@ -3,6 +3,7 @@
 #include <Core/ClientInstance.hpp>
 #include <Core/ReadStateManager.hpp>
 #include <Core/Logging.hpp>
+#include <Discord/CdnUrls.hpp>
 #include <Storage/DatabaseManager.hpp>
 #include <Storage/ChannelRepository.hpp>
 #include <Storage/UserRepository.hpp>
@@ -122,12 +123,9 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
 
     if (role == Qt::DecorationRole) {
         if (node->type == ChannelNode::Type::Server) {
-            // resolve
             const QSize desiredSize(64, 64);
-            QUrl TEMPORARY = QUrl(QString("https://cdn.discordapp.com/icons/%1/%2.png?size=%3")
-                                          .arg(quint64(node->id))
-                                          .arg(node->TEMP_iconHash)
-                                          .arg(desiredSize.width()));
+            QUrl TEMPORARY = Discord::Cdn::guildIcon(node->id, node->TEMP_iconHash,
+                                                     desiredSize.width());
             QPixmap pixmap = session->getImageManager()->get(TEMPORARY, desiredSize, Core::PinGroup::ChannelList);
 
             if (!session->getImageManager()->isCached(TEMPORARY, desiredSize)) {
@@ -153,15 +151,11 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
             QUrl avatarUrl;
 
             if (node->dmRecipientId.isValid() && !node->dmAvatarHash.isEmpty()) {
-                avatarUrl = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=%3")
-                                         .arg(quint64(node->dmRecipientId))
-                                         .arg(node->dmAvatarHash)
-                                         .arg(desiredSize.width()));
+                avatarUrl = Discord::Cdn::userAvatar(node->dmRecipientId, node->dmAvatarHash,
+                                                     desiredSize.width());
             } else if (!node->TEMP_iconHash.isEmpty()) {
-                avatarUrl = QUrl(QString("https://cdn.discordapp.com/channel-icons/%1/%2.png?size=%3")
-                                         .arg(quint64(node->id))
-                                         .arg(node->TEMP_iconHash)
-                                         .arg(desiredSize.width()));
+                avatarUrl = Discord::Cdn::channelIcon(node->id, node->TEMP_iconHash,
+                                                      desiredSize.width());
             }
 
             if (!avatarUrl.isEmpty()) {
@@ -189,10 +183,8 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
         if (node->type == ChannelNode::Type::VoiceParticipant &&
             node->dmRecipientId.isValid() && !node->dmAvatarHash.isEmpty()) {
             const QSize desiredSize(32, 32);
-            QUrl avatarUrl = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=%3")
-                                          .arg(quint64(node->dmRecipientId))
-                                          .arg(node->dmAvatarHash)
-                                          .arg(desiredSize.width()));
+            QUrl avatarUrl = Discord::Cdn::userAvatar(node->dmRecipientId, node->dmAvatarHash,
+                                                      desiredSize.width());
 
             QPixmap pixmap = session->getImageManager()->get(avatarUrl, desiredSize, Core::PinGroup::ChannelList);
 
@@ -1187,15 +1179,13 @@ void ChannelTreeModel::updateVoiceParticipant(Snowflake channelId, Snowflake use
             return;
 
         ChannelNode *guildNode = findGuildNode(channelNode);
-        std::optional<Snowflake> guildIdOpt;
-        if (guildNode)
-            guildIdOpt = guildNode->id;
+        Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
 
         QString displayName;
         QString avatarHash;
-        Discord::User *user = instance->users()->getUser(userId);
+        auto user = instance->users()->getUser(userId);
         if (user) {
-            displayName = instance->users()->getDisplayName(userId, guildIdOpt);
+            displayName = instance->users()->getDisplayName(userId, guildId);
             if (user->avatar.hasValue())
                 avatarHash = user->avatar.get();
         }

@@ -55,7 +55,7 @@ void OnPlayback(ma_device *pDevice, void *pOutput, const void *, ma_uint32 frame
 
 static void MiniaudioLogCallback(void *pUserData, ma_uint32 level, const char *pMessage)
 {
-	Q_UNUSED(pUserData);
+    Q_UNUSED(pUserData);
 
     QString msg = QString::fromUtf8(pMessage).trimmed();
     if (msg.isEmpty())

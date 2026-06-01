@@ -1,5 +1,7 @@
 #include "MemberListModel.hpp"
 
+#include "Discord/CdnUrls.hpp"
+
 namespace Acheron {
 namespace UI {
 
@@ -76,9 +78,7 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const
         if (avatarHash.isEmpty())
             return QVariant();
 
-        QString extension = avatarHash.startsWith("a_") ? "gif" : "png";
-        QUrl url = QUrl(QString("https://cdn.discordapp.com/avatars/%1/%2.%3?size=32")
-                                .arg(QString::number(userId), avatarHash, extension));
+        QUrl url = Discord::Cdn::userAvatar(userId, avatarHash, AvatarRequestSize.width());
 
         if (imageManager->isCached(url, AvatarRequestSize))
             return imageManager->get(url, AvatarRequestSize);

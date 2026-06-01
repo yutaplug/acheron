@@ -31,6 +31,7 @@ public:
 
     std::optional<Discord::Channel> getChannel(Core::Snowflake channelId);
     QList<Discord::Channel> getChannelsForGuild(Core::Snowflake guildId);
+    std::optional<Core::Snowflake> findDmChannelWithUser(Core::Snowflake userId);
 };
 
 } // namespace Storage

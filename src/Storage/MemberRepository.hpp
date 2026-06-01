@@ -18,6 +18,7 @@ public:
     void saveMember(Core::Snowflake guildId, Core::Snowflake userId, const Discord::Member &member);
     void saveMember(Core::Snowflake guildId, Core::Snowflake userId, const Discord::Member &member,
                     QSqlDatabase &db);
+    void saveMembers(Core::Snowflake guildId, const QList<Discord::Member> &members);
 
     std::optional<Discord::Member> getMember(Core::Snowflake guildId, Core::Snowflake userId);
 

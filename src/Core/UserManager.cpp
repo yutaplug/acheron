@@ -12,49 +12,56 @@ UserManager::UserManager(Snowflake accountId, QObject *parent)
 
 UserManager::~UserManager() { }
 
-Discord::User *UserManager::getUser(Snowflake userId)
+std::optional<Discord::User> UserManager::getUser(Snowflake userId)
 {
     if (auto *user = userCache.object(userId))
-        return user;
+        return *user;
 
     auto dbUser = userRepo.getUser(userId);
-    if (dbUser.has_value()) {
-        auto *user = new Discord::User(dbUser.value());
-        userCache.insert(userId, user);
-        return user;
-    }
+    if (!dbUser.has_value())
+        return std::nullopt;
 
-    return nullptr;
+    userCache.insert(userId, new Discord::User(dbUser.value()));
+    return dbUser;
 }
 
-Discord::Member *UserManager::getMember(Snowflake guildId, Snowflake userId)
+std::optional<Discord::Member> UserManager::getMember(Snowflake guildId, Snowflake userId)
 {
     MemberKey key{ guildId, userId };
 
     if (auto *member = memberCache.object(key))
-        return member;
+        return *member;
 
     auto dbMember = memberRepo.getMember(guildId, userId);
     auto dbUser = userRepo.getUser(userId);
-    if (dbMember.has_value() && dbUser.has_value()) {
-        dbMember->user = dbUser.value();
-        auto *member = new Discord::Member(dbMember.value());
-        memberCache.insert(key, member);
-        return member;
-    }
+    if (!dbMember.has_value() || !dbUser.has_value())
+        return std::nullopt;
 
-    return nullptr;
+    dbMember->user = dbUser.value();
+    memberCache.insert(key, new Discord::Member(dbMember.value()));
+    return dbMember;
 }
 
-QString UserManager::getDisplayName(Snowflake userId, std::optional<Snowflake> guildId)
+std::optional<QList<Snowflake>> UserManager::getMemberRoles(Snowflake guildId, Snowflake userId)
 {
-    Discord::User *user = getUser(userId);
-    if (!user)
-        return QString(tr("Unknown User"));
+    if (auto *member = memberCache.object(MemberKey{ guildId, userId }))
+        return member->roles.hasValue() ? member->roles.get() : QList<Snowflake>{};
 
-    if (guildId.has_value()) {
-        Discord::Member *member = getMember(guildId.value(), userId);
-        if (member && member->nick.hasValue() && !member->nick.isNull())
+    auto dbMember = memberRepo.getMember(guildId, userId);
+    if (!dbMember.has_value())
+        return std::nullopt;
+    return dbMember->roles.hasValue() ? dbMember->roles.get() : QList<Snowflake>{};
+}
+
+QString UserManager::getDisplayName(Snowflake userId, Snowflake guildId)
+{
+    auto user = getUser(userId);
+    if (!user)
+        return tr("Unknown User");
+
+    if (guildId.isValid()) {
+        auto member = getMember(guildId, userId);
+        if (member && member->nick.hasValue())
             return member->nick;
     }
 
@@ -83,12 +90,46 @@ void UserManager::saveMember(Snowflake guildId, Snowflake userId, const Discord:
     memberRepo.saveMember(guildId, userId, member);
 }
 
+void UserManager::saveMembers(Snowflake guildId, const QList<Discord::Member> &members)
+{
+    for (const auto &member : members) {
+        if (!member.user.hasValue() || !member.user->id.hasValue())
+            continue;
+        Snowflake userId = member.user->id.get();
+        memberCache.insert(MemberKey{ guildId, userId }, new Discord::Member(member));
+    }
+    memberRepo.saveMembers(guildId, members);
+}
+
 void UserManager::saveMemberWithUser(Snowflake guildId, const Discord::Member &member)
 {
     if (member.user.hasValue()) {
         saveUser(member.user.get());
         saveMember(guildId, member.user->id, member);
     }
+}
+
+void UserManager::loadNotesFromReady(const QHash<Snowflake, QString> &readyNotes)
+{
+    notes = readyNotes;
+    qCInfo(LogCore) << "Loaded" << notes.size() << "user notes from READY";
+}
+
+void UserManager::setCachedNote(Snowflake userId, const QString &note)
+{
+    if (note.isEmpty())
+        notes.remove(userId);
+    else
+        notes.insert(userId, note);
+    emit noteChanged(userId);
+}
+
+std::optional<QString> UserManager::getCachedNote(Snowflake userId) const
+{
+    auto it = notes.constFind(userId);
+    if (it == notes.constEnd())
+        return std::nullopt;
+    return it.value();
 }
 
 } // namespace Core

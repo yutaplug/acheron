@@ -266,6 +266,27 @@ std::optional<Discord::Channel> ChannelRepository::getChannel(Core::Snowflake ch
     return channel;
 }
 
+std::optional<Core::Snowflake>
+ChannelRepository::findDmChannelWithUser(Core::Snowflake userId)
+{
+    auto db = getDb();
+    QSqlQuery q(db);
+    // 1 = dm
+    q.prepare(R"(
+        SELECT c.id
+        FROM channels c
+        JOIN channel_recipients cr ON cr.channel_id = c.id
+        WHERE c.type = 1 AND cr.user_id = :user_id
+        LIMIT 1
+    )");
+    q.bindValue(":user_id", static_cast<qint64>(userId));
+
+    if (!q.exec() || !q.next())
+        return std::nullopt;
+
+    return static_cast<Core::Snowflake>(q.value(0).toLongLong());
+}
+
 QList<Discord::Channel> ChannelRepository::getChannelsForGuild(Core::Snowflake guildId)
 {
     QList<Discord::Channel> channels;

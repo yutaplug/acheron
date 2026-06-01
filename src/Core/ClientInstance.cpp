@@ -4,6 +4,9 @@
 #  include "Core/AV/VoiceManager.hpp"
 #endif
 
+#include <algorithm>
+
+#include <QSet>
 #include <QTimer>
 
 #include "Core/Logging.hpp"
@@ -40,6 +43,7 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
     permissionManager = new PermissionManager(info.id, this);
     readStateManager = new ReadStateManager(info.id, permissionManager, this);
     memberListManager = new MemberListManager(channelRepo, roleRepo, this);
+    relationshipManager = new RelationshipManager(this);
 #ifndef ACHERON_NO_VOICE
     voiceManager = new AV::VoiceManager(info.id, this);
 #endif
@@ -97,6 +101,10 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
 
         if (ready.users.hasValue())
             userManager->saveUsers(ready.users.get());
+
+        if (ready.relationships.hasValue())
+            relationshipManager->loadFromReady(ready.relationships.get());
+        userManager->loadNotesFromReady(ready.notes.get());
 
         if (ready.privateChannels.hasValue()) {
             for (const auto &channel : ready.privateChannels.get()) {
@@ -195,6 +203,18 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
             &MessageManager::onReactionRemoveAll);
     connect(client, &Discord::Client::messageReactionRemoveEmoji, messageManager,
             &MessageManager::onReactionRemoveEmoji);
+    connect(client, &Discord::Client::relationshipAdded, relationshipManager,
+            &RelationshipManager::onRelationshipAdded);
+    connect(client, &Discord::Client::relationshipUpdated, relationshipManager,
+            &RelationshipManager::onRelationshipUpdated);
+    connect(client, &Discord::Client::relationshipRemoved, relationshipManager,
+            &RelationshipManager::onRelationshipRemoved);
+    connect(client, &Discord::Client::userNoteUpdated, this,
+            [this](const Discord::UserNoteUpdate &event) {
+                if (event.id.hasValue() && event.note.hasValue())
+                    userManager->setCachedNote(event.id.get(), event.note.get());
+            });
+
     connect(client, &Discord::Client::channelCreated, this, &ClientInstance::onChannelCreated);
     connect(client, &Discord::Client::channelUpdated, this, &ClientInstance::onChannelUpdated);
     connect(client, &Discord::Client::channelDeleted, this, &ClientInstance::onChannelDeleted);
@@ -207,6 +227,8 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
             &ClientInstance::onGuildMemberUpdate);
     connect(client, &Discord::Client::guildMemberListUpdate, memberListManager,
             &MemberListManager::handleMemberListUpdate);
+    connect(client, &Discord::Client::guildMemberListUpdate, this,
+            &ClientInstance::onGuildMemberListUpdate);
     connect(memberListManager, &MemberListManager::subscriptionRequested, client,
             &Discord::Client::subscribeToGuildChannel);
     connect(messageManager, &MessageManager::messagesReceived, this,
@@ -363,6 +385,27 @@ void ClientInstance::onChannelDeleted(const Discord::ChannelDelete &event)
     emit channelDeleted(event);
 }
 
+bool ClientInstance::runInCacheTransaction(const char *what,
+                                           const std::function<void(QSqlDatabase &)> &op)
+{
+    QString connName = Storage::DatabaseManager::instance().getCacheConnectionName(account.id);
+    QSqlDatabase db = QSqlDatabase::database(connName);
+
+    if (!db.transaction()) {
+        qCWarning(LogCore) << "Failed to start transaction for" << what;
+        return false;
+    }
+
+    op(db);
+
+    if (!db.commit()) {
+        qCWarning(LogCore) << "Failed to commit" << what << ":" << db.lastError().text();
+        db.rollback();
+        return false;
+    }
+    return true;
+}
+
 void ClientInstance::onGuildRoleCreated(const Discord::GuildRoleCreate &event)
 {
     if (!event.guildId.hasValue() || !event.role.hasValue()) {
@@ -380,22 +423,11 @@ void ClientInstance::onGuildRoleCreated(const Discord::GuildRoleCreate &event)
 
     qCDebug(LogCore) << "Role created:" << role.id.get() << "in guild:" << guildId;
 
-    QString connName = Storage::DatabaseManager::instance().getCacheConnectionName(account.id);
-    QSqlDatabase db = QSqlDatabase::database(connName);
-
-    if (!db.transaction()) {
-        qCWarning(LogCore) << "Failed to start transaction for role creation";
+    if (!runInCacheTransaction("role creation",
+                               [&](QSqlDatabase &db) { roleRepo.saveRole(guildId, role, db); }))
         return;
-    }
 
-    roleRepo.saveRole(guildId, role, db);
-
-    if (!db.commit()) {
-        qCWarning(LogCore) << "Failed to commit role creation:" << db.lastError().text();
-        db.rollback();
-        return;
-    }
-
+    rolesCacheByGuild.remove(guildId);
     permissionManager->invalidateUserGuildCache(account.id, guildId);
     memberListManager->handleRoleCreated(guildId, role);
     emit guildRoleCreated(event);
@@ -418,22 +450,11 @@ void ClientInstance::onGuildRoleUpdated(const Discord::GuildRoleUpdate &event)
 
     qCDebug(LogCore) << "Role updated:" << role.id.get() << "in guild:" << guildId;
 
-    QString connName = Storage::DatabaseManager::instance().getCacheConnectionName(account.id);
-    QSqlDatabase db = QSqlDatabase::database(connName);
-
-    if (!db.transaction()) {
-        qCWarning(LogCore) << "Failed to start transaction for role update";
+    if (!runInCacheTransaction("role update",
+                               [&](QSqlDatabase &db) { roleRepo.saveRole(guildId, role, db); }))
         return;
-    }
 
-    roleRepo.saveRole(guildId, role, db);
-
-    if (!db.commit()) {
-        qCWarning(LogCore) << "Failed to commit role update:" << db.lastError().text();
-        db.rollback();
-        return;
-    }
-
+    rolesCacheByGuild.remove(guildId);
     permissionManager->invalidateUserGuildCache(account.id, guildId);
     memberListManager->handleRoleUpdated(guildId, role);
     emit guildRoleUpdated(event);
@@ -451,22 +472,11 @@ void ClientInstance::onGuildRoleDeleted(const Discord::GuildRoleDelete &event)
 
     qCDebug(LogCore) << "Role deleted:" << roleId << "in guild:" << guildId;
 
-    QString connName = Storage::DatabaseManager::instance().getCacheConnectionName(account.id);
-    QSqlDatabase db = QSqlDatabase::database(connName);
-
-    if (!db.transaction()) {
-        qCWarning(LogCore) << "Failed to start transaction for role deletion";
+    if (!runInCacheTransaction("role deletion",
+                               [&](QSqlDatabase &db) { roleRepo.deleteRole(guildId, roleId, db); }))
         return;
-    }
 
-    roleRepo.deleteRole(guildId, roleId, db);
-
-    if (!db.commit()) {
-        qCWarning(LogCore) << "Failed to commit role deletion:" << db.lastError().text();
-        db.rollback();
-        return;
-    }
-
+    rolesCacheByGuild.remove(guildId);
     permissionManager->invalidateUserGuildCache(account.id, guildId);
     memberListManager->handleRoleDeleted(guildId, roleId);
     emit guildRoleDeleted(event);
@@ -514,6 +524,39 @@ void ClientInstance::onGuildMemberUpdate(const Discord::GuildMemberUpdate &event
         permissionManager->invalidateUserGuildCache(userId, guildId);
 
     emit membersUpdated(guildId, { userId });
+}
+
+void ClientInstance::onGuildMemberListUpdate(const Discord::GuildMemberListUpdate &update)
+{
+    if (!update.guildId.hasValue() || !update.ops.hasValue())
+        return;
+
+    const Snowflake guildId = update.guildId.get();
+    QList<Discord::User> users;
+    QList<Discord::Member> members;
+
+    auto persist = [&](const Discord::Member &member) {
+        if (!member.user.hasValue() || !member.user->id.hasValue())
+            return;
+        users.append(member.user.get());
+        members.append(member);
+    };
+
+    for (const auto &op : update.ops.get()) {
+        if (op.items.hasValue()) {
+            for (const auto &item : op.items.get()) {
+                if (item.member.hasValue())
+                    persist(item.member.get());
+            }
+        }
+        if (op.item.hasValue() && op.item.get().member.hasValue())
+            persist(op.item.get().member.get());
+    }
+
+    if (!users.isEmpty())
+        userManager->saveUsers(users);
+    if (!members.isEmpty())
+        userManager->saveMembers(guildId, members);
 }
 
 void ClientInstance::onMessagesReceived(const MessageRequestResult &result)
@@ -576,11 +619,10 @@ bool ClientInstance::isMessageMentioningMe(const Discord::Message &msg) const
 
     if (msg.mentionRoles.hasValue() && msg.guildId.hasValue()) {
         Snowflake guildId = msg.guildId.get();
-        Discord::Member *me = userManager->getMember(guildId, account.id);
-        if (me && me->roles.hasValue()) {
-            const auto &myRoles = me->roles.get();
+        auto myRoles = userManager->getMemberRoles(guildId, account.id);
+        if (myRoles) {
             for (const auto &roleId : msg.mentionRoles.get())
-                if (myRoles.contains(roleId))
+                if (myRoles->contains(roleId))
                     return true;
         }
     }
@@ -667,6 +709,11 @@ ReadStateManager *ClientInstance::readState() const
     return readStateManager;
 }
 
+RelationshipManager *ClientInstance::relationships() const
+{
+    return relationshipManager;
+}
+
 MemberListManager *ClientInstance::memberList() const
 {
     return memberListManager;
@@ -681,7 +728,44 @@ AV::VoiceManager *ClientInstance::voice() const
 
 QList<Discord::Role> ClientInstance::getRolesForGuild(Snowflake guildId)
 {
-    return roleRepo.getRolesForGuild(guildId);
+    auto it = rolesCacheByGuild.constFind(guildId);
+    if (it != rolesCacheByGuild.constEnd())
+        return it.value();
+
+    auto roles = roleRepo.getRolesForGuild(guildId);
+    rolesCacheByGuild.insert(guildId, roles);
+    return roles;
+}
+
+QList<Discord::Role> ClientInstance::getMemberRolesSorted(Snowflake guildId, Snowflake userId)
+{
+    auto memberRoleIds = userManager->getMemberRoles(guildId, userId);
+    if (!memberRoleIds || memberRoleIds->isEmpty())
+        return {};
+
+    QSet<Snowflake> memberRoleSet(memberRoleIds->begin(), memberRoleIds->end());
+    QList<Discord::Role> result;
+    result.reserve(memberRoleIds->size());
+    for (const auto &role : getRolesForGuild(guildId)) {
+        if (memberRoleSet.contains(role.id.get()))
+            result.append(role);
+    }
+
+    std::sort(result.begin(), result.end(),
+              [](const Discord::Role &a, const Discord::Role &b) {
+                  return a.position.get() > b.position.get();
+              });
+    return result;
+}
+
+std::optional<Discord::Guild> ClientInstance::getGuild(Snowflake guildId)
+{
+    return guildRepo.getGuild(guildId);
+}
+
+std::optional<Snowflake> ClientInstance::findDmChannelWithUser(Snowflake userId)
+{
+    return channelRepo.findDmChannelWithUser(userId);
 }
 
 int ClientInstance::getChannelRateLimit(Snowflake channelId)

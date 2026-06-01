@@ -385,6 +385,13 @@ void ChatView::contextMenuEvent(QContextMenuEvent *event)
     QString content = index.data(ChatModel::ContentRole).toString();
     bool isOwnMessage = (authorId == currentUserId);
 
+    ChatLayout::ResolvedLayout resolved = ChatLayout::resolveLayout(this, index);
+    auto region = ChatLayout::hitTest(resolved, event->pos());
+    if (region && (region->kind == ChatLayout::HitRegion::Kind::Avatar || region->kind == ChatLayout::HitRegion::Kind::UsernameHeader)) {
+        emit userContextMenuRequested(authorId, event->globalPos());
+        return;
+    }
+
     QMenu menu(this);
 
     QAction *copyAction = menu.addAction(tr("Copy Text"));

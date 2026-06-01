@@ -148,6 +148,19 @@ enum class GatewayEvent {
     VOICE_STATE_UPDATE,
     VOICE_STATE_UPDATE_BATCH,
     VOICE_SERVER_UPDATE,
+    RELATIONSHIP_ADD,
+    RELATIONSHIP_UPDATE,
+    RELATIONSHIP_REMOVE,
+    USER_NOTE_UPDATE,
+};
+
+enum class RelationshipType {
+    NONE = 0,
+    FRIEND = 1,
+    BLOCKED = 2,
+    INCOMING_REQUEST = 3,
+    OUTGOING_REQUEST = 4,
+    IMPLICIT = 5,
 };
 
 inline GatewayEvent parseGatewayEvent(const QString &event)
@@ -178,6 +191,10 @@ inline GatewayEvent parseGatewayEvent(const QString &event)
         { "VOICE_STATE_UPDATE", GatewayEvent::VOICE_STATE_UPDATE },
         { "VOICE_STATE_UPDATE_BATCH", GatewayEvent::VOICE_STATE_UPDATE_BATCH },
         { "VOICE_SERVER_UPDATE", GatewayEvent::VOICE_SERVER_UPDATE },
+        { "RELATIONSHIP_ADD", GatewayEvent::RELATIONSHIP_ADD },
+        { "RELATIONSHIP_UPDATE", GatewayEvent::RELATIONSHIP_UPDATE },
+        { "RELATIONSHIP_REMOVE", GatewayEvent::RELATIONSHIP_REMOVE },
+        { "USER_NOTE_UPDATE", GatewayEvent::USER_NOTE_UPDATE },
     };
 
     return events.value(event, GatewayEvent::UNKNOWN);

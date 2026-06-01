@@ -24,7 +24,11 @@
 #include "SlowModeIndicator.hpp"
 #include "ConnectionBanner.hpp"
 #include "Dialogs/ConfirmPopup.hpp"
+#include "Dialogs/UserProfilePopup.hpp"
+#include "Discord/CdnUrls.hpp"
+#include "Core/ImageManager.hpp"
 #include "Core/MemberListManager.hpp"
+#include "Core/Session.hpp"
 #ifndef ACHERON_NO_VOICE
 #  include "Core/AV/VoiceManager.hpp"
 #  include "VoiceStatusBar.hpp"
@@ -45,20 +49,14 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
     channelFilterProxy->sort(0);
     accountsModel = new AccountsModel(session, this);
 
-    chatModel->setAvatarUrlResolver([this](const Discord::User &user) -> QUrl {
-        // using a resolver cuz spacebar ig
-        return QString("https://cdn.discordapp.com/avatars/%1/%2.png?size=64")
-                .arg(quint64(user.id.get()))
-                .arg(user.avatar.get());
+    chatModel->setAvatarUrlResolver([](const Discord::User &user) -> QUrl {
+        return Discord::Cdn::userAvatar(user.id.get(), user.avatar.get(), 64);
     });
 
     chatModel->setDisplayNameResolver([this](Snowflake userId, Snowflake guildId) -> QString {
         if (!currentInstance)
             return QString();
-        return currentInstance->users()->getDisplayName(userId,
-                                                        guildId != Snowflake::Invalid
-                                                                ? std::optional(guildId)
-                                                                : std::nullopt);
+        return currentInstance->users()->getDisplayName(userId, guildId);
     });
 
     chatModel->setRoleColorResolver(
@@ -261,9 +259,7 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
         entry.name = node->name;
         entry.isDm = (node->type == ChannelNode::Type::DMChannel);
         if (serverNode && !serverNode->TEMP_iconHash.isEmpty())
-            entry.iconUrl = QStringLiteral("https://cdn.discordapp.com/icons/%1/%2.png?size=64")
-                                    .arg(quint64(serverNode->id))
-                                    .arg(serverNode->TEMP_iconHash);
+            entry.iconUrl = Discord::Cdn::guildIcon(serverNode->id, serverNode->TEMP_iconHash, 64);
         tabBar->updateCurrentTab(entry);
     }
 }
@@ -366,51 +362,21 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
 
     // todo: i dont really like the refresh users logic rn
     connect(instance, &Core::ClientInstance::guildRoleCreated, this,
-            [this, instance](const Discord::GuildRoleCreate &event) {
-                if (!event.guildId.hasValue())
-                    return;
-
-                Core::Snowflake guildId = event.guildId.get();
-                guildRolesCache.remove(guildId);
-
-                channelTreeModel->invalidateGuildData(guildId);
-
-                if (cachedGuildId == guildId) {
-                    userColorCache.clear();
-                    chatModel->refreshUsersInView({});
-                }
+            [this](const Discord::GuildRoleCreate &event) {
+                if (event.guildId.hasValue())
+                    refreshGuildRoleData(event.guildId.get());
             });
 
     connect(instance, &Core::ClientInstance::guildRoleUpdated, this,
-            [this, instance](const Discord::GuildRoleUpdate &event) {
-                if (!event.guildId.hasValue())
-                    return;
-
-                Core::Snowflake guildId = event.guildId.get();
-                guildRolesCache.remove(guildId);
-
-                channelTreeModel->invalidateGuildData(guildId);
-
-                if (cachedGuildId == guildId) {
-                    userColorCache.clear();
-                    chatModel->refreshUsersInView({});
-                }
+            [this](const Discord::GuildRoleUpdate &event) {
+                if (event.guildId.hasValue())
+                    refreshGuildRoleData(event.guildId.get());
             });
 
     connect(instance, &Core::ClientInstance::guildRoleDeleted, this,
-            [this, instance](const Discord::GuildRoleDelete &event) {
-                if (!event.guildId.hasValue())
-                    return;
-
-                Core::Snowflake guildId = event.guildId.get();
-                guildRolesCache.remove(guildId);
-
-                channelTreeModel->invalidateGuildData(guildId);
-
-                if (cachedGuildId == guildId) {
-                    userColorCache.clear();
-                    chatModel->refreshUsersInView({});
-                }
+            [this](const Discord::GuildRoleDelete &event) {
+                if (event.guildId.hasValue())
+                    refreshGuildRoleData(event.guildId.get());
             });
 
     connect(instance, &Core::ClientInstance::readStateChanged, this,
@@ -567,6 +533,21 @@ void MainWindow::setupUi()
     memberListView = new MemberListView(central);
     memberListView->setModel(memberListModel);
     memberListView->setItemDelegate(new MemberListDelegate(memberListView));
+
+    connect(memberListView, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint &pos) {
+                QModelIndex idx = memberListView->indexAt(pos);
+                if (!idx.isValid())
+                    return;
+                if (idx.data(MemberListModel::ItemTypeRole).toInt() != static_cast<int>(Core::MemberListItem::Type::Member))
+                    return;
+                Snowflake userId = idx.data(MemberListModel::UserIdRole).toULongLong();
+                Snowflake guildId = currentInstance
+                                            ? currentInstance->memberList()->currentGuildId()
+                                            : Snowflake::Invalid;
+                showUserContextMenu(userId, guildId,
+                                    memberListView->viewport()->mapToGlobal(pos));
+            });
 
     mainSplitter = new QSplitter(this);
     mainSplitter->addWidget(leftSideWidget);
@@ -728,19 +709,12 @@ void MainWindow::setupUi()
                     currentInstance->discord()->addReaction(channelId, messageId, emoji, isBurst);
             });
 
-    connect(chatView, &ChatView::channelMentionClicked, this, [this](Snowflake channelId) {
-        if (!currentInstance)
-            return;
-        ChannelNode *node = channelTreeModel->findChannelTreeNode(channelId, currentInstance->accountId());
-        if (!node)
-            return;
-        QModelIndex sourceIndex = channelTreeModel->indexForNode(node);
-        if (!sourceIndex.isValid())
-            return;
-        QModelIndex proxyIndex = channelFilterProxy->mapFromSource(sourceIndex);
-        if (proxyIndex.isValid())
-            channelTree->setCurrentIndex(proxyIndex);
-    });
+    connect(chatView, &ChatView::userContextMenuRequested, this,
+            [this](Snowflake userId, QPoint globalPos) {
+                showUserContextMenu(userId, cachedGuildId, globalPos);
+            });
+
+    connect(chatView, &ChatView::channelMentionClicked, this, &MainWindow::selectChannelInTree);
 
     connect(channelTree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             &MainWindow::onChannelSelectionChanged);
@@ -770,9 +744,8 @@ void MainWindow::setupUi()
                 entry.name = node->name;
                 entry.isDm = (node->type == ChannelNode::Type::DMChannel);
                 if (guildNode && !guildNode->TEMP_iconHash.isEmpty())
-                    entry.iconUrl = QStringLiteral("https://cdn.discordapp.com/icons/%1/%2.png?size=64")
-                                            .arg(quint64(guildNode->id))
-                                            .arg(guildNode->TEMP_iconHash);
+                    entry.iconUrl = Discord::Cdn::guildIcon(guildNode->id, guildNode->TEMP_iconHash,
+                                                            64);
                 tabBar->openNewTab(entry);
             });
 
@@ -861,17 +834,15 @@ void MainWindow::updateVoiceStatusLabel()
         voiceStatusBar->setNameResolver([um, vGuildId](Core::Snowflake userId) -> QString {
             if (!um)
                 return QString::number(userId);
-            return um->getDisplayName(userId, vGuildId.isValid() ? std::optional(vGuildId) : std::nullopt);
+            return um->getDisplayName(userId, vGuildId);
         });
         voiceStatusBar->setAvatarResolver([um](Core::Snowflake userId) -> QUrl {
             if (!um)
                 return {};
-            Discord::User *user = um->getUser(userId);
-            if (!user || user->avatar.isNull() || user->avatar.get().isEmpty())
+            auto user = um->getUser(userId);
+            if (!user || user->avatar.isNull())
                 return {};
-            return QUrl(QStringLiteral("https://cdn.discordapp.com/avatars/%1/%2.png?size=32")
-                                .arg(quint64(userId))
-                                .arg(user->avatar.get()));
+            return Discord::Cdn::userAvatar(userId, user->avatar.get(), 32);
         });
     } else {
         voiceStatusBar->setNameResolver(nullptr);
@@ -1116,34 +1087,157 @@ QColor MainWindow::resolveRoleColor(Snowflake userId, Snowflake guildId)
     if (cachedGuildId == guildId && userColorCache.contains(userId))
         return userColorCache.value(userId);
 
-    if (!guildRolesCache.contains(guildId))
-        guildRolesCache[guildId] = currentInstance->getRolesForGuild(guildId);
-
-    const auto &roles = guildRolesCache[guildId];
-
-    Discord::Member *member = currentInstance->users()->getMember(guildId, userId);
-    if (!member || !member->roles.hasValue())
-        return QColor();
-
-    int highestPos = -1;
-    int colorValue = 0;
-    for (const auto &roleId : member->roles.get()) {
-        for (const auto &role : roles) {
-            if (role.id == roleId && role.color.hasValue() && role.color.get() != 0) {
-                if (role.position.get() > highestPos) {
-                    highestPos = role.position.get();
-                    colorValue = role.color.get();
-                }
-            }
+    QColor result;
+    for (const auto &role : currentInstance->getMemberRolesSorted(guildId, userId)) {
+        if (role.hasColor()) {
+            result = role.getColor();
+            break;
         }
     }
-
-    QColor result = colorValue != 0 ? QColor::fromRgb(colorValue) : QColor();
 
     if (cachedGuildId == guildId)
         userColorCache[userId] = result;
 
     return result;
+}
+
+void MainWindow::refreshGuildRoleData(Snowflake guildId)
+{
+    channelTreeModel->invalidateGuildData(guildId);
+
+    if (cachedGuildId == guildId) {
+        userColorCache.clear();
+        chatModel->refreshUsersInView({});
+    }
+}
+
+namespace {
+
+QWidget *buildUserMenuHeader(QMenu *parent, Core::Session *session, Snowflake userId,
+                             const QString &displayName, const QString &username,
+                             const QString &avatarHash)
+{
+    auto *header = new QWidget(parent);
+    auto *layout = new QHBoxLayout(header);
+    layout->setContentsMargins(10, 10, 16, 10);
+    layout->setSpacing(12);
+
+    constexpr QSize avatarSize(64, 64);
+    auto *avatar = new QLabel(header);
+    avatar->setFixedSize(avatarSize);
+    if (!avatarHash.isEmpty()) {
+        QUrl url = Discord::Cdn::userAvatar(userId, avatarHash, 128);
+        session->getImageManager()->assign(avatar, url, avatarSize);
+    } else {
+        avatar->setPixmap(session->getImageManager()->placeholder(avatarSize));
+    }
+    layout->addWidget(avatar);
+
+    auto *textLayout = new QVBoxLayout;
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(2);
+
+    auto *displayLabel = new QLabel(displayName, header);
+    QFont displayFont = displayLabel->font();
+    displayFont.setBold(true);
+    displayFont.setPointSize(displayFont.pointSize() + 2);
+    displayLabel->setFont(displayFont);
+    textLayout->addWidget(displayLabel);
+
+    if (!username.isEmpty() && username != displayName) {
+        auto *usernameLabel = new QLabel(username, header);
+        usernameLabel->setStyleSheet(QStringLiteral("color: palette(placeholder-text);"));
+        textLayout->addWidget(usernameLabel);
+    }
+    textLayout->addStretch();
+    layout->addLayout(textLayout, 1);
+
+    return header;
+}
+
+QWidget *buildRoleChip(const Discord::Role &role, QWidget *parent)
+{
+    auto *label = new QLabel(role.name.get(), parent);
+    label->setContentsMargins(24, 4, 24, 4);
+    if (role.hasColor())
+        label->setStyleSheet(QStringLiteral("color: %1;").arg(role.getColor().name()));
+    return label;
+}
+
+} // namespace
+
+void MainWindow::showUserContextMenu(Snowflake userId, Snowflake guildId, QPoint globalPos)
+{
+    QMenu menu(this);
+
+    if (currentInstance) {
+        auto user = currentInstance->users()->getUser(userId);
+        QString displayName = currentInstance->users()->getDisplayName(userId, guildId);
+        QString username = (user && user->username.hasValue()) ? user->username.get() : QString();
+        QString avatarHash = (user && user->avatar.hasValue()) ? user->avatar.get() : QString();
+
+        auto *header = buildUserMenuHeader(&menu, session, userId, displayName, username,
+                                           avatarHash);
+        auto *headerAction = new QWidgetAction(&menu);
+        headerAction->setDefaultWidget(header);
+        menu.addAction(headerAction);
+        menu.addSeparator();
+    }
+
+    QAction *profileAction = menu.addAction(tr("Profile"));
+    connect(profileAction, &QAction::triggered, this, [this, userId, guildId]() {
+        (new UserProfilePopup(session->getImageManager(), currentInstance, userId, guildId,
+                              this))
+                ->show();
+    });
+
+    QAction *mentionAction = menu.addAction(tr("Mention"));
+    connect(mentionAction, &QAction::triggered, this, [this, userId]() {
+        messageInput->insertText(QStringLiteral("<@%1>").arg(quint64(userId)));
+    });
+
+    QAction *openDmAction = menu.addAction(tr("Open DM"));
+    std::optional<Snowflake> dmChannelId;
+    if (currentInstance)
+        dmChannelId = currentInstance->findDmChannelWithUser(userId);
+    if (dmChannelId.has_value()) {
+        connect(openDmAction, &QAction::triggered, this,
+                [this, channelId = *dmChannelId]() { selectChannelInTree(channelId); });
+    } else {
+        openDmAction->setEnabled(false);
+    }
+
+    if (guildId.isValid() && currentInstance) {
+        QMenu *rolesMenu = menu.addMenu(tr("Roles"));
+        const auto memberRoles = currentInstance->getMemberRolesSorted(guildId, userId);
+        if (memberRoles.isEmpty()) {
+            rolesMenu->addAction(tr("No roles"))->setEnabled(false);
+        } else {
+            for (const auto &role : memberRoles) {
+                auto *action = new QWidgetAction(rolesMenu);
+                action->setDefaultWidget(buildRoleChip(role, rolesMenu));
+                rolesMenu->addAction(action);
+            }
+        }
+    }
+
+    menu.exec(globalPos);
+}
+
+void MainWindow::selectChannelInTree(Snowflake channelId)
+{
+    if (!currentInstance)
+        return;
+    ChannelNode *node = channelTreeModel->findChannelTreeNode(channelId,
+                                                              currentInstance->accountId());
+    if (!node)
+        return;
+    QModelIndex sourceIndex = channelTreeModel->indexForNode(node);
+    if (!sourceIndex.isValid())
+        return;
+    QModelIndex proxyIndex = channelFilterProxy->mapFromSource(sourceIndex);
+    if (proxyIndex.isValid())
+        channelTree->setCurrentIndex(proxyIndex);
 }
 
 } // namespace UI
