@@ -7,6 +7,7 @@
 #include "Core/TokenStore.hpp"
 #include "Core/TokenUtils.hpp"
 #include "Discord/CdnUrls.hpp"
+#include "UI/Dialogs/QRLoginDialog.hpp"
 
 namespace Acheron {
 namespace UI {
@@ -47,9 +48,11 @@ void AccountsWindow::setupUi()
 
     QHBoxLayout *btnLayout = new QHBoxLayout();
     QPushButton *addBtn = new QPushButton(tr("Add"), this);
+    QPushButton *qrBtn = new QPushButton(tr("Log in with QR Code"), this);
     removeButton = new QPushButton(tr("Remove"), this);
     removeButton->setEnabled(false);
     btnLayout->addWidget(addBtn);
+    btnLayout->addWidget(qrBtn);
     btnLayout->addWidget(removeButton);
     leftLayout->addLayout(btnLayout);
 
@@ -108,6 +111,7 @@ void AccountsWindow::setupUi()
     mainLayout->addWidget(splitter);
 
     connect(addBtn, &QPushButton::clicked, this, &AccountsWindow::onAddClicked);
+    connect(qrBtn, &QPushButton::clicked, this, &AccountsWindow::onQrLoginClicked);
     connect(removeButton, &QPushButton::clicked, this, &AccountsWindow::onRemoveClicked);
 
     connect(listView->selectionModel(), &QItemSelectionModel::currentChanged, this,
@@ -180,6 +184,31 @@ void AccountsWindow::onAddClicked()
     acc.token = token;
 
     // acc.avatar =
+
+    model->addAccount(acc);
+}
+
+void AccountsWindow::onQrLoginClicked()
+{
+    QRLoginDialog dlg(session, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    QString token = dlg.getToken();
+    if (token.isEmpty())
+        return;
+
+    Snowflake userId = TokenUtils::getIdAndCheckToken(token);
+    if (!userId.isValid()) {
+        QMessageBox::warning(this, tr("Login Failed"), tr("Please try again."));
+        return;
+    }
+
+    AccountInfo acc;
+    acc.id = userId;
+    acc.token = token;
+    acc.username = dlg.getUsername().isEmpty() ? QStringLiteral("unknown") : dlg.getUsername();
+    acc.displayName = acc.username;
 
     model->addAccount(acc);
 }

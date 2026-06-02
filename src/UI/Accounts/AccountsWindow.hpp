@@ -23,6 +23,7 @@ public:
 private slots:
     void onSelectionChanged(const QModelIndex &current, const QModelIndex &previous);
     void onAddClicked();
+    void onQrLoginClicked();
     void onRemoveClicked();
     void onContextMenuRequested(const QPoint &pos);
     void onConnectClicked();

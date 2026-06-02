@@ -23,6 +23,7 @@ if(BUILD_TESTS)
 endif()
 
 find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
 if(ENABLE_VOICE)
     find_package(unofficial-sodium CONFIG REQUIRED)
     find_package(Opus CONFIG REQUIRED)
@@ -123,6 +124,7 @@ set(PROJECT_SOURCES
     src/UI/Chat/ChatView.cpp
     src/UI/Chat/ChatLayout.cpp
     src/UI/Dialogs/TokenInputDialog.cpp
+    src/UI/Dialogs/QRLoginDialog.cpp
     src/UI/Dialogs/BasePopup.cpp
     src/UI/Dialogs/ConfirmPopup.cpp
     src/UI/Dialogs/UserProfilePopup.cpp
@@ -141,6 +143,7 @@ set(PROJECT_SOURCES
     src/Storage/RoleRepository.cpp
     src/Discord/Client.cpp
     src/Discord/Gateway.cpp
+    src/Discord/RemoteAuthClient.cpp
     src/Discord/IngestThread.cpp
     src/Discord/HttpClient.cpp
     src/Discord/CurlUtils.cpp
@@ -173,9 +176,22 @@ if(ENABLE_VOICE)
     )
 endif()
 
+find_package(unofficial-nayuki-qr-code-generator CONFIG QUIET)
+if(TARGET unofficial::nayuki-qr-code-generator::nayuki-qr-code-generator)
+    message(STATUS "Using installed nayuki-qr-code-generator")
+else()
+    message(STATUS "nayuki-qr-code-generator not found, using vendored version")
+    list(APPEND PROJECT_SOURCES vendor/qrcodegen/cpp/qrcodegen.cpp)
+endif()
+
 qt_add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE vendor/emoji-segmenter)
+if(TARGET unofficial::nayuki-qr-code-generator::nayuki-qr-code-generator)
+    target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::nayuki-qr-code-generator::nayuki-qr-code-generator)
+else()
+    target_include_directories(${PROJECT_NAME} PRIVATE vendor/qrcodegen/cpp)
+endif()
 
 if(BUILD_TESTS)
     qt_add_executable(TestMarkdown tests/tst_Markdown.cpp src/Core/Markdown/Parser.cpp src/Core/EmojiSegmenter.cpp)
@@ -221,6 +237,7 @@ target_link_libraries(${PROJECT_NAME}
         CURL::libcurl
     PRIVATE
         qt${QT_VERSION_MAJOR}keychain
+        OpenSSL::Crypto
 )
 if(ENABLE_VOICE)
     target_link_libraries(${PROJECT_NAME} PRIVATE

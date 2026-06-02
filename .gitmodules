@@ -13,3 +13,6 @@
 [submodule "vendor/miniaudio"]
 	path = vendor/miniaudio
 	url = https://github.com/mackron/miniaudio.git
+[submodule "vendor/qrcodegen"]
+	path = vendor/qrcodegen
+	url = https://github.com/nayuki/QR-Code-generator.git
