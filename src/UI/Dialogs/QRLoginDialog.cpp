@@ -43,7 +43,7 @@ QRLoginDialog::QRLoginDialog(Core::Session *session, QWidget *parent)
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
 
-    client = new Discord::RemoteAuthClient(this);
+    client = new Discord::RemoteAuthClient(session->getCaptchaResolver(), this);
     connect(client, &Discord::RemoteAuthClient::fingerprintReady, this, &QRLoginDialog::renderQr);
     connect(client, &Discord::RemoteAuthClient::pendingTicket, this, &QRLoginDialog::onPendingTicket);
     connect(client, &Discord::RemoteAuthClient::authenticated, this, &QRLoginDialog::onAuthenticated);

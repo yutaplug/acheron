@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 
 #include "Core/Logging.hpp"
 
@@ -20,8 +21,8 @@ static size_t writeCallback(void *contents, size_t size, size_t nmemb, void *use
 }
 
 HttpClient::HttpClient(const QString &baseUrl, const QString &token, ClientIdentity &identity,
-                       QObject *parent)
-    : QObject(parent), baseUrl(baseUrl), token(token), identity(identity)
+                       CaptchaResolver *captchaResolver, QObject *parent)
+    : QObject(parent), baseUrl(baseUrl), token(token), identity(identity), captchaResolver(captchaResolver)
 {
     setupSharing();
 }
@@ -121,10 +122,13 @@ void HttpClient::setupSharing()
 }
 
 void HttpClient::executeRequest(Method method, const QString &url, const QByteArray &data,
-                                HttpCallback callback)
+                                HttpCallback callback, int captchaAttempt,
+                                std::optional<CaptchaSolution> solution)
 {
     std::string sUrl = url.toStdString();
     std::string sToken = token.toStdString();
+
+    QPointer<HttpClient> self(this);
 
     // i should use curl_multi but for now i will deal with the share obj interface
     // cuz its easier than dealing with multi for now
@@ -170,6 +174,9 @@ void HttpClient::executeRequest(Method method, const QString &url, const QByteAr
             // there is more logic with referer but not super important
             curl_slist_append(headers, "Referer: https://discord.com/channels/@me");
             // clang-format on
+
+            if (solution)
+                appendCaptchaHeaders(headers, *solution);
 
             curl_easy_setopt(curl, CURLOPT_URL, sUrl.c_str());
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -226,15 +233,43 @@ void HttpClient::executeRequest(Method method, const QString &url, const QByteAr
             response.success = false;
         }
 
-        QMetaObject::invokeMethod(qApp, [callback, response]() { callback(response); });
+        std::optional<CaptchaChallenge> challenge;
+        if (response.statusCode == 400)
+            challenge = CaptchaChallenge::fromResponseBody(response.body);
+
+        QMetaObject::invokeMethod(qApp, [=]() {
+            if (!challenge || captchaAttempt >= kMaxCaptchaAttempts || !self || !self->captchaResolver) {
+                if (self && self->captchaResolver && captchaAttempt > 0)
+                    self->captchaResolver->notifyConcluded();
+                callback(response);
+                return;
+            }
+            self->captchaResolver->resolve(*challenge, [=](std::optional<CaptchaSolution> sol) {
+                if (!self)
+                    return;
+                if (!sol) {
+                    HttpResponse err = response;
+                    err.success = false;
+                    if (err.error.isEmpty())
+                        err.error = "Captcha canceled";
+                    callback(err);
+                    return;
+                }
+                self->executeRequest(method, QString::fromStdString(sUrl), data, callback,
+                                     captchaAttempt + 1, sol);
+            });
+        });
     }).detach();
 }
 
 void HttpClient::executeMultipartRequest(const QString &url, const QByteArray &jsonData,
-                                         const QList<FileUpload> &files, HttpCallback callback)
+                                         const QList<FileUpload> &files, HttpCallback callback,
+                                         int captchaAttempt, std::optional<CaptchaSolution> solution)
 {
     std::string sUrl = url.toStdString();
     std::string sToken = token.toStdString();
+
+    QPointer<HttpClient> self(this);
 
     std::thread([=, this]() {
         CURL *curl = curl_easy_init();
@@ -272,6 +307,9 @@ void HttpClient::executeMultipartRequest(const QString &url, const QByteArray &j
             curl_slist_append(headers, "X-Debug-Options: bugReporterEnabled");
             curl_slist_append(headers, "Referer: https://discord.com/channels/@me");
             // clang-format on
+
+            if (solution)
+                appendCaptchaHeaders(headers, *solution);
 
             curl_easy_setopt(curl, CURLOPT_URL, sUrl.c_str());
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -320,7 +358,32 @@ void HttpClient::executeMultipartRequest(const QString &url, const QByteArray &j
             response.success = false;
         }
 
-        QMetaObject::invokeMethod(qApp, [callback, response]() { callback(response); });
+        std::optional<CaptchaChallenge> challenge;
+        if (response.statusCode == 400)
+            challenge = CaptchaChallenge::fromResponseBody(response.body);
+
+        QMetaObject::invokeMethod(qApp, [=]() {
+            if (!challenge || captchaAttempt >= kMaxCaptchaAttempts || !self || !self->captchaResolver) {
+                if (self && self->captchaResolver && captchaAttempt > 0)
+                    self->captchaResolver->notifyConcluded();
+                callback(response);
+                return;
+            }
+            self->captchaResolver->resolve(*challenge, [=](std::optional<CaptchaSolution> sol) {
+                if (!self)
+                    return;
+                if (!sol) {
+                    HttpResponse err = response;
+                    err.success = false;
+                    if (err.error.isEmpty())
+                        err.error = "Captcha canceled";
+                    callback(err);
+                    return;
+                }
+                self->executeMultipartRequest(QString::fromStdString(sUrl), jsonData, files, callback,
+                                              captchaAttempt + 1, sol);
+            });
+        });
     }).detach();
 }
 

@@ -6,6 +6,8 @@
 
 #include <curl/curl.h>
 
+#include "CaptchaResolver.hpp"
+
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -32,7 +34,7 @@ class RemoteAuthClient : public QObject
 {
     Q_OBJECT
 public:
-    explicit RemoteAuthClient(QObject *parent = nullptr);
+    explicit RemoteAuthClient(CaptchaResolver *captchaResolver = nullptr, QObject *parent = nullptr);
     ~RemoteAuthClient();
 
     void start();
@@ -60,6 +62,7 @@ private:
     void handlePendingRemoteInit(const QJsonObject &obj);
     void handlePendingTicket(const QJsonObject &obj);
     void handlePendingLogin(const QJsonObject &obj);
+    void postLogin(const QString &ticket, std::optional<CaptchaSolution> solution, int attempt);
 
     void send(const QJsonObject &obj);
 
@@ -84,6 +87,8 @@ private:
     std::thread heartbeatThread;
 
     std::thread httpThread;
+
+    CaptchaResolver *captchaResolver = nullptr;
 };
 
 } // namespace Discord

@@ -32,7 +32,9 @@ class ClientInstance : public QObject
 {
     Q_OBJECT
 public:
-    explicit ClientInstance(const AccountInfo &info, QObject *parent = nullptr);
+    explicit ClientInstance(const AccountInfo &info,
+                            Discord::CaptchaResolver *captchaResolver = nullptr,
+                            QObject *parent = nullptr);
     ~ClientInstance() override;
 
     void start();

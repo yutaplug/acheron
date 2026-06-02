@@ -31,6 +31,9 @@ public:
     [[nodiscard]] ImageManager *getImageManager() { return imageManager; }
     [[nodiscard]] bool hasActiveConnection() const;
 
+    void setCaptchaResolver(Discord::CaptchaResolver *resolver) { captchaResolver = resolver; }
+    [[nodiscard]] Discord::CaptchaResolver *getCaptchaResolver() const { return captchaResolver; }
+
 signals:
     void connectionStateChanged(Snowflake accountId, Core::ConnectionState newState);
     void accountDetailsUpdated(const Core::AccountInfo &info);
@@ -41,6 +44,7 @@ private:
     ImageManager *imageManager;
     Storage::AccountRepository repo;
     QMap<Snowflake, ClientInstance *> clients;
+    Discord::CaptchaResolver *captchaResolver = nullptr;
 };
 
 } // namespace Core

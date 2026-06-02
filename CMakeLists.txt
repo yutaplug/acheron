@@ -106,6 +106,7 @@ set(PROJECT_SOURCES
     src/Core/EmojiSegmenter.cpp
     src/Core/Markdown/Parser.cpp
     src/UI/MainWindow.cpp
+    src/UI/BrowserCaptchaResolver.cpp
     src/UI/TypingIndicator.cpp
     src/UI/SlowModeIndicator.cpp
     src/UI/ConnectionBanner.cpp

@@ -19,7 +19,9 @@
 
 namespace Acheron {
 namespace Core {
-ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
+ClientInstance::ClientInstance(const AccountInfo &info,
+                               Discord::CaptchaResolver *captchaResolver,
+                               QObject *parent)
     : QObject(parent),
       account(info),
       roleRepo(info.id),
@@ -27,7 +29,7 @@ ClientInstance::ClientInstance(const AccountInfo &info, QObject *parent)
       channelRepo(info.id),
       memberRepo(info.id)
 {
-    client = new Discord::Client(info.token, info.gatewayUrl, info.restUrl, this);
+    client = new Discord::Client(info.token, info.gatewayUrl, info.restUrl, captchaResolver, this);
 
     Storage::DatabaseManager::instance().openCacheDatabase(info.id);
 

@@ -59,7 +59,7 @@ void Session::connectAccount(Snowflake accountId)
         return;
     }
 
-    auto *instance = new ClientInstance(acc, this);
+    auto *instance = new ClientInstance(acc, captchaResolver, this);
 
     connect(instance, &ClientInstance::stateChanged, this,
             [this, accountId, instance](ConnectionState state) {

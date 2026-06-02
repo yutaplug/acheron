@@ -36,7 +36,7 @@ public:
     Q_ENUM(MessageLoadType)
 
     explicit Client(const QString &token, const QString &gatewayUrl, const QString &baseUrl,
-                    QObject *parent = nullptr);
+                    CaptchaResolver *captchaResolver = nullptr, QObject *parent = nullptr);
 
     void start();
     void stop();

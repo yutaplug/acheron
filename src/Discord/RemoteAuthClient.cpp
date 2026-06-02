@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
+#include <QPointer>
 #include <QTimeZone>
 #include <QTimer>
 
@@ -41,7 +42,10 @@ static size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata
     return bytes;
 }
 
-RemoteAuthClient::RemoteAuthClient(QObject *parent) : QObject(parent) { }
+RemoteAuthClient::RemoteAuthClient(CaptchaResolver *captchaResolver, QObject *parent)
+    : QObject(parent), captchaResolver(captchaResolver)
+{
+}
 
 RemoteAuthClient::~RemoteAuthClient()
 {
@@ -430,12 +434,24 @@ void RemoteAuthClient::handlePendingLogin(const QJsonObject &obj)
     if (httpThread.joinable())
         return;
 
+    postLogin(obj["ticket"].toString(), std::nullopt, 0);
+}
+
+void RemoteAuthClient::postLogin(const QString &ticket, std::optional<CaptchaSolution> solution,
+                                 int attempt)
+{
+    if (done)
+        return;
+
+    if (httpThread.joinable())
+        httpThread.join();
+
     const std::string body =
-            QJsonDocument(QJsonObject{ { "ticket", obj["ticket"].toString() } })
+            QJsonDocument(QJsonObject{ { "ticket", ticket } })
                     .toJson(QJsonDocument::Compact)
                     .toStdString();
 
-    httpThread = std::thread([this, body]() {
+    httpThread = std::thread([this, body, ticket, solution, attempt]() {
         CURL *curl = curl_easy_init();
         QByteArray response;
         long httpCode = 0;
@@ -474,6 +490,9 @@ void RemoteAuthClient::handlePendingLogin(const QJsonObject &obj)
             curl_slist_append(headers, "Origin: https://discord.com");
             // clang-format on
 
+            if (solution)
+                appendCaptchaHeaders(headers, *solution);
+
             curl_easy_setopt(curl, CURLOPT_URL, loginUrl);
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
             curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
@@ -499,16 +518,44 @@ void RemoteAuthClient::handlePendingLogin(const QJsonObject &obj)
 
         QMetaObject::invokeMethod(
                 this,
-                [this, ok, httpCode, response]() {
+                [this, ok, httpCode, response, ticket, attempt]() {
+                    if (done)
+                        return;
+
                     QJsonObject root = QJsonDocument::fromJson(response).object();
 
                     if (!ok) {
-                        const bool captcha = root.value("captcha_key").isArray();
+                        std::optional<CaptchaChallenge> challenge;
+                        if (httpCode == 400)
+                            challenge = CaptchaChallenge::fromResponseBody(response);
+
+                        if (challenge && captchaResolver && attempt < kMaxCaptchaAttempts) {
+                            QPointer<RemoteAuthClient> self(this);
+                            captchaResolver->resolve(
+                                    *challenge,
+                                    [this, self, ticket, attempt](std::optional<CaptchaSolution> sol) {
+                                        if (!self || done)
+                                            return;
+                                        if (!sol) {
+                                            fail(RemoteAuthError::CaptchaRequired);
+                                            return;
+                                        }
+                                        postLogin(ticket, sol, attempt + 1);
+                                    });
+                            return;
+                        }
+
+                        const bool captcha = challenge.has_value();
+                        if (attempt > 0 && captchaResolver)
+                            captchaResolver->notifyConcluded();
                         qCWarning(LogNetwork) << "Remote auth login failed, HTTP" << httpCode << (captcha ? "(captcha required)" : "");
                         fail(captcha ? RemoteAuthError::CaptchaRequired
                                      : RemoteAuthError::LoginFailed);
                         return;
                     }
+
+                    if (attempt > 0 && captchaResolver)
+                        captchaResolver->notifyConcluded();
 
                     QByteArray enc = QByteArray::fromBase64(root["encrypted_token"].toString().toLatin1());
                     QByteArray token = decrypt(enc);

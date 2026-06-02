@@ -12,13 +12,13 @@ namespace Acheron {
 namespace Discord {
 
 Client::Client(const QString &token, const QString &gatewayUrl, const QString &baseUrl,
-               QObject *parent)
+               CaptchaResolver *captchaResolver, QObject *parent)
     : QObject(parent), token(token), baseUrl(baseUrl)
 {
     identity.regenerateClientHeartbeatSessionId();
 
     gateway = new Gateway(token, gatewayUrl, identity, this);
-    httpClient = new HttpClient(baseUrl, token, identity, this);
+    httpClient = new HttpClient(baseUrl, token, identity, captchaResolver, this);
 
     connect(gateway, &Gateway::connected, this, &Client::onConnected);
     connect(gateway, &Gateway::disconnected, this, &Client::onDisconnected);

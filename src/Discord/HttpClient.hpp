@@ -4,6 +4,8 @@
 
 #include <curl/curl.h>
 
+#include "CaptchaResolver.hpp"
+
 namespace Acheron {
 namespace Discord {
 
@@ -31,7 +33,7 @@ class HttpClient : public QObject
     Q_OBJECT
 public:
     explicit HttpClient(const QString &baseUrl, const QString &token, ClientIdentity &identity,
-                        QObject *parent = nullptr);
+                        CaptchaResolver *captchaResolver = nullptr, QObject *parent = nullptr);
 
     void get(const QString &endpoint, const QUrlQuery &query, HttpCallback callback);
     void post(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
@@ -55,10 +57,13 @@ private:
     static void unlock_cb(CURL *handle, curl_lock_data data, void *userptr);
     void setupSharing();
 
-    void executeRequest(Method method, const QString &endpoint, const QByteArray &data,
-                        HttpCallback callback);
+    void executeRequest(Method method, const QString &url, const QByteArray &data,
+                        HttpCallback callback, int captchaAttempt = 0,
+                        std::optional<CaptchaSolution> solution = std::nullopt);
     void executeMultipartRequest(const QString &url, const QByteArray &jsonData,
-                                 const QList<FileUpload> &files, HttpCallback callback);
+                                 const QList<FileUpload> &files, HttpCallback callback,
+                                 int captchaAttempt = 0,
+                                 std::optional<CaptchaSolution> solution = std::nullopt);
 
     CURLSH *share;
     static inline std::array<std::mutex, 3> shareMutexes;
@@ -66,6 +71,7 @@ private:
     QString baseUrl;
     QString token;
     ClientIdentity &identity;
+    CaptchaResolver *captchaResolver;
 };
 
 } // namespace Discord

@@ -23,6 +23,7 @@
 #include "TypingIndicator.hpp"
 #include "SlowModeIndicator.hpp"
 #include "ConnectionBanner.hpp"
+#include "BrowserCaptchaResolver.hpp"
 #include "Dialogs/ConfirmPopup.hpp"
 #include "Dialogs/UserProfilePopup.hpp"
 #include "Discord/CdnUrls.hpp"
@@ -41,6 +42,9 @@ namespace UI {
 
 MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent), session(session)
 {
+    auto *captchaResolver = new BrowserCaptchaResolver(this, this);
+    session->setCaptchaResolver(captchaResolver);
+
     chatModel = new ChatModel(session->getImageManager(), this);
     channelTreeModel = new ChannelTreeModel(session, this);
     channelFilterProxy = new ChannelFilterProxyModel(session, this);
