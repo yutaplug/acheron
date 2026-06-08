@@ -3,6 +3,7 @@
 #include "Core/Markdown/Parser.hpp"
 #include "Core/MessageManager.hpp"
 #include "Core/ImageManager.hpp"
+#include "Core/Theme/Manager.hpp"
 #include "Discord/Enums.hpp"
 
 namespace Acheron {
@@ -384,8 +385,9 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
                 data.description = embed.description.hasValue() ? *embed.description : QString();
                 data.url = embedUrl;
                 data.timestamp = embed.timestamp.hasValue() ? *embed.timestamp : QDateTime();
-                data.color = embed.color.hasValue() ? QColor::fromRgb(*embed.color)
-                                                    : QColor(88, 101, 242);
+                data.color = embed.color.hasValue()
+                                     ? QColor::fromRgb(*embed.color)
+                                     : Core::Theme::Manager::instance().color(Core::Theme::Token::EmbedDefault);
 
                 static Core::Markdown::Parser parser;
                 Core::Markdown::ParseState titleState;

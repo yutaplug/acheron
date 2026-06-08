@@ -13,13 +13,9 @@ public:
 
 private:
     void setupUi();
-    void loadSettings();
 
     QListWidget *categoryList;
     QStackedWidget *pages;
-
-    // general
-    QCheckBox *inMemoryCacheCheckbox;
 };
 
 } // namespace UI

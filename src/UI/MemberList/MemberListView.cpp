@@ -6,6 +6,8 @@ namespace UI {
 MemberListView::MemberListView(QWidget *parent)
     : QListView(parent)
 {
+    setObjectName("MemberList");
+
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -15,14 +17,9 @@ MemberListView::MemberListView(QWidget *parent)
     setUniformItemSizes(false);
     setContextMenuPolicy(Qt::CustomContextMenu);
 
-    setStyleSheet(
-            "QListView {"
-            "  background-color: palette(window);"
-            "  border: none;"
-            "}"
-            "QScrollBar::handle:vertical {"
-            "  min-height: 40px;"
-            "}");
+    setFrameShape(QFrame::NoFrame);
+    viewport()->setBackgroundRole(QPalette::Window);
+    viewport()->setAutoFillBackground(true);
 }
 
 void MemberListView::scrollContentsBy(int dx, int dy)

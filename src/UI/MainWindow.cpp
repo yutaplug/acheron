@@ -30,6 +30,7 @@
 #include "Core/ImageManager.hpp"
 #include "Core/MemberListManager.hpp"
 #include "Core/Session.hpp"
+#include "Core/Theme/Manager.hpp"
 #ifndef ACHERON_NO_VOICE
 #  include "Core/AV/VoiceManager.hpp"
 #  include "VoiceStatusBar.hpp"
@@ -537,6 +538,13 @@ void MainWindow::setupUi()
     memberListView = new MemberListView(central);
     memberListView->setModel(memberListModel);
     memberListView->setItemDelegate(new MemberListDelegate(memberListView));
+
+    connect(&Core::Theme::Manager::instance(), &Core::Theme::Manager::themeChanged, this, [this]() {
+        chatModel->invalidateDocCache();
+        chatView->viewport()->update();
+        channelTree->viewport()->update();
+        memberListView->viewport()->update();
+    });
 
     connect(memberListView, &QWidget::customContextMenuRequested, this,
             [this](const QPoint &pos) {

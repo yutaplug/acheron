@@ -4,6 +4,7 @@
 #include "ChatLayout.hpp"
 #include "ChatView.hpp"
 #include "Core/ImageManager.hpp"
+#include "Core/Theme/Manager.hpp"
 
 #include <algorithm>
 
@@ -244,7 +245,7 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 
     QColor textColor;
     if (isErrored) {
-        textColor = QColor(220, 50, 50);
+        textColor = Core::Theme::Manager::instance().color(Core::Theme::Token::ChatError);
     } else if (isPending) {
         textColor = option.palette.text().color().lighter(50);
     } else if (ctx.isSystemMessage) {

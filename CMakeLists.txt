@@ -105,6 +105,10 @@ set(PROJECT_SOURCES
     src/Core/MurmurHash3.cpp
     src/Core/EmojiSegmenter.cpp
     src/Core/Markdown/Parser.cpp
+    src/Core/Theme/Tokens.cpp
+    src/Core/Theme/Manager.cpp
+    src/Core/Theme/Generator.cpp
+    src/Core/Theme/Stylesheet.cpp
     src/UI/MainWindow.cpp
     src/UI/BrowserCaptchaResolver.cpp
     src/UI/TypingIndicator.cpp
@@ -114,6 +118,8 @@ set(PROJECT_SOURCES
     src/UI/ImageViewer.cpp
     src/UI/Accounts/AccountsWindow.cpp
     src/UI/Settings/SettingsWindow.cpp
+    src/UI/Settings/GeneralPage.cpp
+    src/UI/Settings/AppearancePage.cpp
     src/UI/Accounts/AccountsModel.cpp
     src/UI/ChannelList/ChannelDelegate.cpp
     src/UI/ChannelList/ChannelTreeModel.cpp

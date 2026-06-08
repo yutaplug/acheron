@@ -143,7 +143,7 @@ QString Parser::toHtmlInternal(const QList<AstNode> &nodes, bool jumboEmoji)
             else
                 displayName = node.content;
 
-            result += QString("<span style=\"background-color: rgba(88, 101, 242, 0.3); color: #c9cdfb;\">@%1</span>")
+            result += QString("<span class=\"mention\">@%1</span>")
                               .arg(displayName.toHtmlEscaped());
             continue;
         }
@@ -155,7 +155,7 @@ QString Parser::toHtmlInternal(const QList<AstNode> &nodes, bool jumboEmoji)
             else
                 displayName = node.content;
 
-            result += QString("<a href=\"acheron://channel/%1\" style=\"background-color: rgba(88, 101, 242, 0.3); color: #c9cdfb; text-decoration: none;\">#%2</a>")
+            result += QString("<a href=\"acheron://channel/%1\" class=\"mention\">#%2</a>")
                               .arg(node.content.toHtmlEscaped())
                               .arg(displayName.toHtmlEscaped());
             continue;
