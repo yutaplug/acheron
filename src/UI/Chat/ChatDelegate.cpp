@@ -36,6 +36,28 @@ static void registerEmojiResources(QTextDocument &doc, const QString &html,
     }
 }
 
+static void drawUploadProgress(QPainter *painter, const QRect &barRect, qint64 sent, qint64 total, const QPalette &palette)
+{
+    qreal fraction = total > 0 ? qBound(0.0, qreal(sent) / qreal(total), 1.0) : 0.0;
+
+    if (barRect.width() < 20)
+        return;
+
+    int radius = barRect.height() / 2;
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(QColor(0, 0, 0, 160));
+    painter->drawRoundedRect(barRect, radius, radius);
+    if (fraction > 0.0) {
+        QRect fillRect = barRect;
+        fillRect.setWidth(qMax(barRect.height(), qRound(fraction * barRect.width())));
+        painter->setBrush(palette.highlight());
+        painter->drawRoundedRect(fillRect, radius, radius);
+    }
+    painter->restore();
+}
+
 static ChatLayout::LayoutContext buildLayoutContext(const QStyleOptionViewItem &option,
                                                     const QModelIndex &index)
 {
@@ -336,6 +358,12 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
             painter->setPen(option.palette.text().color());
             painter->drawText(imgLayout.rect, Qt::AlignCenter, tr("Loading..."));
         }
+
+        if (isPending && att.uploadSent >= 0) {
+            QRect barRect(imgLayout.rect.left() + 8, imgLayout.rect.bottom() - 13,
+                          imgLayout.rect.width() - 16, 6);
+            drawUploadProgress(painter, barRect, att.uploadSent, att.uploadTotal, option.palette);
+        }
     }
 
     constexpr int fileAttachmentPadding = 8;
@@ -373,14 +401,24 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         painter->drawText(textAreaRect.left(), textAreaRect.top() + filenameFm.ascent(),
                           elidedFilename);
 
+        bool uploading = isPending && att.uploadSent >= 0;
+
         QFont sizeFont = option.font;
         sizeFont.setPointSize(sizeFont.pointSize() - 1);
         painter->setFont(sizeFont);
         painter->setPen(option.palette.placeholderText().color());
         QString sizeText = ChatLayout::formatFileSize(att.fileSizeBytes);
+        if (uploading && att.uploadTotal > 0)
+            sizeText = ChatLayout::formatFileSize(att.uploadSent) + " / " +
+                       ChatLayout::formatFileSize(att.uploadTotal);
         QFontMetrics sizeFm(sizeFont);
         painter->drawText(textAreaRect.left(),
                           textAreaRect.top() + filenameFm.height() + sizeFm.ascent(), sizeText);
+
+        if (uploading) {
+            QRect barRect(fileRect.left() + 2, fileRect.bottom() - 5, fileRect.width() - 4, 4);
+            drawUploadProgress(painter, barRect, att.uploadSent, att.uploadTotal, option.palette);
+        }
     }
 
     QList<EmbedData> embeds = ctx.embeds;

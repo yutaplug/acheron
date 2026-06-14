@@ -1,8 +1,10 @@
 #include "MessageManager.hpp"
 
-#include <QtConcurrent>
+#include <QDateTime>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QUrl>
 
 #include "Discord/Client.hpp"
 #include "Markdown/Parser.hpp"
@@ -321,10 +323,13 @@ void MessageManager::onMessageSendFailed(const QString &nonce, const QString &er
 }
 
 void MessageManager::sendMessage(Snowflake channelId, const QString &content,
-                                 Snowflake replyToMessageId)
+                                 Snowflake replyToMessageId,
+                                 const QList<PendingAttachment> &attachments)
 {
     Snowflake nonceId = Snowflake::generateNonce();
     QString nonce = QString::number(nonceId);
+
+    auto outgoing = attachments;
 
     Discord::Message preview;
     preview.id = nonceId; // temporary id, will be overwritten
@@ -335,6 +340,36 @@ void MessageManager::sendMessage(Snowflake channelId, const QString &content,
     preview.author = client->getMe();
     preview.flags = Discord::MessageFlags(0);
     preview.isPendingOutbound = true;
+
+    if (!outgoing.isEmpty()) {
+        QList<Discord::Attachment> previewAttachments;
+        for (int i = 0; i < outgoing.size(); i++) {
+            const auto &att = outgoing[i];
+            Discord::Attachment a;
+            a.id = Snowflake(nonceId + i + 1);
+            a.filename = att.filename;
+            a.size = att.size;
+            a.contentType = att.mimeType;
+            if (!att.image.isNull()) {
+                a.localPreview = att.image;
+                a.width = att.image.width();
+                a.height = att.image.height();
+            } else if (att.mimeType.startsWith("image/") && !att.filePath.isEmpty()) {
+                QString localUrl = QUrl::fromLocalFile(att.filePath).toString();
+                a.url = localUrl;
+                a.proxyUrl = localUrl;
+                QSize dims = QImageReader(att.filePath).size();
+                if (dims.isValid()) {
+                    a.width = dims.width();
+                    a.height = dims.height();
+                }
+            }
+            if (att.isSpoiler)
+                a.flags = Discord::AttachmentFlags(Discord::AttachmentFlag::IS_SPOILER);
+            previewAttachments.append(a);
+        }
+        preview.attachments = previewAttachments;
+    }
 
     if (replyToMessageId.isValid()) {
         preview.type = Discord::MessageType::REPLY;
@@ -356,7 +391,30 @@ void MessageManager::sendMessage(Snowflake channelId, const QString &content,
     emit messagesReceived(
             { true, Discord::Client::MessageLoadType::Created, channelId, { preview } });
 
-    client->sendMessage(channelId, content, nonce, replyToMessageId);
+    for (const auto &att : outgoing) {
+        if (att.data.isEmpty() && att.filePath.isEmpty()) {
+            emit messageErrored(nonce);
+            return;
+        }
+    }
+
+    client->sendMessage(channelId, content, nonce, replyToMessageId, outgoing);
+}
+
+void MessageManager::cancelSend(Snowflake channelId, const QString &nonce)
+{
+    if (!client->cancelMessageSend(nonce))
+        return;
+
+    Snowflake nonceId(nonce.toULongLong());
+    messageCache.remove(nonceId);
+    if (channelMessages.contains(channelId)) {
+        auto &order = channelMessages[channelId];
+        auto it = std::find(order.begin(), order.end(), nonceId);
+        if (it != order.end())
+            order.erase(it);
+    }
+    emit messageDeleted(channelId, nonceId);
 }
 
 static bool emojisMatch(const Discord::Emoji &a, const Discord::Emoji &b)

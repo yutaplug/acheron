@@ -63,6 +63,9 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void clearSelection();
     void leaveEvent(QEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 signals:
     void historyRequested();
@@ -71,6 +74,8 @@ signals:
     void pinMessageRequested(Core::Snowflake channelId, Core::Snowflake messageId);
     void replyToMessageRequested(Core::Snowflake channelId, Core::Snowflake messageId);
     void addReactionRequested(Core::Snowflake channelId, Core::Snowflake messageId);
+    void cancelUploadRequested(Core::Snowflake channelId, Core::Snowflake messageId);
+    void filesDropped(const QList<QUrl> &urls);
     void toggleReactionClicked(Core::Snowflake channelId, Core::Snowflake messageId,
                                const QString &emoji, bool currentlyReacted, bool isBurst);
     void channelMentionClicked(Core::Snowflake channelId);

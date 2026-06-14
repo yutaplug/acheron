@@ -183,6 +183,8 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     Core::Snowflake userId = selectedInstance->accountId();
     Core::Snowflake channelId = node->id;
 
+    messageInput->setMaxUploadSize(selectedInstance->discord()->getMaxUploadSize(channelId));
+
     if (node->type == ChannelNode::Type::DMChannel) {
         messageInput->setEnabled(true);
         messageInput->setSendBlocked(false);
@@ -297,6 +299,7 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
     connect(msgs, &MessageManager::messagesReceived, chatModel, &ChatModel::handleIncomingMessages);
     connect(msgs, &MessageManager::messageErrored, chatModel, &ChatModel::handleMessageErrored);
     connect(msgs, &MessageManager::messageDeleted, chatModel, &ChatModel::handleMessageDeleted);
+    connect(msgs, &MessageManager::attachmentUploadProgress, chatModel, &ChatModel::handleUploadProgress);
     connect(msgs, &MessageManager::messagesReceived, this,
             [this](const MessageRequestResult &result) {
                 if (result.success && result.type == Discord::Client::MessageLoadType::History &&
@@ -629,7 +632,7 @@ void MainWindow::setupUi()
     chatView->setWordWrap(true);
     chatView->setResizeMode(QListView::Adjust);
 
-    connect(messageInput, &MessageInput::sendMessage, this, [this](const QString &text) {
+    connect(messageInput, &MessageInput::sendMessage, this, [this](const QString &text, const QList<Core::PendingAttachment> &attachments) {
         if (!currentInstance) {
             qCWarning(LogCore) << "Cannot send message: no active instance";
             return;
@@ -647,7 +650,7 @@ void MainWindow::setupUi()
         }
 
         Snowflake replyTo = messageInput->replyTargetMessageId();
-        currentInstance->messages()->sendMessage(channelId, text, replyTo);
+        currentInstance->messages()->sendMessage(channelId, text, replyTo, attachments);
 
         int rateLimit = currentInstance->getChannelRateLimit(channelId);
         Snowflake userId = currentInstance->accountId();
@@ -667,6 +670,16 @@ void MainWindow::setupUi()
             currentInstance->messages()->requestLoadHistory(chatModel->getActiveChannelId(),
                                                             oldestId);
     });
+
+    connect(chatView, &ChatView::filesDropped, this, [this](const QList<QUrl> &urls) {
+        messageInput->queueAttachments(urls);
+    });
+
+    connect(chatView, &ChatView::cancelUploadRequested, this,
+            [this](Snowflake channelId, Snowflake messageId) {
+                if (currentInstance)
+                    currentInstance->messages()->cancelSend(channelId, QString::number(messageId));
+            });
 
     connect(chatView, &ChatView::deleteMessageRequested, this,
             [this](Snowflake channelId, Snowflake messageId) {
@@ -919,6 +932,8 @@ void MainWindow::activateChannel(const TabEntry &entry)
     instance->readState()->setActiveChannel(entry.channelId);
 
     Snowflake userId = instance->accountId();
+
+    messageInput->setMaxUploadSize(instance->discord()->getMaxUploadSize(entry.channelId));
 
     if (entry.isDm) {
         messageInput->setEnabled(true);

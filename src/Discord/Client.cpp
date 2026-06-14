@@ -209,6 +209,10 @@ void Client::onGatewayReady(const Ready &data)
         for (const auto &channel : guild.channels.get()) {
             channelToGuild.insert(channel.id, guild.properties->id.get());
         }
+        guildPremiumTiers.insert(guild.properties->id.get(),
+                                 guild.properties->premiumTier.hasValue()
+                                         ? guild.properties->premiumTier.get()
+                                         : PremiumTier::NONE);
     }
 
     const QByteArray binary = QByteArray::fromBase64(data.userSettingsProto->toUtf8());
@@ -270,10 +274,8 @@ void Client::onGatewayGuildRoleDelete(const GuildRoleDelete &event)
 }
 
 void Client::sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
-                         Snowflake replyToMessageId)
+                         Snowflake replyToMessageId, const QList<Core::PendingAttachment> &attachments)
 {
-    QString endpoint = "/channels/" + QString::number(channelId) + "/messages";
-
     // todo extract to struct probably
     QJsonObject payload;
     payload["content"] = content;
@@ -289,6 +291,23 @@ void Client::sendMessage(Snowflake channelId, const QString &content, const QStr
         payload["message_reference"] = messageReference;
     }
 
+    if (!attachments.isEmpty()) {
+        auto state = std::make_shared<UploadState>();
+        state->channelId = channelId;
+        state->payload = payload;
+        state->nonce = nonce;
+        state->attachments = attachments;
+        for (int i = 0; i < attachments.size(); i++) {
+            state->uploadFilenames.append(QString());
+            state->uploaded.append(false);
+        }
+        state->cancelFlag = std::make_shared<std::atomic<bool>>(false);
+        activeUploads.insert(nonce, state);
+        uploadAttachmentsAndSend(state);
+        return;
+    }
+
+    QString endpoint = "/channels/" + QString::number(channelId) + "/messages";
     httpClient->post(endpoint, payload, [this, channelId, nonce](const HttpResponse &response) {
         if (!response.success) {
             qCWarning(LogDiscord) << "Failed to send message:" << response.error
@@ -299,6 +318,157 @@ void Client::sendMessage(Snowflake channelId, const QString &content, const QStr
 
         qCInfo(LogDiscord) << "Message sent successfully to channel" << channelId;
     });
+}
+
+void Client::uploadAttachmentsAndSend(const std::shared_ptr<UploadState> &state)
+{
+    QJsonArray files;
+    for (int i = 0; i < state->attachments.size(); i++) {
+        QJsonObject file;
+        file["id"] = QString::number(i);
+        file["filename"] = state->attachments[i].filename;
+        file["file_size"] = state->attachments[i].size;
+        files.append(file);
+    }
+    QJsonObject body;
+    body["files"] = files;
+
+    QString endpoint = "/channels/" + QString::number(state->channelId) + "/attachments";
+    httpClient->post(endpoint, body, [this, state](const HttpResponse &response) {
+        if (state->cancelFlag->load()) {
+            settleUpload(state);
+            return;
+        }
+        if (!response.success) {
+            qCWarning(LogDiscord) << "Failed to request upload slots:" << response.error
+                                  << "Status:" << response.statusCode;
+            settleUpload(state);
+            emit messageSendFailed(state->nonce, response.error);
+            return;
+        }
+
+        const auto uploadSlots = QJsonDocument::fromJson(response.body).object()["attachments"].toArray();
+        if (uploadSlots.size() != state->attachments.size()) {
+            settleUpload(state);
+            emit messageSendFailed(state->nonce, "Unexpected upload slot response");
+            return;
+        }
+
+        QStringList uploadUrls;
+        for (int i = 0; i < state->attachments.size(); i++)
+            uploadUrls.append(QString());
+        for (const QJsonValue &slotValue : uploadSlots) {
+            auto slot = slotValue.toObject();
+            int index = slot["id"].toVariant().toInt();
+            if (index < 0 || index >= state->attachments.size()) {
+                // wut
+                settleUpload(state);
+                emit messageSendFailed(state->nonce, "Unexpected upload slot response");
+                return;
+            }
+            state->uploadFilenames[index] = slot["upload_filename"].toString();
+            uploadUrls[index] = slot["upload_url"].toString();
+        }
+
+        state->remaining = state->attachments.size();
+        for (int index = 0; index < state->attachments.size(); index++) {
+            const auto &attachment = state->attachments[index];
+
+            auto onDone = [this, state, index](const HttpResponse &putResponse) {
+                state->remaining--;
+                if (putResponse.success) {
+                    state->uploaded[index] = true;
+                } else if (!state->failed && !state->cancelFlag->load()) {
+                    state->failed = true;
+                    qCWarning(LogDiscord) << "Attachment upload failed:" << putResponse.error
+                                          << "Status:" << putResponse.statusCode;
+                    emit messageSendFailed(state->nonce, putResponse.error);
+                    state->cancelFlag->store(true); // abort !!!
+                }
+                if (state->remaining > 0)
+                    return;
+
+                if (state->failed || state->cancelFlag->load()) {
+                    cleanupUploadedSlots(state);
+                    settleUpload(state);
+                    return;
+                }
+                finishUpload(state);
+            };
+            auto onProgress = [this, state, index](qint64 sent, qint64 total) {
+                emit attachmentUploadProgress(state->nonce, index, sent, total);
+            };
+
+            // pasted bitmap from mem, otherwise from disk
+            if (!attachment.data.isEmpty())
+                httpClient->putExternal(uploadUrls[index], attachment.data, attachment.mimeType,
+                                        onDone, onProgress, state->cancelFlag);
+            else
+                httpClient->putExternalFile(uploadUrls[index], attachment.filePath,
+                                            attachment.mimeType, onDone, onProgress,
+                                            state->cancelFlag);
+        }
+    });
+}
+
+void Client::finishUpload(const std::shared_ptr<UploadState> &state)
+{
+    if (state->cancelFlag->load()) {
+        cleanupUploadedSlots(state);
+        settleUpload(state);
+        return;
+    }
+
+    QJsonArray attachmentsJson;
+    for (int i = 0; i < state->attachments.size(); i++) {
+        const auto &attachment = state->attachments[i];
+        QJsonObject obj;
+        obj["id"] = QString::number(i);
+        obj["filename"] = attachment.filename;
+        obj["uploaded_filename"] = state->uploadFilenames[i];
+        if (attachment.isSpoiler)
+            obj["is_spoiler"] = true;
+        if (!attachment.description.isEmpty())
+            obj["description"] = attachment.description;
+        attachmentsJson.append(obj);
+    }
+    QJsonObject payload = state->payload;
+    payload["attachments"] = attachmentsJson;
+
+    settleUpload(state);
+
+    QString endpoint = "/channels/" + QString::number(state->channelId) + "/messages";
+    httpClient->post(endpoint, payload, [this, state](const HttpResponse &response) {
+        if (!response.success) {
+            qCWarning(LogDiscord) << "Failed to send message:" << response.error
+                                  << "Status:" << response.statusCode;
+            emit messageSendFailed(state->nonce, response.error);
+            return;
+        }
+    });
+}
+
+void Client::cleanupUploadedSlots(const std::shared_ptr<UploadState> &state)
+{
+    for (int i = 0; i < state->uploaded.size(); i++) {
+        if (!state->uploaded[i] || state->uploadFilenames[i].isEmpty())
+            continue;
+        httpClient->delete_("/attachments/" + state->uploadFilenames[i], [](const auto &) { });
+    }
+}
+
+void Client::settleUpload(const std::shared_ptr<UploadState> &state)
+{
+    activeUploads.remove(state->nonce);
+}
+
+bool Client::cancelMessageSend(const QString &nonce)
+{
+    auto it = activeUploads.constFind(nonce);
+    if (it == activeUploads.constEnd())
+        return false;
+    it.value()->cancelFlag->store(true);
+    return true;
 }
 
 void Client::editMessage(Snowflake channelId, Snowflake messageId, const QString &content)
@@ -457,6 +627,49 @@ void Client::ensureSubscriptionByChannel(Snowflake channelId)
 Snowflake Client::getGuildIdForChannel(Snowflake channelId) const
 {
     return channelToGuild.value(channelId, Snowflake::Invalid);
+}
+
+PremiumTier Client::getGuildPremiumTier(Snowflake guildId) const
+{
+    return guildPremiumTiers.value(guildId, PremiumTier::NONE);
+}
+
+qint64 Client::getMaxUploadSize(Snowflake channelId) const
+{
+    constexpr qint64 MiB = 1024 * 1024;
+
+    auto premiumType = me.premiumType.hasValue() ? me.premiumType.get() : PremiumType::NONE;
+    qint64 userLimit = 10 * MiB;
+    switch (premiumType) {
+    case PremiumType::TIER_1:
+        userLimit = 10 * MiB;
+        break;
+    case PremiumType::TIER_2:
+        userLimit = 500 * MiB;
+        break;
+    case PremiumType::TIER_3:
+        userLimit = 50 * MiB;
+        break;
+    default:
+        break;
+    }
+
+    qint64 guildLimit = 10 * MiB;
+    Snowflake guildId = getGuildIdForChannel(channelId);
+    if (guildId.isValid()) {
+        switch (getGuildPremiumTier(guildId)) {
+        case PremiumTier::TIER_2:
+            guildLimit = 50 * MiB;
+            break;
+        case PremiumTier::TIER_3:
+            guildLimit = 100 * MiB;
+            break;
+        default:
+            break;
+        }
+    }
+
+    return qMax(userLimit, guildLimit);
 }
 
 void Client::sendVoiceStateUpdate(Snowflake guildId, Snowflake channelId, bool selfMute, bool selfDeaf)

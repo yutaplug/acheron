@@ -1,5 +1,7 @@
 #include "ChatModel.hpp"
 
+#include <QImageReader>
+
 #include "Core/Markdown/Parser.hpp"
 #include "Core/MessageManager.hpp"
 #include "Core/ImageManager.hpp"
@@ -298,6 +300,13 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         if (!msg.attachments.hasValue() || msg.attachments->isEmpty())
             return QVariant();
 
+        const QVector<QPair<qint64, qint64>> *progress = nullptr;
+        if (msg.nonce.hasValue()) {
+            auto it = uploadProgress.constFind(msg.nonce.get());
+            if (it != uploadProgress.constEnd())
+                progress = &it.value();
+        }
+
         QList<AttachmentData> result;
         for (const auto &att : *msg.attachments) {
             AttachmentData data;
@@ -309,16 +318,32 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
             data.fileSizeBytes = att.size.hasValue() ? *att.size : 0;
             data.isSpoiler = att.isSpoiler();
 
+            int attIndex = result.size();
+            if (progress && attIndex < progress->size()) {
+                data.uploadSent = (*progress)[attIndex].first;
+                data.uploadTotal = (*progress)[attIndex].second;
+            }
+
             if (att.isImage()) {
                 QSize original;
                 if (att.width.hasValue() && att.height.hasValue())
                     original = QSize(*att.width, *att.height);
 
                 data.displaySize = Core::ImageManager::calculateDisplaySize(original);
-                data.pixmap = suppressImageFetch
-                                      ? imageManager->getIfCached(data.proxyUrl, data.displaySize)
-                                      : imageManager->get(data.proxyUrl, data.displaySize);
-                data.isLoading = !imageManager->isCached(data.proxyUrl, data.displaySize);
+                if (!att.localPreview.isNull()) {
+                    // pending paste preview: pixels live in memory, not on disk
+                    data.pixmap = previewPixmap(att.id, att.localPreview, data.displaySize);
+                    data.isLoading = data.pixmap.isNull();
+                } else if (data.proxyUrl.isLocalFile()) {
+                    // pending dropped-file preview: decode from disk
+                    data.pixmap = localPixmap(data.proxyUrl, data.displaySize);
+                    data.isLoading = data.pixmap.isNull();
+                } else {
+                    data.pixmap = suppressImageFetch
+                                          ? imageManager->getIfCached(data.proxyUrl, data.displaySize)
+                                          : imageManager->get(data.proxyUrl, data.displaySize);
+                    data.isLoading = !imageManager->isCached(data.proxyUrl, data.displaySize);
+                }
             } else {
                 data.displaySize = QSize();
                 data.isLoading = false;
@@ -698,6 +723,9 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
         docCache.clear();
         pendingNonces.clear();
         erroredNonces.clear();
+        uploadProgress.clear();
+        localPixmapCache.clear();
+        previewPixmapCache.clear();
         messages = incomingMessages;
         endResetModel();
         break;
@@ -751,8 +779,10 @@ void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
                 // todo qhash? probably doesnt matter at all
                 for (int i = 0; i < messages.size(); i++) {
                     if (messages[i].nonce.hasValue() && messages[i].nonce.get() == nonce) {
+                        prunePreviewCaches(messages[i]); // drop the pending preview's pixmaps
                         messages[i] = incomingMsg;
                         pendingNonces.remove(nonce);
+                        uploadProgress.remove(nonce);
                         QModelIndex idx = index(i, 0);
                         emit dataChanged(idx, idx);
                         replacedPreview = true;
@@ -788,6 +818,11 @@ void ChatModel::handleMessageDeleted(Snowflake channelId, Snowflake messageId)
 
     for (int i = 0; i < messages.size(); i++) {
         if (messages[i].id == messageId) {
+            if (messages[i].nonce.hasValue()) {
+                pendingNonces.remove(messages[i].nonce.get());
+                uploadProgress.remove(messages[i].nonce.get());
+            }
+            prunePreviewCaches(messages[i]); // cancelled/deleted preview won't render again
             beginRemoveRows({}, i, i);
             sizeCache.remove(messageId);
             embedCache.remove(messageId);
@@ -817,10 +852,83 @@ void ChatModel::handleMessageErrored(const QString &nonce)
         if (messages[i].nonce.hasValue() && messages[i].nonce.get() == nonce) {
             pendingNonces.remove(nonce);
             erroredNonces.insert(nonce);
+            uploadProgress.remove(nonce);
             QModelIndex idx = index(i, 0);
             emit dataChanged(idx, idx);
             break;
         }
+    }
+}
+
+void ChatModel::handleUploadProgress(const QString &nonce, int fileIndex, qint64 sent, qint64 total)
+{
+    if (fileIndex < 0 || !pendingNonces.contains(nonce))
+        return;
+
+    auto &progress = uploadProgress[nonce];
+    while (progress.size() <= fileIndex)
+        progress.append({ -1, -1 });
+    progress[fileIndex] = { sent, total };
+
+    for (int i = 0; i < messages.size(); i++) {
+        if (messages[i].nonce.hasValue() && messages[i].nonce.get() == nonce) {
+            QModelIndex idx = index(i, 0);
+            emit dataChanged(idx, idx, { AttachmentsRole });
+            break;
+        }
+    }
+}
+
+QPixmap ChatModel::localPixmap(const QUrl &url, const QSize &displaySize) const
+{
+    auto it = localPixmapCache.constFind(url);
+    if (it != localPixmapCache.constEnd())
+        return it.value();
+
+    QImageReader reader(url.toLocalFile());
+    reader.setAutoTransform(true);
+    QSize original = reader.size();
+    if (original.isValid() && displaySize.isValid()) {
+        QSize scaled = original.scaled(displaySize * qApp->devicePixelRatio(),
+                                       Qt::KeepAspectRatio);
+        if (scaled.width() < original.width())
+            reader.setScaledSize(scaled);
+    }
+
+    QPixmap pixmap = QPixmap::fromImage(reader.read());
+    if (!pixmap.isNull())
+        pixmap.setDevicePixelRatio(qApp->devicePixelRatio());
+    localPixmapCache.insert(url, pixmap);
+    return pixmap;
+}
+
+QPixmap ChatModel::previewPixmap(Snowflake attachmentId, const QImage &image,
+                                 const QSize &displaySize) const
+{
+    auto it = previewPixmapCache.constFind(attachmentId);
+    if (it != previewPixmapCache.constEnd())
+        return it.value();
+
+    qreal dpr = qApp->devicePixelRatio();
+    QImage scaled = displaySize.isValid()
+                            ? image.scaled(displaySize * dpr, Qt::KeepAspectRatio,
+                                           Qt::SmoothTransformation)
+                            : image;
+    QPixmap pixmap = QPixmap::fromImage(scaled);
+    if (!pixmap.isNull())
+        pixmap.setDevicePixelRatio(dpr);
+    previewPixmapCache.insert(attachmentId, pixmap);
+    return pixmap;
+}
+
+void ChatModel::prunePreviewCaches(const Discord::Message &msg)
+{
+    if (!msg.attachments.hasValue())
+        return;
+    for (const auto &att : *msg.attachments) {
+        previewPixmapCache.remove(*att.id);
+        if (att.proxyUrl.hasValue())
+            localPixmapCache.remove(QUrl(*att.proxyUrl));
     }
 }
 
@@ -841,6 +949,9 @@ void ChatModel::setActiveChannel(Snowflake channelId, Snowflake guildId)
     docCache.clear();
     pendingNonces.clear();
     erroredNonces.clear();
+    uploadProgress.clear();
+    localPixmapCache.clear();
+    previewPixmapCache.clear();
     revealedSpoilers.clear();
     endResetModel();
 }

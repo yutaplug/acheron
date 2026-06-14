@@ -4,6 +4,8 @@
 #include <QTextDocument>
 #include <QTextCursor>
 
+#include <algorithm>
+
 #include "UI/Dialogs/ConfirmPopup.hpp"
 #include "UI/ImageViewer.hpp"
 
@@ -18,6 +20,8 @@ ChatView::ChatView(QWidget *parent) : QListView(parent), hoveredRow(-1), hovered
     verticalScrollBar()->setSingleStep(10);
     setAutoScroll(false);
     setFocusPolicy(Qt::StrongFocus);
+    setAcceptDrops(true);
+    viewport()->setAcceptDrops(true);
 
     inlineEditWidget = new QTextEdit(viewport());
     inlineEditWidget->setVisible(false);
@@ -441,6 +445,16 @@ void ChatView::contextMenuEvent(QContextMenuEvent *event)
         emit addReactionRequested(channelId, messageId);
     });
 
+    bool isPending = index.data(ChatModel::IsPendingRole).toBool();
+    bool hasAttachments = !index.data(ChatModel::AttachmentsRole).isNull();
+    if (isOwnMessage && isPending && hasAttachments) {
+        menu.addSeparator();
+        QAction *cancelAction = menu.addAction(tr("Cancel Upload"));
+        connect(cancelAction, &QAction::triggered, this, [this, channelId, messageId]() {
+            emit cancelUploadRequested(channelId, messageId);
+        });
+    }
+
     menu.exec(event->globalPos());
 }
 
@@ -451,6 +465,35 @@ void ChatView::keyPressEvent(QKeyEvent *event)
         return;
     }
     QListView::keyPressEvent(event);
+}
+
+static bool hasLocalFiles(const QMimeData *mime)
+{
+    if (!mime->hasUrls())
+        return false;
+    const auto urls = mime->urls();
+    return std::any_of(urls.begin(), urls.end(),
+                       [](const QUrl &url) { return url.isLocalFile(); });
+}
+
+void ChatView::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (hasLocalFiles(event->mimeData()))
+        event->acceptProposedAction();
+}
+
+void ChatView::dragMoveEvent(QDragMoveEvent *event)
+{
+    if (hasLocalFiles(event->mimeData()))
+        event->acceptProposedAction();
+}
+
+void ChatView::dropEvent(QDropEvent *event)
+{
+    if (!hasLocalFiles(event->mimeData()))
+        return;
+    event->acceptProposedAction();
+    emit filesDropped(event->mimeData()->urls());
 }
 
 void ChatView::copySelectedText()

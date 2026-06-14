@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QFile>
 #include <QList>
 #include <QPointer>
 #include <QString>
@@ -9,6 +10,8 @@
 
 #include <atomic>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -30,8 +33,13 @@ struct RequestDescriptor
     std::string url;
     QByteArray body; // json body or payload_json for multipart
     bool multipart = false;
+    bool external = false; // no headers (gcp)
+    QString contentType; // external Content-Type
+    QString uploadFilePath; // stream from disk
     QList<FileUpload> files; // multipart
     HttpCallback callback;
+    std::function<void(qint64 sent, qint64 total)> progressCallback; // worker thread!
+    std::shared_ptr<std::atomic<bool>> cancelFlag;
     int captchaAttempt = 0;
     std::optional<CaptchaSolution> solution;
 };
@@ -41,10 +49,14 @@ struct TransferContext
     CURL *easy = nullptr;
     curl_slist *headers = nullptr;
     curl_mime *mime = nullptr; // multipart
+    QFile *uploadFile = nullptr; // streamed body, worker thread only
     std::string url;
     HttpResponse response;
     RequestDescriptor descriptor;
     RequestWorker *worker = nullptr;
+    qint64 lastProgressSent = -1;
+
+    ~TransferContext() { delete uploadFile; }
 };
 
 class RequestWorker

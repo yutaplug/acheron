@@ -4,6 +4,7 @@
 
 #include <QString>
 #include <QColor>
+#include <QImage>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -26,6 +27,7 @@ struct User : Core::JsonUtils::JsonObject
     Field<QString, true, true> banner;
     Field<int, true, true> accentColor;
     Field<int, true> publicFlags;
+    Field<PremiumType, true, true> premiumType;
 
     static User fromJson(const QJsonObject &obj)
     {
@@ -38,6 +40,7 @@ struct User : Core::JsonUtils::JsonObject
         get(obj, "banner", user.banner);
         get(obj, "accent_color", user.accentColor);
         get(obj, "public_flags", user.publicFlags);
+        get(obj, "premium_type", user.premiumType);
         return user;
     }
 
@@ -201,6 +204,7 @@ struct Guild : Core::JsonUtils::JsonObject
     Field<QString> icon;
     Field<Core::Snowflake> ownerId;
     Field<QList<Role>, true> roles;
+    Field<PremiumTier, true> premiumTier;
 
     static Guild fromJson(const QJsonObject &obj)
     {
@@ -210,6 +214,7 @@ struct Guild : Core::JsonUtils::JsonObject
         get(obj, "icon", guild.icon);
         get(obj, "owner_id", guild.ownerId);
         get(obj, "roles", guild.roles);
+        get(obj, "premium_tier", guild.premiumTier);
         return guild;
     }
 };
@@ -402,6 +407,9 @@ struct Attachment : Core::JsonUtils::JsonObject
     Field<int, true> width;
     Field<int, true> height;
     Field<AttachmentFlags, true> flags;
+
+    // local preview of pasted bitmaps
+    QImage localPreview;
 
     static Attachment fromJson(const QJsonObject &obj)
     {
@@ -833,7 +841,7 @@ struct UserProfile : Core::JsonUtils::JsonObject
 {
     Field<User> user;
     Field<UserProfileData> userProfile;
-    Field<int, false, true> premiumType;
+    Field<PremiumType, false, true> premiumType;
     Field<QDateTime, false, true> premiumSince;
     Field<QDateTime, false, true> premiumGuildSince;
     Field<QList<ConnectedAccount>> connectedAccounts;

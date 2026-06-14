@@ -26,6 +26,8 @@ struct AttachmentData
     QString filename;
     qint64 fileSizeBytes;
     bool isSpoiler;
+    qint64 uploadSent = -1;
+    qint64 uploadTotal = -1;
 };
 
 struct EmbedFieldData
@@ -225,6 +227,7 @@ public slots:
     void handleIncomingMessages(const Core::MessageRequestResult &result);
     void handleMessageDeleted(Snowflake channelId, Snowflake messageId);
     void handleMessageErrored(const QString &nonce);
+    void handleUploadProgress(const QString &nonce, int fileIndex, qint64 sent, qint64 total);
     void refreshUsersInView(const QList<Snowflake> &userIds);
     void revealSpoiler(Snowflake attachmentId);
 
@@ -238,6 +241,9 @@ public slots:
 
 private:
     void setMessages(const QList<Discord::Message> &messages);
+    QPixmap localPixmap(const QUrl &url, const QSize &displaySize) const;
+    QPixmap previewPixmap(Snowflake attachmentId, const QImage &image, const QSize &displaySize) const;
+    void prunePreviewCaches(const Discord::Message &msg);
 
     Core::ImageManager *imageManager;
     QVector<Discord::Message> messages;
@@ -256,6 +262,9 @@ private:
     mutable QMultiMap<QUrl, QPersistentModelIndex> pendingRequests;
     QSet<QString> pendingNonces;
     QSet<QString> erroredNonces;
+    QHash<QString, QVector<QPair<qint64, qint64>>> uploadProgress; // by nonce
+    mutable QHash<QUrl, QPixmap> localPixmapCache; // file previews
+    mutable QHash<Snowflake, QPixmap> previewPixmapCache; // pasted bitmap previews by attachment id
     mutable QSet<Snowflake> revealedSpoilers;
     mutable bool suppressImageFetch = false;
 

@@ -195,6 +195,8 @@ ClientInstance::ClientInstance(const AccountInfo &info,
             &MessageManager::onMessageDeleted);
     connect(client, &Discord::Client::messageSendFailed, messageManager,
             &MessageManager::onMessageSendFailed);
+    connect(client, &Discord::Client::attachmentUploadProgress, messageManager,
+            &MessageManager::attachmentUploadProgress);
     connect(client, &Discord::Client::messageReactionAdd, messageManager,
             &MessageManager::onReactionAdd);
     connect(client, &Discord::Client::messageReactionAddMany, messageManager,

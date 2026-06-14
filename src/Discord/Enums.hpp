@@ -226,6 +226,22 @@ enum class ChannelType {
     EPHEMERAL_DM = 18,
 };
 
+// user
+enum class PremiumType {
+    NONE = 0,
+    TIER_1 = 1, // classic
+    TIER_2 = 2, // big boy nitro
+    TIER_3 = 3, // basic
+};
+
+// guild
+enum class PremiumTier {
+    NONE = 0,
+    TIER_1 = 1,
+    TIER_2 = 2,
+    TIER_3 = 3,
+};
+
 enum class MessageType {
     DEFAULT = 0,
     RECIPIENT_ADD = 1,

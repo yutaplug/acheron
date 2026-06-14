@@ -4,12 +4,15 @@
 #include <QTextEdit>
 #include <QLabel>
 
+#include "Core/PendingAttachment.hpp"
 #include "Core/Snowflake.hpp"
 
 class QToolButton;
 
 namespace Acheron {
 namespace UI {
+
+class AttachmentPreviewPanel;
 
 class ChatTextEdit : public QTextEdit
 {
@@ -19,9 +22,13 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent *e) override;
+    bool canInsertFromMimeData(const QMimeData *source) const override;
+    void insertFromMimeData(const QMimeData *source) override;
 signals:
     void returnPressed();
     void escapePressed();
+    void filesPasted(const QList<QUrl> &urls);
+    void imagePasted(const QImage &image);
 };
 
 class MessageInput : public QWidget
@@ -42,17 +49,23 @@ public:
 
     void insertText(const QString &text);
 
+    void queueAttachments(const QList<QUrl> &urls);
+    void setMaxUploadSize(qint64 bytes);
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 signals:
-    void sendMessage(const QString &text);
+    void sendMessage(const QString &text, const QList<Core::PendingAttachment> &attachments);
 
 private:
     ChatTextEdit *textEdit;
     QWidget *replyBar;
     QLabel *replyLabel;
     QToolButton *replyCancelButton;
+    AttachmentPreviewPanel *attachmentPanel;
 
     Core::Snowflake replyMessageId;
     bool sendBlocked = false;

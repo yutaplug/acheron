@@ -71,6 +71,54 @@ void HttpClient::postMultipart(const QString &endpoint, const QJsonObject &jsonP
     executeMultipartRequest(url, jsonData, files, callback);
 }
 
+void HttpClient::putExternalFile(const QString &absoluteUrl, const QString &filePath,
+                                 const QString &contentType, HttpCallback callback,
+                                 std::function<void(qint64, qint64)> progress,
+                                 std::shared_ptr<std::atomic<bool>> cancelFlag)
+{
+    RequestDescriptor descriptor;
+    descriptor.method = Method::PUT;
+    descriptor.url = absoluteUrl.toStdString();
+    descriptor.uploadFilePath = filePath;
+    descriptor.external = true;
+    descriptor.contentType = contentType;
+    descriptor.callback = std::move(callback);
+    descriptor.cancelFlag = std::move(cancelFlag);
+    submitExternalPut(descriptor, std::move(progress));
+}
+
+void HttpClient::putExternal(const QString &absoluteUrl, const QByteArray &data,
+                             const QString &contentType, HttpCallback callback,
+                             std::function<void(qint64, qint64)> progress,
+                             std::shared_ptr<std::atomic<bool>> cancelFlag)
+{
+    RequestDescriptor descriptor;
+    descriptor.method = Method::PUT;
+    descriptor.url = absoluteUrl.toStdString();
+    descriptor.body = data;
+    descriptor.external = true;
+    descriptor.contentType = contentType;
+    descriptor.callback = std::move(callback);
+    descriptor.cancelFlag = std::move(cancelFlag);
+    submitExternalPut(descriptor, std::move(progress));
+}
+
+void HttpClient::submitExternalPut(RequestDescriptor &descriptor,
+                                   std::function<void(qint64, qint64)> progress)
+{
+    if (progress) {
+        QPointer<HttpClient> guard(this);
+        descriptor.progressCallback = [this, guard,
+                                       progress = std::move(progress)](qint64 sent, qint64 total) {
+            QMetaObject::invokeMethod(this, [guard, progress, sent, total]() {
+                if (guard)
+                    progress(sent, total);
+            });
+        };
+    }
+    worker->submit(std::move(descriptor));
+}
+
 void HttpClient::executeRequest(Method method, const QString &url, const QByteArray &data,
                                 HttpCallback callback)
 {

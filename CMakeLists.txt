@@ -140,6 +140,7 @@ set(PROJECT_SOURCES
     src/UI/MemberList/MemberListDelegate.cpp
     src/UI/MemberList/MemberListView.cpp
     src/UI/Input/MessageInput.cpp
+    src/UI/Input/AttachmentPreviewPanel.cpp
     src/Storage/DatabaseManager.cpp
     src/Storage/BaseRepository.cpp
     src/Storage/AccountRepository.cpp

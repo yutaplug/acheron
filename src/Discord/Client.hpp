@@ -10,6 +10,7 @@
 #include "Core/Result.hpp"
 #include "Core/Snowflake.hpp"
 #include "Core/Enums.hpp"
+#include "Core/PendingAttachment.hpp"
 
 #include "Proto/UserSettings.hpp"
 
@@ -55,7 +56,9 @@ public:
     void setUserNote(Snowflake userId, const QString &note);
 
     void sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
-                     Snowflake replyToMessageId = Snowflake::Invalid);
+                     Snowflake replyToMessageId = Snowflake::Invalid,
+                     const QList<Core::PendingAttachment> &attachments = {});
+    bool cancelMessageSend(const QString &nonce);
     void editMessage(Snowflake channelId, Snowflake messageId, const QString &content);
     void deleteMessage(Snowflake channelId, Snowflake messageId);
     void pinMessage(Snowflake channelId, Snowflake messageId);
@@ -86,6 +89,9 @@ public:
     void requestGuildMembers(Snowflake guildId, const QList<Snowflake> &userIds);
 
     [[nodiscard]] Snowflake getGuildIdForChannel(Snowflake channelId) const;
+
+    [[nodiscard]] PremiumTier getGuildPremiumTier(Snowflake guildId) const;
+    [[nodiscard]] qint64 getMaxUploadSize(Snowflake channelId) const;
 
     [[nodiscard]] const Proto::PreloadedUserSettings &getSettings() const;
     [[nodiscard]] const User &getMe() const;
@@ -121,6 +127,7 @@ signals:
     void relationshipRemoved(const RelationshipPartial &event);
     void userNoteUpdated(const UserNoteUpdate &event);
     void messageSendFailed(const QString &nonce, const QString &error);
+    void attachmentUploadProgress(const QString &nonce, int fileIndex, qint64 sent, qint64 total);
 
     void reconnecting(int attempt, int maxAttempts);
     void errorOccurred(const QString &errorStr);
@@ -143,7 +150,24 @@ private slots:
     void onGatewayGuildRoleDelete(const GuildRoleDelete &event);
 
 private:
+    struct UploadState
+    {
+        Snowflake channelId;
+        QJsonObject payload;
+        QString nonce;
+        QList<Core::PendingAttachment> attachments;
+        QStringList uploadFilenames;
+        QList<bool> uploaded;
+        int remaining = 0;
+        bool failed = false;
+        std::shared_ptr<std::atomic<bool>> cancelFlag;
+    };
+
     void setState(Core::ConnectionState state);
+    void uploadAttachmentsAndSend(const std::shared_ptr<UploadState> &state);
+    void finishUpload(const std::shared_ptr<UploadState> &state);
+    void cleanupUploadedSlots(const std::shared_ptr<UploadState> &state);
+    void settleUpload(const std::shared_ptr<UploadState> &state);
 
 private:
     Core::ConnectionState state = Core::ConnectionState::Disconnected;
@@ -156,7 +180,9 @@ private:
     Gateway *gateway;
 
     QHash<Snowflake, Snowflake> channelToGuild; // todo prob move this somewhere or just a cache
+    QHash<Snowflake, PremiumTier> guildPremiumTiers;
     QSet<Snowflake> subscribedGuilds;
+    QHash<QString, std::shared_ptr<UploadState>> activeUploads; // by nonce
 
     Proto::PreloadedUserSettings settings;
     User me;

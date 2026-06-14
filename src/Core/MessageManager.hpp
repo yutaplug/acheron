@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 
+#include "PendingAttachment.hpp"
 #include "Snowflake.hpp"
 #include "Storage/MessageRepository.hpp"
 #include "Discord/Entities.hpp"
@@ -41,12 +42,15 @@ public:
     void requestLoadChannel(Snowflake channelId);
     void requestLoadHistory(Snowflake channelId, Snowflake beforeId);
     void sendMessage(Snowflake channelId, const QString &content,
-                     Snowflake replyToMessageId = Snowflake::Invalid);
+                     Snowflake replyToMessageId = Snowflake::Invalid,
+                     const QList<PendingAttachment> &attachments = {});
+    void cancelSend(Snowflake channelId, const QString &nonce);
 
 signals:
     void messagesReceived(const MessageRequestResult &result);
     void messageErrored(const QString &nonce);
     void messageDeleted(Core::Snowflake channelId, Core::Snowflake messageId);
+    void attachmentUploadProgress(const QString &nonce, int fileIndex, qint64 sent, qint64 total);
 
 public slots:
     void onMessageCreated(const Discord::Message &message);

@@ -4,6 +4,8 @@
 
 #include <curl/curl.h>
 
+#include <atomic>
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -57,12 +59,23 @@ public:
     void delete_(const QString &endpoint, const QJsonObject &body, HttpCallback callback);
     void postMultipart(const QString &endpoint, const QJsonObject &jsonPayload,
                        const QList<FileUpload> &files, HttpCallback callback);
+    // for gcp uploads
+    void putExternalFile(const QString &absoluteUrl, const QString &filePath,
+                         const QString &contentType, HttpCallback callback,
+                         std::function<void(qint64 sent, qint64 total)> progress = {},
+                         std::shared_ptr<std::atomic<bool>> cancelFlag = {});
+    void putExternal(const QString &absoluteUrl, const QByteArray &data,
+                     const QString &contentType, HttpCallback callback,
+                     std::function<void(qint64 sent, qint64 total)> progress = {},
+                     std::shared_ptr<std::atomic<bool>> cancelFlag = {});
 
 private:
     void executeRequest(Method method, const QString &url, const QByteArray &data,
                         HttpCallback callback);
     void executeMultipartRequest(const QString &url, const QByteArray &jsonData,
                                  const QList<FileUpload> &files, HttpCallback callback);
+    void submitExternalPut(RequestDescriptor &descriptor,
+                           std::function<void(qint64, qint64)> progress);
 
     void onRequestComplete(RequestDescriptor descriptor, HttpResponse response,
                            std::optional<CaptchaChallenge> challenge);
