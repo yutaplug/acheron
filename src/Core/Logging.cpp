@@ -1,5 +1,8 @@
 #include "Logging.hpp"
 
+#include <QDir>
+#include <QThread>
+
 #include <iostream>
 
 Q_LOGGING_CATEGORY(LogCore, "acheron.core");

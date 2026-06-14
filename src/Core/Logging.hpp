@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QFile>
 #include <QLoggingCategory>
+#include <QStandardPaths>
 
 #include <condition_variable>
 #include <mutex>
