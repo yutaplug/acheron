@@ -20,6 +20,7 @@ struct Ready : Core::JsonUtils::JsonObject
     Field<QList<Channel>, true> privateChannels;
     Field<QList<ReadStateEntry>, true> readState;
     Field<QList<UserGuildSettings>, true> userGuildSettings;
+    Field<UserSettings, true> userSettings;
     Field<QList<Relationship>> relationships;
     Field<QString> sessionId;
     Field<QString> resumeGatewayUrl;
@@ -31,6 +32,7 @@ struct Ready : Core::JsonUtils::JsonObject
         get(obj, "user", ready.user);
         get(obj, "guilds", ready.guilds);
         get(obj, "user_settings_proto", ready.userSettingsProto);
+        get(obj, "user_settings", ready.userSettings);
         get(obj, "merged_members", ready.mergedMembers);
         get(obj, "users", ready.users);
         get(obj, "private_channels", ready.privateChannels);

@@ -699,6 +699,36 @@ struct UserGuildSettings : Core::JsonUtils::JsonObject
     }
 };
 
+struct GuildFolderEntry : Core::JsonUtils::JsonObject
+{
+    Field<QList<Core::Snowflake>> guildIds;
+    Field<qint64, false, true> id;
+    Field<QString, false, true> name;
+    Field<qint64, false, true> color;
+
+    static GuildFolderEntry fromJson(const QJsonObject &obj)
+    {
+        GuildFolderEntry entry;
+        get(obj, "guild_ids", entry.guildIds);
+        get(obj, "id", entry.id);
+        get(obj, "name", entry.name);
+        get(obj, "color", entry.color);
+        return entry;
+    }
+};
+
+struct UserSettings : Core::JsonUtils::JsonObject
+{
+    Field<QList<GuildFolderEntry>, true> guildFolders;
+
+    static UserSettings fromJson(const QJsonObject &obj)
+    {
+        UserSettings settings;
+        get(obj, "guild_folders", settings.guildFolders);
+        return settings;
+    }
+};
+
 struct Relationship : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;

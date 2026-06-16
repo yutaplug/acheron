@@ -11,6 +11,28 @@
 namespace Acheron {
 namespace Discord {
 
+namespace {
+
+Proto::GuildFolders guildFoldersFromLegacy(const QList<GuildFolderEntry> &entries)
+{
+    Proto::GuildFolders result;
+    result.folders.reserve(entries.size());
+    for (const auto &entry : entries) {
+        Proto::GuildFolder folder;
+        folder.guildIds = entry.guildIds.get();
+        if (entry.id.hasValue())
+            folder.id = entry.id.get();
+        if (entry.name.hasValue())
+            folder.name = entry.name.get();
+        if (entry.color.hasValue())
+            folder.color = static_cast<uint64_t>(entry.color.get());
+        result.folders.append(folder);
+    }
+    return result;
+}
+
+} // namespace
+
 Client::Client(const QString &token, const QString &gatewayUrl, const QString &baseUrl,
                CaptchaResolver *captchaResolver, QObject *parent)
     : QObject(parent), token(token), baseUrl(baseUrl)
@@ -218,6 +240,10 @@ void Client::onGatewayReady(const Ready &data)
     const QByteArray binary = QByteArray::fromBase64(data.userSettingsProto->toUtf8());
     Proto::ProtoReader reader(binary);
     settings = Proto::PreloadedUserSettings::fromProto(reader);
+
+    if ((!settings.guildFolders.has_value() || settings.guildFolders->folders.isEmpty()) && data.userSettings.hasValue() && !data.userSettings->guildFolders->isEmpty())
+        settings.guildFolders = guildFoldersFromLegacy(data.userSettings->guildFolders.get());
+
     me = data.user;
 
     emit ready(data);
