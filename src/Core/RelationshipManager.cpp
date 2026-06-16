@@ -71,7 +71,7 @@ void RelationshipManager::onRelationshipRemoved(const Discord::RelationshipParti
     if (!rel.id.hasValue())
         return;
     Snowflake id = rel.id.get();
-    if (store.remove(id) > 0)
+    if (store.remove(id))
         emit relationshipChanged(id);
 }
 
