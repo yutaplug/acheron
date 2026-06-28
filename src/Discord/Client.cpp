@@ -54,6 +54,7 @@ Client::Client(const QString &token, const QString &gatewayUrl, const QString &b
     connect(gateway, &Gateway::gatewayChannelCreate, this, &Client::onGatewayChannelCreate);
     connect(gateway, &Gateway::gatewayChannelUpdate, this, &Client::onGatewayChannelUpdate);
     connect(gateway, &Gateway::gatewayChannelDelete, this, &Client::onGatewayChannelDelete);
+    connect(gateway, &Gateway::gatewayGuildCreate, this, &Client::onGatewayGuildCreate);
     connect(gateway, &Gateway::gatewayGuildMembersChunk, this, &Client::guildMembersChunk);
     connect(gateway, &Gateway::gatewayGuildMemberUpdate, this, &Client::guildMemberUpdated);
     connect(gateway, &Gateway::gatewayGuildRoleCreate, this, &Client::onGatewayGuildRoleCreate);
@@ -272,6 +273,21 @@ void Client::onGatewayMessageDelete(const MessageDelete &event)
 void Client::onGatewayChannelCreate(const ChannelCreate &event)
 {
     emit channelCreated(event);
+}
+
+void Client::onGatewayGuildCreate(const GatewayGuild &guild)
+{
+    if (guild.properties.hasValue()) {
+        Snowflake guildId = guild.properties->id.get();
+        if (guild.channels.hasValue())
+            for (const auto &channel : guild.channels.get())
+                channelToGuild.insert(channel.id, guildId);
+        guildPremiumTiers.insert(guildId, guild.properties->premiumTier.hasValue()
+                                                  ? guild.properties->premiumTier.get()
+                                                  : PremiumTier::NONE);
+    }
+
+    emit guildCreated(guild);
 }
 
 void Client::onGatewayChannelUpdate(const ChannelUpdate &event)

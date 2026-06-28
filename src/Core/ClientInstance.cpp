@@ -66,37 +66,8 @@ ClientInstance::ClientInstance(const AccountInfo &info,
         db.transaction();
         for (size_t i = 0; i < ready.guilds->size(); i++) {
             const auto &guild = ready.guilds->at(i);
-
-            const Discord::Member *me = nullptr;
-            if (ready.mergedMembers.hasValue()) {
-                const auto &members = ready.mergedMembers->at(i);
-                for (const auto &member : members) {
-                    memberRepo.saveMember(guild.properties->id.get(), member.userId.get(), member);
-                    if (member.userId.get() == ready.user->id.get())
-                        me = &member;
-                }
-            }
-
-            if (me && guild.roles.hasValue() && guild.channels.hasValue())
-                permissionManager->precomputeGuildPermissions(guild.asGuild(), *me,
-                                                              guild.roles.get(),
-                                                              guild.channels.get(), ready.user->id);
-
-            guildRepo.saveGuild(guild.asGuild(), db);
-
-            if (guild.roles.hasValue())
-                roleRepo.saveRoles(guild.properties->id.get(), guild.roles.get(), db);
-
-            for (const auto &channel : guild.channels.get()) {
-                // we dont get a guild_id from the gateway here
-                Discord::Channel copy = channel;
-                copy.guildId = guild.properties->id;
-                channelRepo.saveChannel(copy, db);
-
-                if (copy.permissionOverwrites.hasValue())
-                    channelRepo.savePermissionOverwrites(copy.id.get(),
-                                                         copy.permissionOverwrites.get(), db);
-            }
+            const QList<Discord::Member> *members = ready.mergedMembers.hasValue() ? &ready.mergedMembers->at(i) : nullptr;
+            saveGuild(guild, members, ready.user->id.get(), db);
         }
 
         userManager->saveUser(ready.user);
@@ -135,21 +106,8 @@ ClientInstance::ClientInstance(const AccountInfo &info,
                 ready.userGuildSettings.hasValue() ? ready.userGuildSettings.get()
                                                    : QList<Discord::UserGuildSettings>{});
 
-        for (const auto &guild : ready.guilds.get()) {
-            const Discord::Guild &props = guild.properties.get();
-            Snowflake guildId = props.id.get();
-            readStateManager->setGuildReadInfo(
-                    guildId, guild.joinedAt.hasValue() ? guild.joinedAt.get() : QDateTime(),
-                    props.defaultMessageNotifications.hasValue()
-                            ? props.defaultMessageNotifications.get()
-                            : Discord::MessageNotificationLevel::ALL_MESSAGES);
-            for (const auto &channel : guild.channels.get()) {
-                readStateManager->registerChannelGuild(channel.id.get(), guildId);
-                if (channel.lastMessageId.hasValue())
-                    readStateManager->updateChannelLastMessageId(channel.id.get(),
-                                                                 channel.lastMessageId.get());
-            }
-        }
+        for (const auto &guild : ready.guilds.get())
+            initGuildReadState(guild);
 
         if (ready.privateChannels.hasValue()) {
             for (const auto &channel : ready.privateChannels.get()) {
@@ -227,6 +185,7 @@ ClientInstance::ClientInstance(const AccountInfo &info,
                     userManager->setCachedNote(event.id.get(), event.note.get());
             });
 
+    connect(client, &Discord::Client::guildCreated, this, &ClientInstance::onGuildCreated);
     connect(client, &Discord::Client::channelCreated, this, &ClientInstance::onChannelCreated);
     connect(client, &Discord::Client::channelUpdated, this, &ClientInstance::onChannelUpdated);
     connect(client, &Discord::Client::channelDeleted, this, &ClientInstance::onChannelDeleted);
@@ -298,6 +257,90 @@ ClientInstance::ClientInstance(const AccountInfo &info,
                 voiceManager->handleVoiceServerUpdate(event);
             });
 #endif
+}
+
+void ClientInstance::saveGuild(const Discord::GatewayGuild &guild, const QList<Discord::Member> *members, Snowflake myId, QSqlDatabase &db)
+{
+    Snowflake guildId = guild.properties->id.get();
+
+    const Discord::Member *me = nullptr;
+    if (members) {
+        for (const auto &member : *members) {
+            Snowflake memberId = member.userId.hasValue()
+                                         ? member.userId.get()
+                                         : (member.user.hasValue() ? member.user->id.get()
+                                                                   : Snowflake::Invalid);
+            if (!memberId.isValid())
+                continue;
+            if (member.user.hasValue())
+                userManager->saveUser(member.user.get());
+            memberRepo.saveMember(guildId, memberId, member);
+            if (memberId == myId)
+                me = &member;
+        }
+    }
+
+    if (me && guild.roles.hasValue() && guild.channels.hasValue())
+        permissionManager->precomputeGuildPermissions(guild.asGuild(), *me, guild.roles.get(), guild.channels.get(), myId);
+
+    guildRepo.saveGuild(guild.asGuild(), db);
+
+    if (guild.roles.hasValue())
+        roleRepo.saveRoles(guildId, guild.roles.get(), db);
+
+    if (guild.channels.hasValue()) {
+        for (const auto &channel : guild.channels.get()) {
+            // we dont get a guild_id from the gateway here
+            Discord::Channel copy = channel;
+            copy.guildId = guildId;
+            channelRepo.saveChannel(copy, db);
+
+            if (copy.permissionOverwrites.hasValue())
+                channelRepo.savePermissionOverwrites(copy.id.get(), copy.permissionOverwrites.get(), db);
+        }
+    }
+}
+
+void ClientInstance::initGuildReadState(const Discord::GatewayGuild &guild)
+{
+    const Discord::Guild &props = guild.properties.get();
+    Snowflake guildId = props.id.get();
+
+    readStateManager->setGuildReadInfo(
+            guildId,
+            guild.joinedAt.hasValue() ? guild.joinedAt.get() : QDateTime(),
+            props.defaultMessageNotifications.hasValue()
+                    ? props.defaultMessageNotifications.get()
+                    : Discord::MessageNotificationLevel::ALL_MESSAGES);
+
+    if (guild.channels.hasValue()) {
+        for (const auto &channel : guild.channels.get()) {
+            readStateManager->registerChannelGuild(channel.id.get(), guildId);
+            if (channel.lastMessageId.hasValue())
+                readStateManager->updateChannelLastMessageId(channel.id.get(), channel.lastMessageId.get());
+        }
+    }
+}
+
+void ClientInstance::onGuildCreated(const Discord::GatewayGuild &guild)
+{
+    if (!guild.properties.hasValue())
+        return;
+
+    QString connName = Storage::DatabaseManager::instance().getCacheConnectionName(account.id);
+    QSqlDatabase db = QSqlDatabase::database(connName);
+
+    db.transaction();
+    saveGuild(
+            guild,
+            guild.members.hasValue() ? &guild.members.get() : nullptr,
+            client->getMe().id.get(),
+            db);
+    db.commit();
+
+    initGuildReadState(guild);
+
+    emit guildCreated(guild);
 }
 
 void ClientInstance::onChannelCreated(const Discord::ChannelCreate &event)

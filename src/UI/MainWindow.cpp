@@ -372,6 +372,13 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
         return;
     instancesSignalsConnected.insert(instance->accountId());
 
+    connect(instance, &Core::ClientInstance::guildCreated, this,
+            [this, instance](const Discord::GatewayGuild &guild) {
+                channelTreeModel->addGuild(guild, instance->accountId());
+                if (channelListMode == ChannelListMode::Tree)
+                    channelTree->performDefaultExpansion();
+            });
+
     connect(instance, &Core::ClientInstance::channelCreated, this,
             [this, instance](const Discord::ChannelCreate &event) {
                 channelTreeModel->addChannel(event, instance->accountId());

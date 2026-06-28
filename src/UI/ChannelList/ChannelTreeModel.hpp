@@ -17,6 +17,10 @@ struct ChannelReadState;
 class ClientInstance;
 } // namespace Acheron::Core
 
+namespace Acheron::Proto {
+struct GuildFolder;
+} // namespace Acheron::Proto
+
 namespace Acheron {
 namespace UI {
 class ChannelTreeModel : public QAbstractItemModel
@@ -59,6 +63,7 @@ public:
     static ChannelNode *findGuildNode(ChannelNode *node);
 
     ChannelNode *nodeFromIndex(const QModelIndex &index) const;
+    void addGuild(const Discord::GatewayGuild &guild, Snowflake accountId);
     void addChannel(const Discord::ChannelCreate &event, Snowflake accountId);
     void updateChannel(const Discord::ChannelUpdate &update, Snowflake accountId);
     void deleteChannel(const Discord::ChannelDelete &event, Snowflake accountId);
@@ -92,9 +97,13 @@ private:
     void recomputeSubtreeAggregates(ChannelNode *root);
     void updateNodeAggregates(ChannelNode *node);
     std::unique_ptr<ChannelNode> createGuildNode(const Discord::GatewayGuild &guild);
+    std::unique_ptr<ChannelNode> createFolderNode(const Proto::GuildFolder &folder);
+    void placeGuildNode(ChannelNode *accNode, Snowflake guildId, std::unique_ptr<ChannelNode> guildNode, Core::ClientInstance *instance);
     ChannelNode *findChannelTreeNode(Snowflake channelId, ChannelNode *root);
     ChannelNode *findGuildNodeById(Snowflake guildId, ChannelNode *accountNode);
+    ChannelNode *findFolderNodeById(ChannelNode *accountNode, Snowflake folderId);
     ChannelNode *findCategoryNode(Snowflake categoryId, ChannelNode *guildNode);
+    void insertChildAt(ChannelNode *parent, int row, std::unique_ptr<ChannelNode> node);
     void emitDataChangedRecursive(const QModelIndex &index);
 
 private:

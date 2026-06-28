@@ -107,6 +107,7 @@ signals:
     void channelCreated(const ChannelCreate &event);
     void channelUpdated(const ChannelUpdate &event);
     void channelDeleted(const ChannelDelete &event);
+    void guildCreated(const GatewayGuild &guild);
     void guildMembersChunk(const GuildMembersChunk &chunk);
     void guildMemberUpdated(const GuildMemberUpdate &event);
     void guildRoleCreated(const GuildRoleCreate &event);
@@ -145,6 +146,7 @@ private slots:
     void onGatewayChannelCreate(const ChannelCreate &event);
     void onGatewayChannelUpdate(const ChannelUpdate &event);
     void onGatewayChannelDelete(const ChannelDelete &event);
+    void onGatewayGuildCreate(const GatewayGuild &guild);
     void onGatewayGuildRoleCreate(const GuildRoleCreate &event);
     void onGatewayGuildRoleUpdate(const GuildRoleUpdate &event);
     void onGatewayGuildRoleDelete(const GuildRoleDelete &event);

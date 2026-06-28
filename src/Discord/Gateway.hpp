@@ -56,6 +56,7 @@ signals:
     void gatewayChannelCreate(const ChannelCreate &data);
     void gatewayChannelUpdate(const ChannelUpdate &data);
     void gatewayChannelDelete(const ChannelDelete &data);
+    void gatewayGuildCreate(const GatewayGuild &data);
     void gatewayGuildMembersChunk(const GuildMembersChunk &data);
     void gatewayGuildMemberUpdate(const GuildMemberUpdate &data);
     void gatewayGuildRoleCreate(const GuildRoleCreate &data);
@@ -92,6 +93,7 @@ private:
     void handleChannelCreate(const Inbound &data);
     void handleChannelUpdate(const Inbound &data);
     void handleChannelDelete(const Inbound &data);
+    void handleGuildCreate(const Inbound &data);
     void handleGuildMembersChunk(const Inbound &data);
     void handleGuildMemberUpdate(const Inbound &data);
     void handleGuildRoleCreate(const Inbound &data);

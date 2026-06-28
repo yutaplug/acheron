@@ -367,13 +367,7 @@ void ChannelTreeModel::populateFromReady(const Discord::Ready &ready)
                     if (guildMap.contains(guildId))
                         topLevelNodes.push_back(createGuildNode(*guildMap[guildId]));
             } else {
-                auto folderNode = std::make_unique<ChannelNode>();
-                folderNode->type = ChannelNode::Type::Folder;
-                folderNode->name = folder.name.value_or("Unnamed Folder");
-                folderNode->folderName = folder.name;
-                if (folder.color != Discord::BLURPLE)
-                    folderNode->folderColor = folder.color;
-                folderNode->id = Core::Snowflake(folder.id.value());
+                auto folderNode = createFolderNode(folder);
 
                 for (const auto &guildId : folder.guildIds)
                     if (guildMap.contains(guildId))
@@ -563,6 +557,18 @@ std::unique_ptr<ChannelNode> ChannelTreeModel::createGuildNode(const Discord::Ga
     return guildNode;
 }
 
+std::unique_ptr<ChannelNode> ChannelTreeModel::createFolderNode(const Proto::GuildFolder &folder)
+{
+    auto folderNode = std::make_unique<ChannelNode>();
+    folderNode->type = ChannelNode::Type::Folder;
+    folderNode->name = folder.name.value_or("Unnamed Folder");
+    folderNode->folderName = folder.name;
+    if (folder.color != Discord::BLURPLE)
+        folderNode->folderColor = folder.color;
+    folderNode->id = Core::Snowflake(folder.id.value());
+    return folderNode;
+}
+
 ChannelNode *ChannelTreeModel::nodeFromIndex(const QModelIndex &index) const
 {
     if (!index.isValid())
@@ -645,13 +651,8 @@ QModelIndex ChannelTreeModel::serverIndex(Snowflake accountId, Snowflake guildId
 
 QModelIndex ChannelTreeModel::folderIndex(Snowflake accountId, Snowflake folderId)
 {
-    ChannelNode *accNode = accountNodes.value(accountId, nullptr);
-    if (!accNode)
-        return {};
-    for (const auto &child : accNode->children)
-        if (child->type == ChannelNode::Type::Folder && child->id == folderId)
-            return indexForNode(child.get());
-    return {};
+    ChannelNode *folderNode = findFolderNodeById(accountNodes.value(accountId, nullptr), folderId);
+    return folderNode ? indexForNode(folderNode) : QModelIndex();
 }
 
 QModelIndex ChannelTreeModel::dmHeaderIndex(Snowflake accountId)
@@ -682,6 +683,124 @@ ChannelNode *ChannelTreeModel::findGuildNodeById(Snowflake guildId, ChannelNode 
     }
 
     return nullptr;
+}
+
+ChannelNode *ChannelTreeModel::findFolderNodeById(ChannelNode *accountNode, Snowflake folderId)
+{
+    if (!accountNode)
+        return nullptr;
+
+    for (const auto &child : accountNode->children)
+        if (child->type == ChannelNode::Type::Folder && child->id == folderId)
+            return child.get();
+
+    return nullptr;
+}
+
+void ChannelTreeModel::insertChildAt(ChannelNode *parent, int row, std::unique_ptr<ChannelNode> node)
+{
+    QModelIndex parentIdx = indexForNode(parent);
+    beginInsertRows(parentIdx, row, row);
+    node->parent = parent;
+    parent->children.insert(parent->children.begin() + row, std::move(node));
+    endInsertRows();
+}
+
+void ChannelTreeModel::addGuild(const Discord::GatewayGuild &guild, Snowflake accountId)
+{
+    if (!guild.properties.hasValue())
+        return;
+
+    ChannelNode *accNode = accountNodes.value(accountId, nullptr);
+    if (!accNode)
+        return;
+
+    auto *instance = session->client(accountId);
+    Snowflake guildId = guild.properties->id.get();
+
+    auto guildNode = createGuildNode(guild);
+    ChannelNode *guildPtr = guildNode.get();
+
+    // compute read state on the detached subtree so the views see final values on insert
+    if (instance) {
+        initChannelReadStates(guildPtr, instance);
+        recomputeSubtreeAggregates(guildPtr);
+    }
+
+    // handle an unavailable guild coming back
+    if (ChannelNode *existing = findGuildNodeById(guildId, accNode)) {
+        ChannelNode *parentNode = existing->parent;
+        QModelIndex existingIdx = indexForNode(existing);
+        if (!parentNode || !existingIdx.isValid())
+            return;
+
+        int existingRow = existingIdx.row();
+
+        beginRemoveRows(indexForNode(parentNode), existingRow, existingRow);
+        parentNode->children.erase(parentNode->children.begin() + existingRow);
+        endRemoveRows();
+
+        insertChildAt(parentNode, existingRow, std::move(guildNode));
+
+        if (parentNode->type == ChannelNode::Type::Folder)
+            updateNodeAggregates(parentNode);
+        return;
+    }
+
+    placeGuildNode(accNode, guildId, std::move(guildNode), instance);
+}
+
+void ChannelTreeModel::placeGuildNode(ChannelNode *accNode, Snowflake guildId,
+                                      std::unique_ptr<ChannelNode> guildNode,
+                                      Core::ClientInstance *instance)
+{
+    auto topRow = [accNode] {
+        int r = 0;
+        while (r < static_cast<int>(accNode->children.size()) &&
+               accNode->children[r]->type == ChannelNode::Type::DMHeader)
+            r++;
+        return r;
+    };
+
+    const Proto::GuildFolder *folder = nullptr;
+    if (instance) {
+        const auto &settings = instance->discord()->getSettings();
+        if (settings.guildFolders.has_value())
+            for (const auto &f : settings.guildFolders->folders)
+                if (f.id.has_value() && f.guildIds.contains(guildId)) {
+                    folder = &f;
+                    break;
+                }
+    }
+
+    ChannelNode *parent = accNode;
+    int row = topRow();
+
+    if (folder) {
+        if (ChannelNode *folderNode = findFolderNodeById(accNode, Core::Snowflake(folder->id.value()))) {
+            parent = folderNode;
+            row = 0;
+            for (Snowflake gid : folder->guildIds) {
+                if (gid == guildId)
+                    break;
+                for (const auto &c : folderNode->children)
+                    if (c->type == ChannelNode::Type::Server && c->id == gid) {
+                        row++;
+                        break;
+                    }
+            }
+        } else {
+            auto newFolder = createFolderNode(*folder);
+            newFolder->addChild(std::move(guildNode));
+            recomputeSubtreeAggregates(newFolder.get());
+            guildNode = std::move(newFolder);
+        }
+    }
+
+    insertChildAt(parent, row, std::move(guildNode));
+
+    if (parent->type == ChannelNode::Type::Folder)
+        updateNodeAggregates(parent);
 }
 
 void ChannelTreeModel::addChannel(const Discord::ChannelCreate &event, Snowflake accountId)
@@ -746,11 +865,7 @@ void ChannelTreeModel::addChannel(const Discord::ChannelCreate &event, Snowflake
                 dmNode->TEMP_iconHash = channel.icon.get();
         }
 
-        QModelIndex dmHeaderIndex = indexForNode(dmHeader);
-        beginInsertRows(dmHeaderIndex, 0, 0);
-        dmNode->parent = dmHeader;
-        dmHeader->children.insert(dmHeader->children.begin(), std::move(dmNode));
-        endInsertRows();
+        insertChildAt(dmHeader, 0, std::move(dmNode));
 
         return;
     }
@@ -783,13 +898,7 @@ void ChannelTreeModel::addChannel(const Discord::ChannelCreate &event, Snowflake
 
     if (channel.type == Discord::ChannelType::GUILD_CATEGORY) {
         node->type = ChannelNode::Type::Category;
-
-        int insertRow = guildNode->children.size();
-        QModelIndex guildIdx = indexForNode(guildNode);
-
-        beginInsertRows(guildIdx, insertRow, insertRow);
-        guildNode->addChild(std::move(node));
-        endInsertRows();
+        insertChildAt(guildNode, static_cast<int>(guildNode->children.size()), std::move(node));
     } else {
         bool isVoice = channel.type == Discord::ChannelType::GUILD_VOICE ||
                        channel.type == Discord::ChannelType::GUILD_STAGE_VOICE;
@@ -804,16 +913,14 @@ void ChannelTreeModel::addChannel(const Discord::ChannelCreate &event, Snowflake
         if (!parentNode)
             parentNode = guildNode;
 
-        int insertRow = parentNode->children.size();
-        QModelIndex parentIdx = indexForNode(parentNode);
-
-        beginInsertRows(parentIdx, insertRow, insertRow);
-        parentNode->addChild(std::move(node));
-        endInsertRows();
+        insertChildAt(parentNode, static_cast<int>(parentNode->children.size()), std::move(node));
 
         // notify proxy to re-check category visibility
-        if (parentNode->type == ChannelNode::Type::Category && parentIdx.isValid())
-            emit dataChanged(parentIdx, parentIdx);
+        if (parentNode->type == ChannelNode::Type::Category) {
+            QModelIndex parentIdx = indexForNode(parentNode);
+            if (parentIdx.isValid())
+                emit dataChanged(parentIdx, parentIdx);
+        }
     }
 }
 

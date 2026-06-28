@@ -262,6 +262,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
     Field<Guild> properties;
     Field<QList<Channel>> channels;
     Field<QList<Role>, true> roles;
+    Field<QList<Member>, true> members;
     Field<QDateTime, true> joinedAt;
 
     static GatewayGuild fromJson(const QJsonObject &obj)
@@ -270,6 +271,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
         get(obj, "properties", guild.properties);
         get(obj, "channels", guild.channels);
         get(obj, "roles", guild.roles);
+        get(obj, "members", guild.members);
         get(obj, "joined_at", guild.joinedAt);
         return guild;
     }

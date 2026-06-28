@@ -72,6 +72,7 @@ signals:
     void detailsUpdated(const AccountInfo &info);
 
     void ready(const Discord::Ready &ready);
+    void guildCreated(const Discord::GatewayGuild &guild);
     void channelCreated(const Discord::ChannelCreate &event);
     void channelUpdated(const Discord::ChannelUpdate &update);
     void channelDeleted(const Discord::ChannelDelete &event);
@@ -86,6 +87,7 @@ signals:
     void authenticationFailed(const AccountInfo &info);
 
 private slots:
+    void onGuildCreated(const Discord::GatewayGuild &guild);
     void onChannelCreated(const Discord::ChannelCreate &event);
     void onChannelUpdated(const Discord::ChannelUpdate &event);
     void onChannelDeleted(const Discord::ChannelDelete &event);
@@ -103,6 +105,9 @@ private slots:
 
 private:
     bool runInCacheTransaction(const char *what, const std::function<void(QSqlDatabase &)> &op);
+
+    void saveGuild(const Discord::GatewayGuild &guild, const QList<Discord::Member> *members, Snowflake myId, QSqlDatabase &db);
+    void initGuildReadState(const Discord::GatewayGuild &guild);
 
     AccountInfo account;
 
