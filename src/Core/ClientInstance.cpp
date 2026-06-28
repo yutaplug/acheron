@@ -136,7 +136,15 @@ ClientInstance::ClientInstance(const AccountInfo &info,
                                                    : QList<Discord::UserGuildSettings>{});
 
         for (const auto &guild : ready.guilds.get()) {
+            const Discord::Guild &props = guild.properties.get();
+            Snowflake guildId = props.id.get();
+            readStateManager->setGuildReadInfo(
+                    guildId, guild.joinedAt.hasValue() ? guild.joinedAt.get() : QDateTime(),
+                    props.defaultMessageNotifications.hasValue()
+                            ? props.defaultMessageNotifications.get()
+                            : Discord::MessageNotificationLevel::ALL_MESSAGES);
             for (const auto &channel : guild.channels.get()) {
+                readStateManager->registerChannelGuild(channel.id.get(), guildId);
                 if (channel.lastMessageId.hasValue())
                     readStateManager->updateChannelLastMessageId(channel.id.get(),
                                                                  channel.lastMessageId.get());
@@ -332,8 +340,11 @@ void ClientInstance::onChannelCreated(const Discord::ChannelCreate &event)
                                     ? channel.lastMessageId.get()
                                     : channelId;
         readStateManager->updateChannelLastMessageId(channelId, lastMsg);
-    } else if (channel.lastMessageId.hasValue()) {
-        readStateManager->updateChannelLastMessageId(channelId, channel.lastMessageId.get());
+    } else {
+        if (channel.guildId.hasValue())
+            readStateManager->registerChannelGuild(channelId, channel.guildId.get());
+        if (channel.lastMessageId.hasValue())
+            readStateManager->updateChannelLastMessageId(channelId, channel.lastMessageId.get());
     }
 
     emit channelCreated(event);

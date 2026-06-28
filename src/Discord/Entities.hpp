@@ -206,6 +206,7 @@ struct Guild : Core::JsonUtils::JsonObject
     Field<QList<Role>, true> roles;
     Field<PremiumTier, true> premiumTier;
     Field<Core::Snowflake, false, true> rulesChannelId;
+    Field<MessageNotificationLevel, true> defaultMessageNotifications;
 
     static Guild fromJson(const QJsonObject &obj)
     {
@@ -217,6 +218,7 @@ struct Guild : Core::JsonUtils::JsonObject
         get(obj, "roles", guild.roles);
         get(obj, "premium_tier", guild.premiumTier);
         get(obj, "rules_channel_id", guild.rulesChannelId);
+        get(obj, "default_message_notifications", guild.defaultMessageNotifications);
         return guild;
     }
 };
@@ -260,6 +262,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
     Field<Guild> properties;
     Field<QList<Channel>> channels;
     Field<QList<Role>, true> roles;
+    Field<QDateTime, true> joinedAt;
 
     static GatewayGuild fromJson(const QJsonObject &obj)
     {
@@ -267,6 +270,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
         get(obj, "properties", guild.properties);
         get(obj, "channels", guild.channels);
         get(obj, "roles", guild.roles);
+        get(obj, "joined_at", guild.joinedAt);
         return guild;
     }
 
@@ -648,7 +652,7 @@ struct ChannelOverride : Core::JsonUtils::JsonObject
     Field<Core::Snowflake> channelId;
     Field<bool, true> collapsed;
     Field<int, true> flags;
-    Field<int, true> messageNotifications;
+    Field<MessageNotificationLevel, true> messageNotifications;
     Field<bool, true> muted;
     Field<MuteConfig, true, true> muteConfig;
 
@@ -671,7 +675,7 @@ struct UserGuildSettings : Core::JsonUtils::JsonObject
     Field<int, true> flags;
     Field<Core::Snowflake, false, true> guildId;
     Field<bool, true> hideMutedChannels;
-    Field<int, true> messageNotifications;
+    Field<MessageNotificationLevel, true> messageNotifications;
     Field<bool, true> mobilePush;
     Field<bool, true> muteScheduledEvents;
     Field<bool, true> muted;

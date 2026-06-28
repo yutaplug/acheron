@@ -28,6 +28,8 @@ void ReadStateManager::loadFromReady(const QList<Discord::ReadStateEntry> &readS
 {
     channelReadStates.clear();
     guildSettingsMap.clear();
+    guildInfo.clear();
+    channelGuildMap.clear();
 
     for (const auto &entry : readStates) {
         int rsType = entry.readStateType.hasValue() ? entry.readStateType.get() : 0;
@@ -51,43 +53,112 @@ void ReadStateManager::loadFromReady(const QList<Discord::ReadStateEntry> &readS
 }
 
 ChannelReadState ReadStateManager::computeChannelReadState(Snowflake channelId, Snowflake guildId,
-                                                           bool isDM) const
+                                                           Snowflake parentId, bool isDM) const
 {
     ChannelReadState result;
 
     bool canView = isDM || permissionManager->hasChannelPermission(
                                    accountId, channelId, Discord::Permission::VIEW_CHANNEL);
-    bool canSend = isDM || permissionManager->hasChannelPermission(
-                                   accountId, channelId, Discord::Permission::SEND_MESSAGES);
 
     auto lmIt = channelLastMessageIds.constFind(channelId);
     Snowflake lastMessageId = lmIt != channelLastMessageIds.constEnd() ? lmIt.value()
                                                                        : Snowflake();
 
-    result.isMuted = isChannelMuted(channelId);
-    result.isUnread = canView && isChannelUnread(channelId, lastMessageId, canSend);
+    result.isMuted = (guildId.isValid() && isGuildMuted(guildId)) ||
+                     (parentId.isValid() && isChannelMuted(parentId)) ||
+                     isChannelMuted(channelId);
+    result.isUnread = canView && isChannelUnread(channelId, lastMessageId, guildId);
     result.mentionCount = canView ? getMentionCount(channelId) : 0;
+
+    auto effective = isDM ? Discord::MessageNotificationLevel::ALL_MESSAGES : resolveMessageNotifications(guildId, channelId, parentId);
+    result.countsForGuildUnread =
+            result.isUnread && !result.isMuted &&
+            (result.mentionCount > 0 || effective == Discord::MessageNotificationLevel::ALL_MESSAGES);
 
     return result;
 }
 
-bool ReadStateManager::isChannelUnread(Snowflake channelId, Snowflake channelLastMessageId,
-                                       bool canSendMessages) const
+bool ReadStateManager::isChannelUnread(Snowflake channelId, Snowflake channelLastMessageId, Snowflake guildId) const
 {
     if (!channelLastMessageId.isValid())
         return false;
 
+    return channelLastMessageId > effectiveAckId(channelId, guildId);
+}
+
+Snowflake ReadStateManager::effectiveAckId(Snowflake channelId, Snowflake guildId) const
+{
     auto it = channelReadStates.constFind(channelId);
-    if (it == channelReadStates.constEnd())
-        // best effort at emulating official behavior. i think i saw an edge case or something idk
-        // no read state entry and SEND_MESSAGES means unread otherwise read. or something
-        return canSendMessages;
+    if (it != channelReadStates.constEnd() && it->lastMessageId.hasValue())
+        return it->lastMessageId.get();
 
-    const auto &entry = it.value();
-    if (!entry.lastMessageId.hasValue())
-        return true;
+    if (guildId.isValid()) {
+        auto gi = guildInfo.constFind(guildId);
+        if (gi != guildInfo.constEnd() && gi->joinedAtMs > 0)
+            return Snowflake::fromUnixMs(gi->joinedAtMs);
+        return Snowflake::fromUnixMs(QDateTime::currentMSecsSinceEpoch());
+    }
 
-    return entry.lastMessageId.get() < channelLastMessageId;
+    if (channelId.isValid())
+        return Snowflake::fromUnixMs(channelId.toDateTime().toMSecsSinceEpoch());
+
+    return Snowflake::fromUnixMs(QDateTime::currentMSecsSinceEpoch());
+}
+
+Discord::MessageNotificationLevel ReadStateManager::resolveMessageNotifications(Snowflake guildId,
+                                                                                Snowflake channelId,
+                                                                                Snowflake parentId) const
+{
+    using Level = Discord::MessageNotificationLevel;
+
+    auto overrideNotif = [this](Snowflake id) -> std::optional<Level> {
+        auto it = channelOverrideCache.constFind(id);
+        if (it != channelOverrideCache.constEnd() && it->messageNotifications.hasValue() &&
+            it->messageNotifications.get() != Level::INHERIT)
+            return it->messageNotifications.get();
+        return std::nullopt;
+    };
+
+    if (auto n = overrideNotif(channelId))
+        return *n;
+    if (parentId.isValid())
+        if (auto n = overrideNotif(parentId))
+            return *n;
+
+    auto gs = guildSettingsMap.constFind(guildId);
+    if (gs != guildSettingsMap.constEnd() && gs->messageNotifications.hasValue() &&
+        gs->messageNotifications.get() != Level::INHERIT)
+        return gs->messageNotifications.get();
+
+    auto gi = guildInfo.constFind(guildId);
+    if (gi != guildInfo.constEnd())
+        return gi->defaultMessageNotifications;
+
+    return Level::ALL_MESSAGES;
+}
+
+Snowflake ReadStateManager::guildForChannel(Snowflake channelId) const
+{
+    auto it = channelGuildMap.constFind(channelId);
+    return it != channelGuildMap.constEnd() ? it.value() : Snowflake::Invalid;
+}
+
+void ReadStateManager::setGuildReadInfo(Snowflake guildId, const QDateTime &joinedAt, Discord::MessageNotificationLevel defaultMessageNotifications)
+{
+    if (!guildId.isValid())
+        return;
+
+    GuildReadInfo info;
+    info.joinedAtMs = joinedAt.isValid() ? joinedAt.toMSecsSinceEpoch() : 0;
+    info.defaultMessageNotifications = defaultMessageNotifications;
+    guildInfo.insert(guildId, info);
+}
+
+void ReadStateManager::registerChannelGuild(Snowflake channelId, Snowflake guildId)
+{
+    if (!channelId.isValid() || !guildId.isValid())
+        return;
+    channelGuildMap.insert(channelId, guildId);
 }
 
 int ReadStateManager::getMentionCount(Snowflake channelId) const
@@ -213,7 +284,7 @@ void ReadStateManager::markChannelAsRead(Snowflake channelId, Snowflake lastMess
     if (!lastMessageId.isValid())
         return;
 
-    if (!isChannelUnread(channelId, lastMessageId))
+    if (!isChannelUnread(channelId, lastMessageId, guildForChannel(channelId)))
         return;
 
     updateLocalReadState(channelId, lastMessageId);
@@ -230,9 +301,7 @@ void ReadStateManager::markChannelsAsRead(
     for (const auto &[channelId, messageId] : channelMessagePairs) {
         if (!messageId.isValid())
             continue;
-        bool canSend = permissionManager->hasChannelPermission(
-                accountId, channelId, Discord::Permission::SEND_MESSAGES);
-        if (!isChannelUnread(channelId, messageId, canSend))
+        if (!isChannelUnread(channelId, messageId, guildForChannel(channelId)))
             continue;
         updateLocalReadState(channelId, messageId);
         toAck.append({ channelId, messageId });

@@ -28,6 +28,8 @@ public:
 
     static Snowflake generateNonce();
 
+    static Snowflake fromUnixMs(qint64 ms);
+
 private:
     friend struct ::std::hash<Snowflake>;
     friend struct ::std::less<Snowflake>;

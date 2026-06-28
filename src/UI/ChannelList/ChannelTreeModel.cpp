@@ -220,6 +220,8 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
         return static_cast<quint64>(node->lastMessageId);
     if (role == IsUnreadRole)
         return node->isUnread;
+    if (role == CountsForGuildUnreadRole)
+        return node->countsForGuildUnread;
     if (role == MentionCountRole)
         return node->mentionCount;
     if (role == IsMutedRole)
@@ -990,13 +992,15 @@ void ChannelTreeModel::updateReadState(Snowflake channelId, Snowflake accountId)
     bool wasMuted = channelNode->isMuted;
     bool wasUnread = channelNode->isUnread;
     int oldMentions = channelNode->mentionCount;
+    bool wasCounts = channelNode->countsForGuildUnread;
 
     bool isDM = channelNode->type == ChannelNode::Type::DMChannel;
-    auto state = instance->readState()->computeChannelReadState(channelNode->id, guildId, isDM);
+    auto state = instance->readState()->computeChannelReadState(channelNode->id, guildId, channelNode->parentId, isDM);
     applyChannelReadState(channelNode, state);
 
     if (channelNode->isMuted != wasMuted || channelNode->isUnread != wasUnread ||
-        channelNode->mentionCount != oldMentions) {
+        channelNode->mentionCount != oldMentions ||
+        channelNode->countsForGuildUnread != wasCounts) {
         QModelIndex idx = indexForNode(channelNode);
         if (idx.isValid())
             emit dataChanged(idx, idx, { IsUnreadRole, MentionCountRole, IsMutedRole });
@@ -1040,7 +1044,12 @@ void ChannelTreeModel::updateGuildSettings(Snowflake guildId, Snowflake accountI
     }
 
     updateChildrenReadState(targetNode, guildId, instance);
-    updateNodeAggregates(targetNode);
+    recomputeSubtreeAggregates(targetNode);
+    QModelIndex targetIdx = indexForNode(targetNode);
+    if (targetIdx.isValid())
+        emitDataChangedRecursive(targetIdx);
+    if (targetNode->parent)
+        updateNodeAggregates(targetNode->parent);
 }
 
 void ChannelTreeModel::applyChannelReadState(ChannelNode *node, const Core::ChannelReadState &state)
@@ -1048,6 +1057,7 @@ void ChannelTreeModel::applyChannelReadState(ChannelNode *node, const Core::Chan
     node->isUnread = state.isUnread;
     node->mentionCount = state.mentionCount;
     node->isMuted = state.isMuted;
+    node->countsForGuildUnread = state.countsForGuildUnread;
 }
 
 static bool isContainerType(ChannelNode::Type type)
@@ -1060,10 +1070,14 @@ void ChannelTreeModel::aggregateChildren(ChannelNode *node)
 {
     node->mentionCount = 0;
     node->isUnread = false;
+    node->countsForGuildUnread = false;
     for (const auto &child : node->children) {
-        // Muting only suppresses the unread dot; mention counts still propagate upward.
         if (child->isUnread && !child->isMuted)
             node->isUnread = true;
+
+        if (child->countsForGuildUnread)
+            node->countsForGuildUnread = true;
+
         node->mentionCount += child->mentionCount;
     }
 }
@@ -1084,13 +1098,14 @@ void ChannelTreeModel::updateNodeAggregates(ChannelNode *node)
 
     int oldMentionCount = node->mentionCount;
     bool oldIsUnread = node->isUnread;
+    bool oldCounts = node->countsForGuildUnread;
 
     aggregateChildren(node);
 
-    if (oldMentionCount != node->mentionCount || oldIsUnread != node->isUnread) {
+    if (oldMentionCount != node->mentionCount || oldIsUnread != node->isUnread || oldCounts != node->countsForGuildUnread) {
         QModelIndex idx = indexForNode(node);
         if (idx.isValid())
-            emit dataChanged(idx, idx, { IsUnreadRole, MentionCountRole });
+            emit dataChanged(idx, idx, { IsUnreadRole, CountsForGuildUnreadRole, MentionCountRole });
 
         if (node->parent)
             updateNodeAggregates(node->parent);
@@ -1107,7 +1122,7 @@ void ChannelTreeModel::initChannelReadStates(ChannelNode *node, Core::ClientInst
         ChannelNode *guildNode = findGuildNode(node);
         Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
         bool isDM = node->type == ChannelNode::Type::DMChannel;
-        auto state = instance->readState()->computeChannelReadState(node->id, guildId, isDM);
+        auto state = instance->readState()->computeChannelReadState(node->id, guildId, node->parentId, isDM);
         applyChannelReadState(node, state);
     }
 
@@ -1122,7 +1137,7 @@ void ChannelTreeModel::updateChildrenReadState(ChannelNode *node, Snowflake guil
         if (child->type == ChannelNode::Type::Channel ||
             child->type == ChannelNode::Type::DMChannel) {
             bool isDM = child->type == ChannelNode::Type::DMChannel;
-            auto state = instance->readState()->computeChannelReadState(child->id, guildId, isDM);
+            auto state = instance->readState()->computeChannelReadState(child->id, guildId, child->parentId, isDM);
             applyChannelReadState(child.get(), state);
 
             QModelIndex idx = indexForNode(child.get());

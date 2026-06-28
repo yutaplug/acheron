@@ -32,6 +32,7 @@ struct ChannelNode
     bool isUnread = false;
     int mentionCount = 0;
     bool isMuted = false;
+    bool countsForGuildUnread = false;
     bool collapsed = false;
     Core::Snowflake parentId;
     Core::Snowflake rulesChannelId;

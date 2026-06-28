@@ -40,6 +40,7 @@ public:
         IsVoiceDeafenedRole = Qt::UserRole + 11,
         IconHashRole = Qt::UserRole + 12,
         FolderColorRole = Qt::UserRole + 13,
+        CountsForGuildUnreadRole = Qt::UserRole + 14,
     };
 
     QModelIndex index(int row, int column, const QModelIndex &parentIndex) const override;

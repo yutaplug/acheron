@@ -242,6 +242,13 @@ enum class PremiumTier {
     TIER_3 = 3,
 };
 
+enum class MessageNotificationLevel {
+    ALL_MESSAGES = 0,
+    ONLY_MENTIONS = 1,
+    NO_MESSAGES = 2,
+    INHERIT = 3,
+};
+
 enum class MessageType {
     DEFAULT = 0,
     RECIPIENT_ADD = 1,

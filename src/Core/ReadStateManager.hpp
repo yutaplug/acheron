@@ -22,6 +22,7 @@ struct ChannelReadState
     bool isUnread = false;
     int mentionCount = 0;
     bool isMuted = false;
+    bool countsForGuildUnread = false;
 };
 
 class ReadStateManager : public QObject
@@ -34,11 +35,14 @@ public:
     void loadFromReady(const QList<Discord::ReadStateEntry> &readStates,
                        const QList<Discord::UserGuildSettings> &guildSettings);
 
+    void setGuildReadInfo(Snowflake guildId, const QDateTime &joinedAt, Discord::MessageNotificationLevel defaultMessageNotifications);
+    void registerChannelGuild(Snowflake channelId, Snowflake guildId);
+
     [[nodiscard]] ChannelReadState computeChannelReadState(Snowflake channelId, Snowflake guildId,
+                                                           Snowflake parentId,
                                                            bool isDM = false) const;
 
-    bool isChannelUnread(Snowflake channelId, Snowflake channelLastMessageId,
-                         bool canSendMessages = true) const;
+    bool isChannelUnread(Snowflake channelId, Snowflake channelLastMessageId, Snowflake guildId) const;
     int getMentionCount(Snowflake channelId) const;
     bool isChannelMuted(Snowflake channelId) const;
     bool isGuildMuted(Snowflake guildId) const;
@@ -70,6 +74,18 @@ signals:
 private:
     void rebuildChannelOverrideCache(Snowflake guildSettingsKey);
 
+    Snowflake effectiveAckId(Snowflake channelId, Snowflake guildId) const;
+    Discord::MessageNotificationLevel resolveMessageNotifications(Snowflake guildId,
+                                                                  Snowflake channelId,
+                                                                  Snowflake parentId) const;
+    Snowflake guildForChannel(Snowflake channelId) const;
+
+    struct GuildReadInfo
+    {
+        qint64 joinedAtMs = 0;
+        Discord::MessageNotificationLevel defaultMessageNotifications = Discord::MessageNotificationLevel::ALL_MESSAGES;
+    };
+
     Snowflake accountId;
     PermissionManager *permissionManager;
 
@@ -79,6 +95,9 @@ private:
 
     QHash<Snowflake, Discord::ChannelOverride> channelOverrideCache;
     QHash<Snowflake, QSet<Snowflake>> guildOverrideChannels;
+
+    QHash<Snowflake, GuildReadInfo> guildInfo;
+    QHash<Snowflake, Snowflake> channelGuildMap;
 
     Snowflake activeChannelId;
     QTimer activeChannelAckTimer;

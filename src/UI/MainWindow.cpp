@@ -1392,7 +1392,7 @@ void MainWindow::refreshTabReadStates()
             continue;
 
         auto state = inst->readState()->computeChannelReadState(
-                entry.channelId, entry.guildId, entry.isDm);
+                entry.channelId, entry.guildId, Snowflake::Invalid, entry.isDm);
         tabBar->updateChannelReadState(entry.channelId, state.isUnread, state.mentionCount);
     }
 }

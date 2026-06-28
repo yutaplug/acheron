@@ -45,5 +45,12 @@ Snowflake Snowflake::generateNonce()
     return Snowflake(nonce);
 }
 
+Snowflake Snowflake::fromUnixMs(qint64 ms)
+{
+    if (ms <= static_cast<qint64>(DISCORD_EPOCH))
+        return Snowflake(0);
+    return Snowflake(static_cast<quint64>(ms - DISCORD_EPOCH) << 22);
+}
+
 } // namespace Core
 } // namespace Acheron
