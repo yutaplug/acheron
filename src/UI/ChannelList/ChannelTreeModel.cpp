@@ -230,6 +230,13 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
         return node->voiceParticipantCount;
     if (role == UserLimitRole)
         return node->userLimit;
+    if (role == IconHashRole)
+        return node->TEMP_iconHash;
+    if (role == FolderColorRole) {
+        if (node->folderColor.has_value())
+            return static_cast<quint64>(node->folderColor.value());
+        return {};
+    }
 
     if (role == IsVoiceMutedRole || role == IsVoiceDeafenedRole) {
         if (node->type != ChannelNode::Type::VoiceParticipant)
@@ -346,19 +353,10 @@ void ChannelTreeModel::populateFromReady(const Discord::Ready &ready)
             for (const auto &guildId : folder.guildIds)
                 guildIdsInFolders.insert(guildId);
 
-        std::vector<Core::Snowflake> unfolderedGuilds;
-        for (const auto &guild : ready.guilds.get())
-            if (!guildIdsInFolders.contains(guild.properties->id))
-                unfolderedGuilds.push_back(guild.properties->id);
-
-        // discord does unfolder'd guilds by id descending
-        std::sort(unfolderedGuilds.begin(), unfolderedGuilds.end(),
-                  [](const auto &a, const auto &b) { return a > b; });
-
-        // and they come first
-        for (const auto &guildId : unfolderedGuilds)
-            if (guildMap.contains(guildId))
-                topLevelNodes.push_back(createGuildNode(*guildMap[guildId]));
+        const auto &guilds = ready.guilds.get();
+        for (auto it = guilds.rbegin(); it != guilds.rend(); ++it)
+            if (!guildIdsInFolders.contains(it->properties->id))
+                topLevelNodes.push_back(createGuildNode(*it));
 
         for (const auto &folder : folders) {
             if (!folder.id.has_value()) {
@@ -379,13 +377,29 @@ void ChannelTreeModel::populateFromReady(const Discord::Ready &ready)
                     if (guildMap.contains(guildId))
                         folderNode->addChild(createGuildNode(*guildMap[guildId]));
 
-                topLevelNodes.push_back(std::move(folderNode));
+                if (!folderNode->children.empty())
+                    topLevelNodes.push_back(std::move(folderNode));
             }
         }
+    } else if (settings.guildFolders.has_value() &&
+               !settings.guildFolders->guildPositions.isEmpty()) {
+        const auto &positions = settings.guildFolders->guildPositions;
+        QSet<Core::Snowflake> positioned;
+        for (const auto &id : positions)
+            positioned.insert(id);
+
+        const auto &guilds = ready.guilds.get();
+        for (auto it = guilds.rbegin(); it != guilds.rend(); ++it)
+            if (!positioned.contains(it->properties->id))
+                topLevelNodes.push_back(createGuildNode(*it));
+
+        for (const auto &guildId : positions)
+            if (guildMap.contains(guildId))
+                topLevelNodes.push_back(createGuildNode(*guildMap[guildId]));
     } else {
-        // probably not going to correspond
-        for (const auto &guild : ready.guilds.get())
-            topLevelNodes.push_back(createGuildNode(guild));
+        const auto &guilds = ready.guilds.get();
+        for (auto it = guilds.rbegin(); it != guilds.rend(); ++it)
+            topLevelNodes.push_back(createGuildNode(*it));
     }
 
     if (topLevelNodes.empty())
@@ -479,6 +493,8 @@ std::unique_ptr<ChannelNode> ChannelTreeModel::createGuildNode(const Discord::Ga
     guildNode->name = guild.properties->name;
     guildNode->type = ChannelNode::Type::Server;
     guildNode->TEMP_iconHash = guild.properties->icon;
+    if (guild.properties->rulesChannelId.hasValue() && guild.properties->rulesChannelId->isValid())
+        guildNode->rulesChannelId = guild.properties->rulesChannelId.get();
 
     QHash<Snowflake, ChannelNode *> categoryMap;
     std::vector<std::unique_ptr<ChannelNode>> categories;
@@ -614,6 +630,37 @@ ChannelNode *ChannelTreeModel::findCategoryNode(Snowflake categoryId, ChannelNod
             return child.get();
 
     return nullptr;
+}
+
+QModelIndex ChannelTreeModel::serverIndex(Snowflake accountId, Snowflake guildId)
+{
+    ChannelNode *accNode = accountNodes.value(accountId, nullptr);
+    if (!accNode)
+        return {};
+    ChannelNode *guildNode = findGuildNodeById(guildId, accNode);
+    return guildNode ? indexForNode(guildNode) : QModelIndex();
+}
+
+QModelIndex ChannelTreeModel::folderIndex(Snowflake accountId, Snowflake folderId)
+{
+    ChannelNode *accNode = accountNodes.value(accountId, nullptr);
+    if (!accNode)
+        return {};
+    for (const auto &child : accNode->children)
+        if (child->type == ChannelNode::Type::Folder && child->id == folderId)
+            return indexForNode(child.get());
+    return {};
+}
+
+QModelIndex ChannelTreeModel::dmHeaderIndex(Snowflake accountId)
+{
+    ChannelNode *accNode = accountNodes.value(accountId, nullptr);
+    if (!accNode)
+        return {};
+    for (const auto &child : accNode->children)
+        if (child->type == ChannelNode::Type::DMHeader)
+            return indexForNode(child.get());
+    return {};
 }
 
 ChannelNode *ChannelTreeModel::findGuildNodeById(Snowflake guildId, ChannelNode *accountNode)
@@ -1006,7 +1053,7 @@ void ChannelTreeModel::applyChannelReadState(ChannelNode *node, const Core::Chan
 static bool isContainerType(ChannelNode::Type type)
 {
     return type == ChannelNode::Type::Category || type == ChannelNode::Type::Server ||
-           type == ChannelNode::Type::Folder;
+           type == ChannelNode::Type::Folder || type == ChannelNode::Type::DMHeader;
 }
 
 void ChannelTreeModel::aggregateChildren(ChannelNode *node)
@@ -1014,6 +1061,7 @@ void ChannelTreeModel::aggregateChildren(ChannelNode *node)
     node->mentionCount = 0;
     node->isUnread = false;
     for (const auto &child : node->children) {
+        // Muting only suppresses the unread dot; mention counts still propagate upward.
         if (child->isUnread && !child->isMuted)
             node->isUnread = true;
         node->mentionCount += child->mentionCount;

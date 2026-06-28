@@ -10,6 +10,9 @@
 #include "ChannelList/ChannelFilterProxyModel.hpp"
 #include "ChannelList/ChannelDelegate.hpp"
 #include "ChannelList/ChannelTreeView.hpp"
+#include "ChannelList/ServerRailView.hpp"
+#include "ChannelList/ServerRailModel.hpp"
+#include "ChannelList/ServerRailDelegate.hpp"
 #include "TabBar/TabBar.hpp"
 #include "Accounts/AccountsWindow.hpp"
 #include "Settings/SettingsWindow.hpp"
@@ -42,6 +45,15 @@ using namespace Acheron::Core;
 namespace Acheron {
 namespace UI {
 
+namespace {
+QString guildChannelKey(Core::Snowflake accountId, Core::Snowflake guildId)
+{
+    return QStringLiteral("%1:%2")
+            .arg(static_cast<quint64>(accountId))
+            .arg(static_cast<quint64>(guildId));
+}
+} // namespace
+
 MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent), session(session)
 {
     auto *captchaResolver = new BrowserCaptchaResolver(this, this);
@@ -54,6 +66,7 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
     channelFilterProxy->setDynamicSortFilter(true);
     channelFilterProxy->sort(0);
     accountsModel = new AccountsModel(session, this);
+    serverRailModel = new ServerRailModel(session, channelTreeModel, this);
 
     chatModel->setAvatarUrlResolver([](const Discord::User &user) -> QUrl {
         return Discord::Cdn::userAvatar(user.id.get(), user.avatar.get(), 64);
@@ -71,6 +84,10 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
     typingTracker = new TypingTracker(this);
     memberListModel = new MemberListModel(session->getImageManager(), this);
 
+    channelListMode = (QSettings().value("ui/channelListMode").toString() == "classic")
+                              ? ChannelListMode::Classic
+                              : ChannelListMode::Tree;
+
     setupUi();
     setupMenu();
 
@@ -84,10 +101,13 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
 
     connect(session, &Session::ready, this, [this](const Discord::Ready &ready) {
         channelTreeModel->populateFromReady(ready);
-        channelTree->performDefaultExpansion();
+        if (channelListMode == ChannelListMode::Tree)
+            channelTree->performDefaultExpansion();
         applyTreeState();
         maybeActivatePendingChannel(ready.user->id);
         refreshTabReadStates();
+        if (channelListMode == ChannelListMode::Classic)
+            applyPendingRailSelection(ready.user->id);
     });
 
     connect(accountsModel, &AccountsModel::dataChanged, this,
@@ -115,7 +135,13 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
                             }
                         }
                     } else if (acc.state == Acheron::Core::ConnectionState::Disconnected) {
+                        bool wasShowing = channelListMode == ChannelListMode::Classic && railSelectedAccountId == acc.id;
                         channelTreeModel->removeAccount(acc.id);
+                        if (wasShowing) {
+                            railHasSelection = false;
+                            channelTree->setRootIndex({});
+                            selectInitialRailItem();
+                        }
                     }
                 }
             });
@@ -228,9 +254,7 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
         else
             messageInput->setPlaceholder("Message #" + node->name);
 
-        ChannelNode *gNode = node;
-        while (gNode && gNode->type != ChannelNode::Type::Server)
-            gNode = gNode->parent;
+        ChannelNode *gNode = ChannelTreeModel::findGuildNode(node);
         Snowflake gId = gNode ? gNode->id : Snowflake::Invalid;
 
         if (gId.isValid()) {
@@ -242,9 +266,7 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     MessageManager *messages = selectedInstance->messages();
 
     if (node->id != chatModel->getActiveChannelId()) {
-        ChannelNode *guildNode = node;
-        while (guildNode && guildNode->type != ChannelNode::Type::Server)
-            guildNode = guildNode->parent;
+        ChannelNode *guildNode = ChannelTreeModel::findGuildNode(node);
         Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
 
         if (guildId != cachedGuildId) {
@@ -263,9 +285,7 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
         selectedInstance->readState()->markChannelAsRead(node->id, node->lastMessageId);
 
     {
-        ChannelNode *serverNode = node;
-        while (serverNode && serverNode->type != ChannelNode::Type::Server)
-            serverNode = serverNode->parent;
+        ChannelNode *serverNode = ChannelTreeModel::findGuildNode(node);
 
         TabEntry entry;
         entry.channelId = node->id;
@@ -276,6 +296,11 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
         if (serverNode && !serverNode->TEMP_iconHash.isEmpty())
             entry.iconUrl = Discord::Cdn::guildIcon(serverNode->id, serverNode->TEMP_iconHash, 64);
         tabBar->updateCurrentTab(entry);
+
+        if (node->type == ChannelNode::Type::Channel && serverNode)
+            recordLastViewedChannel(accountNode->id, serverNode->id, node->id);
+        else if (node->type == ChannelNode::Type::DMChannel)
+            recordLastViewedChannel(accountNode->id, Snowflake::Invalid, node->id);
     }
 }
 
@@ -476,15 +501,10 @@ void MainWindow::setupUi()
     auto *central = new QWidget(this);
     auto *layout = new QHBoxLayout(central);
 
-    auto *leftSideWidget = new QWidget(central);
-    auto *leftLayout = new QVBoxLayout(leftSideWidget);
-    leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setSpacing(0);
-
-    channelTree = new ChannelTreeView(leftSideWidget);
+    channelTree = new ChannelTreeView(this);
 
 #ifndef ACHERON_NO_VOICE
-    voiceStatusBar = new VoiceStatusBar(leftSideWidget);
+    voiceStatusBar = new VoiceStatusBar(this);
     voiceStatusBar->setImageManager(session->getImageManager());
     connect(voiceStatusBar, &VoiceStatusBar::disconnectRequested, this, [this]() {
         for (const auto &inst : session->getClients()) {
@@ -496,10 +516,31 @@ void MainWindow::setupUi()
     });
 #endif
 
-    leftLayout->addWidget(channelTree, 1);
-#ifndef ACHERON_NO_VOICE
-    leftLayout->addWidget(voiceStatusBar, 0);
-#endif
+    serverRail = new ServerRailView(this);
+    serverRail->setModel(serverRailModel);
+    serverRail->setItemDelegate(new ServerRailDelegate(serverRail));
+    serverRail->setFixedWidth(ServerRailDelegate::RailWidth);
+    serverRail->hide();
+    connect(serverRail, &ServerRailView::accountHomeClicked, this, &MainWindow::onRailAccountHomeClicked);
+    connect(serverRail, &ServerRailView::guildClicked, this, &MainWindow::onRailGuildClicked);
+    connect(serverRail, &ServerRailView::folderToggleClicked, this,
+            [this](Snowflake accountId, Snowflake folderId) {
+                serverRailModel->toggleFolder(accountId, folderId);
+            });
+    connect(serverRail, &ServerRailView::markAsReadRequested, this,
+            [this](Snowflake accountId, Snowflake id, bool isFolder) {
+                markIndexAsRead(accountId, isFolder ? channelTreeModel->folderIndex(accountId, id)
+                                                    : channelTreeModel->serverIndex(accountId, id));
+            });
+
+    guildHeaderLabel = new QLabel(this);
+    guildHeaderLabel->setContentsMargins(12, 8, 12, 8);
+    {
+        QFont headerFont = guildHeaderLabel->font();
+        headerFont.setBold(true);
+        guildHeaderLabel->setFont(headerFont);
+    }
+    guildHeaderLabel->hide();
 
     auto *rightSideWidget = new QWidget(central);
     auto *rightLayout = new QVBoxLayout(rightSideWidget);
@@ -581,6 +622,8 @@ void MainWindow::setupUi()
                                     memberListView->viewport()->mapToGlobal(pos));
             });
 
+    leftSideWidget = buildLeftSide();
+
     mainSplitter = new QSplitter(this);
     mainSplitter->addWidget(leftSideWidget);
     mainSplitter->addWidget(rightSideWidget);
@@ -591,7 +634,6 @@ void MainWindow::setupUi()
     mainSplitter->setStretchFactor(0, 0);
     mainSplitter->setStretchFactor(1, 1);
     mainSplitter->setStretchFactor(2, 0);
-    leftSideWidget->setMinimumWidth(200);
     memberListView->setMinimumWidth(140);
     memberListView->setMaximumWidth(400);
 
@@ -618,16 +660,7 @@ void MainWindow::setupUi()
                 if (!accountNode)
                     return;
 
-                ClientInstance *instance = session->client(accountNode->id);
-                if (!instance)
-                    return;
-
-                auto pairs = channelTreeModel->getMarkableChannels(sourceIndex);
-
-                if (pairs.size() == 1)
-                    instance->readState()->markChannelAsRead(pairs.first().first, pairs.first().second);
-                else if (!pairs.isEmpty())
-                    instance->readState()->markChannelsAsRead(pairs);
+                markIndexAsRead(accountNode->id, sourceIndex);
             });
 
     chatView->setModel(chatModel);
@@ -774,9 +807,7 @@ void MainWindow::setupUi()
                 if (!accountNode)
                     return;
 
-                ChannelNode *guildNode = node;
-                while (guildNode && guildNode->type != ChannelNode::Type::Server)
-                    guildNode = guildNode->parent;
+                ChannelNode *guildNode = ChannelTreeModel::findGuildNode(node);
                 Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
 
                 TabEntry entry;
@@ -816,9 +847,7 @@ void MainWindow::setupUi()
                     qCInfo(LogVoice) << "Joining DM call" << node->name << node->id;
                     instance->discord()->sendVoiceStateUpdate(Snowflake::Invalid, node->id, false, false);
                 } else {
-                    ChannelNode *guildNode = node;
-                    while (guildNode && guildNode->type != ChannelNode::Type::Server)
-                        guildNode = guildNode->parent;
+                    ChannelNode *guildNode = ChannelTreeModel::findGuildNode(node);
                     if (!guildNode)
                         return;
 
@@ -851,6 +880,340 @@ void MainWindow::setupUi()
     layout->addWidget(mainSplitter);
     layout->setContentsMargins(0, 0, 4, 0);
     setCentralWidget(central);
+}
+
+QWidget *MainWindow::buildLeftSide()
+{
+    auto *container = new QWidget;
+
+    if (channelListMode == ChannelListMode::Classic) {
+        auto *h = new QHBoxLayout(container);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(0);
+
+        serverRail->show();
+        h->addWidget(serverRail, 0);
+
+        auto *secondary = new QWidget(container);
+        auto *v = new QVBoxLayout(secondary);
+        v->setContentsMargins(0, 0, 0, 0);
+        v->setSpacing(0);
+        v->addWidget(guildHeaderLabel, 0);
+        guildHeaderLabel->setVisible(!guildHeaderLabel->text().isEmpty());
+        channelTree->show();
+        v->addWidget(channelTree, 1);
+#ifndef ACHERON_NO_VOICE
+        if (voiceStatusBar)
+            v->addWidget(voiceStatusBar, 0);
+#endif
+        h->addWidget(secondary, 1);
+    } else {
+        auto *v = new QVBoxLayout(container);
+        v->setContentsMargins(0, 0, 0, 0);
+        v->setSpacing(0);
+        channelTree->show();
+        v->addWidget(channelTree, 1);
+#ifndef ACHERON_NO_VOICE
+        if (voiceStatusBar)
+            v->addWidget(voiceStatusBar, 0);
+#endif
+    }
+
+    container->setMinimumWidth(200);
+    return container;
+}
+
+void MainWindow::setChannelListMode(ChannelListMode mode)
+{
+    if (channelListMode == mode)
+        return;
+    channelListMode = mode;
+    QSettings().setValue("ui/channelListMode", mode == ChannelListMode::Classic ? "classic" : "tree");
+
+    QList<int> splitterSizes = mainSplitter ? mainSplitter->sizes() : QList<int>();
+#ifndef ACHERON_NO_VOICE
+    bool voiceVisible = voiceStatusBar && voiceStatusBar->isVisible();
+#endif
+
+    channelTree->setParent(this);
+    channelTree->hide();
+    serverRail->setParent(this);
+    serverRail->hide();
+    guildHeaderLabel->setParent(this);
+    guildHeaderLabel->hide();
+#ifndef ACHERON_NO_VOICE
+    if (voiceStatusBar) {
+        voiceStatusBar->setParent(this);
+        voiceStatusBar->hide();
+    }
+#endif
+
+    QWidget *newLeft = buildLeftSide();
+    QWidget *old = mainSplitter->replaceWidget(0, newLeft);
+    leftSideWidget = newLeft;
+    if (old)
+        old->deleteLater();
+
+    mainSplitter->setCollapsible(0, false);
+    mainSplitter->setStretchFactor(0, 0);
+    if (splitterSizes.size() == mainSplitter->count()) {
+        const int delta = (mode == ChannelListMode::Classic) ? ServerRailDelegate::RailWidth : -ServerRailDelegate::RailWidth;
+        splitterSizes[0] = qMax(0, splitterSizes[0] + delta);
+        if (splitterSizes.size() > 1)
+            splitterSizes[1] = qMax(0, splitterSizes[1] - delta);
+        mainSplitter->setSizes(splitterSizes);
+    }
+
+#ifndef ACHERON_NO_VOICE
+    if (voiceStatusBar)
+        voiceStatusBar->setVisible(voiceVisible);
+#endif
+
+    if (mode == ChannelListMode::Tree) {
+        channelTree->setRootIndex({});
+        channelTree->performDefaultExpansion();
+        applyTreeState();
+    } else {
+        serverRailModel->rebuild();
+        railHasSelection = false;
+        selectInitialRailItem();
+    }
+}
+
+void MainWindow::onRailGuildSelected(Snowflake accountId, Snowflake guildId)
+{
+    QModelIndex src = channelTreeModel->serverIndex(accountId, guildId);
+    if (!src.isValid())
+        return;
+    QModelIndex proxy = channelFilterProxy->mapFromSource(src);
+    if (!proxy.isValid())
+        return;
+
+    channelTree->setRootIndex(proxy);
+    channelTree->performDefaultExpansion();
+
+    serverRailModel->setSelected(ServerRailModel::Kind::Server, accountId, guildId);
+    QString guildName = src.data(Qt::DisplayRole).toString();
+    guildHeaderLabel->setText(guildName);
+    guildHeaderLabel->setVisible(!guildName.isEmpty());
+    railHasSelection = true;
+    railSelectedIsHome = false;
+    railSelectedAccountId = accountId;
+    railSelectedGuildId = guildId;
+
+    QSettings s;
+    s.setValue("ui/rail/lastAccountId", static_cast<qulonglong>(accountId));
+    s.setValue("ui/rail/lastGuildId", static_cast<qulonglong>(guildId));
+    s.setValue("ui/rail/lastIsHome", false);
+}
+
+void MainWindow::onRailAccountHomeSelected(Snowflake accountId)
+{
+    QModelIndex src = channelTreeModel->dmHeaderIndex(accountId);
+    if (!src.isValid())
+        return;
+    QModelIndex proxy = channelFilterProxy->mapFromSource(src);
+    if (!proxy.isValid())
+        return;
+
+    channelTree->setRootIndex(proxy);
+
+    serverRailModel->setSelected(ServerRailModel::Kind::AccountHome, accountId, accountId);
+    guildHeaderLabel->setText(tr("Direct Messages"));
+    guildHeaderLabel->show();
+    railHasSelection = true;
+    railSelectedIsHome = true;
+    railSelectedAccountId = accountId;
+    railSelectedGuildId = Snowflake();
+
+    QSettings s;
+    s.setValue("ui/rail/lastAccountId", static_cast<qulonglong>(accountId));
+    s.setValue("ui/rail/lastIsHome", true);
+}
+
+void MainWindow::onRailAccountHomeClicked(Snowflake accountId)
+{
+    onRailAccountHomeSelected(accountId);
+
+    auto it = lastViewedChannel.constFind(guildChannelKey(accountId, Snowflake::Invalid));
+    if (it == lastViewedChannel.cend())
+        return;
+
+    ChannelNode *node = channelTreeModel->findChannelTreeNode(it.value(), accountId);
+    if (!node || node->type != ChannelNode::Type::DMChannel)
+        return;
+
+    channelFilterProxy->setSelectedChannel(node->id, accountId);
+    QModelIndex proxy = channelFilterProxy->mapFromSource(channelTreeModel->indexForNode(node));
+    if (proxy.isValid())
+        channelTree->setCurrentIndex(proxy);
+}
+
+void MainWindow::selectInitialRailItem()
+{
+    if (currentInstance) {
+        Snowflake channelId = chatModel->getActiveChannelId();
+        if (channelId.isValid()) {
+            Snowflake accountId = currentInstance->accountId();
+            if (ChannelNode *node = channelTreeModel->findChannelTreeNode(channelId, accountId)) {
+                if (node->type == ChannelNode::Type::DMChannel) {
+                    onRailAccountHomeSelected(accountId);
+                    return;
+                }
+                ChannelNode *guild = ChannelTreeModel::findGuildNode(node);
+                if (guild) {
+                    onRailGuildSelected(accountId, guild->id);
+                    return;
+                }
+            }
+        }
+    }
+
+    if (hasSavedRailSelection) {
+        if (!savedRailIsHome &&
+            channelTreeModel->serverIndex(savedRailAccountId, savedRailGuildId).isValid()) {
+            onRailGuildSelected(savedRailAccountId, savedRailGuildId);
+            return;
+        }
+        if (channelTreeModel->dmHeaderIndex(savedRailAccountId).isValid()) {
+            onRailAccountHomeSelected(savedRailAccountId);
+            return;
+        }
+    }
+
+    for (int i = 0; i < channelTreeModel->rowCount({}); ++i) {
+        QModelIndex accIdx = channelTreeModel->index(i, 0, {});
+        if (static_cast<ChannelNode::Type>(accIdx.data(ChannelTreeModel::TypeRole).toInt()) == ChannelNode::Type::Account) {
+            onRailAccountHomeSelected(Snowflake(accIdx.data(ChannelTreeModel::IdRole).toULongLong()));
+            return;
+        }
+    }
+
+    guildHeaderLabel->clear();
+    guildHeaderLabel->hide();
+}
+
+void MainWindow::applyPendingRailSelection(Snowflake accountId)
+{
+    if (channelListMode != ChannelListMode::Classic)
+        return;
+
+    if (railHasSelection) {
+        hasSavedRailSelection = false;
+        return;
+    }
+
+    if (hasSavedRailSelection) {
+        if (savedRailAccountId != accountId)
+            return;
+        hasSavedRailSelection = false;
+        if (!savedRailIsHome &&
+            channelTreeModel->serverIndex(accountId, savedRailGuildId).isValid())
+            onRailGuildSelected(accountId, savedRailGuildId);
+        else
+            onRailAccountHomeSelected(accountId);
+        return;
+    }
+
+    onRailAccountHomeSelected(accountId);
+}
+
+void MainWindow::onRailGuildClicked(Snowflake accountId, Snowflake guildId)
+{
+    onRailGuildSelected(accountId, guildId);
+
+    Snowflake channelId = resolveRailChannel(accountId, guildId);
+    if (!channelId.isValid())
+        return;
+
+    ChannelNode *node = channelTreeModel->findChannelTreeNode(channelId, accountId);
+    if (!node)
+        return;
+
+    channelFilterProxy->setSelectedChannel(channelId, accountId);
+    QModelIndex proxy = channelFilterProxy->mapFromSource(channelTreeModel->indexForNode(node));
+    if (proxy.isValid())
+        channelTree->setCurrentIndex(proxy);
+}
+
+Core::Snowflake MainWindow::resolveRailChannel(Snowflake accountId, Snowflake guildId)
+{
+    auto it = lastViewedChannel.constFind(guildChannelKey(accountId, guildId));
+    if (it != lastViewedChannel.cend() && channelReadable(accountId, guildId, it.value()))
+        return it.value();
+
+    QModelIndex guildSrc = channelTreeModel->serverIndex(accountId, guildId);
+    ChannelNode *guildNode = guildSrc.isValid() ? channelTreeModel->nodeFromIndex(guildSrc) : nullptr;
+    if (guildNode && channelReadable(accountId, guildId, guildNode->rulesChannelId))
+        return guildNode->rulesChannelId;
+
+    return firstReadableChannel(accountId, guildId);
+}
+
+bool MainWindow::channelReadable(Snowflake accountId, Snowflake guildId, Snowflake channelId)
+{
+    if (!channelId.isValid())
+        return false;
+    ChannelNode *node = channelTreeModel->findChannelTreeNode(channelId, accountId);
+    if (!node || node->type != ChannelNode::Type::Channel)
+        return false;
+    ChannelNode *guild = ChannelTreeModel::findGuildNode(node);
+    if (!guild || guild->id != guildId)
+        return false;
+    ClientInstance *instance = session->client(accountId);
+    if (instance && instance->permissions())
+        return instance->permissions()->hasChannelPermission(accountId, channelId, Discord::Permission::VIEW_CHANNEL);
+    return true;
+}
+
+Core::Snowflake MainWindow::firstReadableChannel(Snowflake accountId, Snowflake guildId)
+{
+    QModelIndex guildSrc = channelTreeModel->serverIndex(accountId, guildId);
+    if (!guildSrc.isValid())
+        return {};
+    ChannelNode *guildNode = channelTreeModel->nodeFromIndex(guildSrc);
+    if (!guildNode)
+        return {};
+
+    ClientInstance *instance = session->client(accountId);
+    auto *perms = instance ? instance->permissions() : nullptr;
+    auto readable = [&](Snowflake ch) {
+        return !perms || perms->hasChannelPermission(accountId, ch, Discord::Permission::VIEW_CHANNEL);
+    };
+
+    for (const auto &child : guildNode->children) {
+        if (child->type == ChannelNode::Type::Category)
+            break;
+        if (child->type == ChannelNode::Type::Channel && readable(child->id))
+            return child->id;
+    }
+
+    for (const auto &child : guildNode->children) {
+        if (child->type != ChannelNode::Type::Category)
+            continue;
+        for (const auto &cc : child->children)
+            if (cc->type == ChannelNode::Type::Channel && readable(cc->id))
+                return cc->id;
+    }
+    return {};
+}
+
+void MainWindow::markIndexAsRead(Snowflake accountId, const QModelIndex &sourceIndex)
+{
+    ClientInstance *instance = session->client(accountId);
+    if (!instance || !sourceIndex.isValid())
+        return;
+
+    const auto pairs = channelTreeModel->getMarkableChannels(sourceIndex);
+    if (pairs.size() == 1)
+        instance->readState()->markChannelAsRead(pairs.first().first, pairs.first().second);
+    else if (!pairs.isEmpty())
+        instance->readState()->markChannelsAsRead(pairs);
+}
+
+void MainWindow::recordLastViewedChannel(Snowflake accountId, Snowflake guildId, Snowflake channelId)
+{
+    lastViewedChannel.insert(guildChannelKey(accountId, guildId), channelId);
 }
 
 #ifndef ACHERON_NO_VOICE
@@ -928,6 +1291,17 @@ void MainWindow::activateChannel(const TabEntry &entry)
     }
     channelTree->viewport()->update();
 
+    if (channelListMode == ChannelListMode::Classic) {
+        if (entry.isDm) {
+            if (!(railSelectedIsHome && railSelectedAccountId == entry.accountId))
+                onRailAccountHomeSelected(entry.accountId);
+        } else if (entry.guildId.isValid()) {
+            if (railSelectedIsHome || railSelectedAccountId != entry.accountId ||
+                railSelectedGuildId != entry.guildId)
+                onRailGuildSelected(entry.accountId, entry.guildId);
+        }
+    }
+
     ClientInstance *instance = session->client(entry.accountId);
     if (!instance) {
         messageInput->setEnabled(false);
@@ -938,6 +1312,11 @@ void MainWindow::activateChannel(const TabEntry &entry)
         switchActiveInstance(instance);
 
     instance->readState()->setActiveChannel(entry.channelId);
+
+    if (!entry.isDm && entry.guildId.isValid())
+        recordLastViewedChannel(entry.accountId, entry.guildId, entry.channelId);
+    else if (entry.isDm)
+        recordLastViewedChannel(entry.accountId, Snowflake::Invalid, entry.channelId);
 
     Snowflake userId = instance->accountId();
 
@@ -1177,18 +1556,34 @@ void MainWindow::saveWindowState()
     QSet<QString> presentAccounts;
     captureTreeState(expanded, collapsed, collapsedCategories, presentAccounts);
 
-    settings.setValue("layout/tree/expanded",
-                      mergeTreeKeys(settings.value("layout/tree/expanded").toStringList(),
-                                    expanded,
-                                    presentAccounts));
-    settings.setValue("layout/tree/collapsed",
-                      mergeTreeKeys(settings.value("layout/tree/collapsed").toStringList(),
-                                    collapsed,
-                                    presentAccounts));
+    if (channelListMode == ChannelListMode::Tree) {
+        settings.setValue("layout/tree/expanded",
+                          mergeTreeKeys(settings.value("layout/tree/expanded").toStringList(),
+                                        expanded,
+                                        presentAccounts));
+        settings.setValue("layout/tree/collapsed",
+                          mergeTreeKeys(settings.value("layout/tree/collapsed").toStringList(),
+                                        collapsed,
+                                        presentAccounts));
+    }
     settings.setValue("layout/tree/collapsedCategories",
                       mergeTreeKeys(settings.value("layout/tree/collapsedCategories").toStringList(),
                                     collapsedCategories,
                                     presentAccounts));
+
+    settings.setValue("ui/channelListMode", channelListMode == ChannelListMode::Classic ? "classic" : "tree");
+    if (serverRailModel)
+        settings.setValue("ui/rail/expandedFolders", serverRailModel->expandedFolderKeys());
+
+    settings.remove("ui/rail/lastChannels");
+    settings.beginWriteArray("ui/rail/lastChannels");
+    int lastChannelIdx = 0;
+    for (auto it = lastViewedChannel.cbegin(); it != lastViewedChannel.cend(); ++it) {
+        settings.setArrayIndex(lastChannelIdx++);
+        settings.setValue("key", it.key());
+        settings.setValue("channel", static_cast<qulonglong>(it.value()));
+    }
+    settings.endArray();
 }
 
 void MainWindow::restoreWindowState()
@@ -1209,6 +1604,22 @@ void MainWindow::restoreWindowState()
     hasSavedTreeState = !savedExpandedNodes.isEmpty() ||
                         !savedCollapsedNodes.isEmpty() ||
                         !savedCollapsedCategories.isEmpty();
+
+    savedRailAccountId = Core::Snowflake(settings.value("ui/rail/lastAccountId").toULongLong());
+    savedRailGuildId = Core::Snowflake(settings.value("ui/rail/lastGuildId").toULongLong());
+    savedRailIsHome = settings.value("ui/rail/lastIsHome", true).toBool();
+    hasSavedRailSelection = settings.contains("ui/rail/lastAccountId");
+    if (serverRailModel)
+        serverRailModel->setExpandedFolderKeys(settings.value("ui/rail/expandedFolders").toStringList());
+
+    int lastChannelCount = settings.beginReadArray("ui/rail/lastChannels");
+    for (int i = 0; i < lastChannelCount; ++i) {
+        settings.setArrayIndex(i);
+        QString key = settings.value("key").toString();
+        if (!key.isEmpty())
+            lastViewedChannel.insert(key, Core::Snowflake(settings.value("channel").toULongLong()));
+    }
+    settings.endArray();
 
     QList<TabEntry> entries;
     int count = settings.beginReadArray("layout/tabs");
@@ -1269,8 +1680,12 @@ void MainWindow::openAccountsWindow()
 
 void MainWindow::openSettingsWindow()
 {
-    if (!settingsWindow)
+    if (!settingsWindow) {
         settingsWindow = new SettingsWindow();
+        connect(settingsWindow, &SettingsWindow::channelListModeChanged, this, [this](bool classic) {
+            setChannelListMode(classic ? ChannelListMode::Classic : ChannelListMode::Tree);
+        });
+    }
 
     settingsWindow->show();
     settingsWindow->raise();
@@ -1492,6 +1907,18 @@ void MainWindow::selectChannelInTree(Snowflake channelId)
                                                               currentInstance->accountId());
     if (!node)
         return;
+
+    if (channelListMode == ChannelListMode::Classic) {
+        Snowflake accountId = currentInstance->accountId();
+        if (node->type == ChannelNode::Type::DMChannel) {
+            onRailAccountHomeSelected(accountId);
+        } else {
+            ChannelNode *guild = ChannelTreeModel::findGuildNode(node);
+            if (guild)
+                onRailGuildSelected(accountId, guild->id);
+        }
+    }
+
     QModelIndex sourceIndex = channelTreeModel->indexForNode(node);
     if (!sourceIndex.isValid())
         return;

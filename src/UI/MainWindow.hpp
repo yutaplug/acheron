@@ -30,6 +30,8 @@ class AccountsWindow;
 class AccountsModel;
 class SettingsWindow;
 class ChannelTreeView;
+class ServerRailView;
+class ServerRailModel;
 struct ChannelNode;
 class TypingIndicator;
 class SlowModeIndicator;
@@ -79,6 +81,27 @@ private:
     void refreshGuildRoleData(Core::Snowflake guildId);
     void showUserContextMenu(Core::Snowflake userId, Core::Snowflake guildId, QPoint globalPos);
     void selectChannelInTree(Core::Snowflake channelId);
+
+public:
+    enum class ChannelListMode {
+        Tree,
+        Classic
+    };
+    void setChannelListMode(ChannelListMode mode);
+
+private:
+    QWidget *buildLeftSide();
+    void onRailAccountHomeSelected(Core::Snowflake accountId);
+    void onRailAccountHomeClicked(Core::Snowflake accountId);
+    void onRailGuildSelected(Core::Snowflake accountId, Core::Snowflake guildId);
+    void onRailGuildClicked(Core::Snowflake accountId, Core::Snowflake guildId);
+    void selectInitialRailItem();
+    void applyPendingRailSelection(Core::Snowflake accountId);
+    Core::Snowflake resolveRailChannel(Core::Snowflake accountId, Core::Snowflake guildId);
+    Core::Snowflake firstReadableChannel(Core::Snowflake accountId, Core::Snowflake guildId);
+    bool channelReadable(Core::Snowflake accountId, Core::Snowflake guildId, Core::Snowflake channelId);
+    void markIndexAsRead(Core::Snowflake accountId, const QModelIndex &sourceIndex);
+    void recordLastViewedChannel(Core::Snowflake accountId, Core::Snowflake guildId, Core::Snowflake channelId);
 #ifndef ACHERON_NO_VOICE
     void updateVoiceStatusLabel();
 #endif
@@ -93,6 +116,12 @@ private:
     ChannelTreeView *channelTree;
     ChannelTreeModel *channelTreeModel;
     ChannelFilterProxyModel *channelFilterProxy;
+
+    ChannelListMode channelListMode = ChannelListMode::Tree;
+    QWidget *leftSideWidget = nullptr;
+    ServerRailView *serverRail = nullptr;
+    ServerRailModel *serverRailModel = nullptr;
+    QLabel *guildHeaderLabel = nullptr;
 
     AccountsModel *accountsModel;
 
@@ -132,6 +161,18 @@ private:
     QSet<QString> savedExpandedNodes;
     QSet<QString> savedCollapsedNodes;
     QSet<QString> savedCollapsedCategories;
+
+    bool railHasSelection = false;
+    bool railSelectedIsHome = false;
+    Core::Snowflake railSelectedAccountId;
+    Core::Snowflake railSelectedGuildId;
+    // keyed "accountId:guildId"
+    QHash<QString, Core::Snowflake> lastViewedChannel;
+    // also gotta wait for READY here
+    bool hasSavedRailSelection = false;
+    bool savedRailIsHome = true;
+    Core::Snowflake savedRailAccountId;
+    Core::Snowflake savedRailGuildId;
 };
 
 } // namespace UI

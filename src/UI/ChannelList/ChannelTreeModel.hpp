@@ -38,6 +38,8 @@ public:
         UserLimitRole = Qt::UserRole + 9,
         IsVoiceMutedRole = Qt::UserRole + 10,
         IsVoiceDeafenedRole = Qt::UserRole + 11,
+        IconHashRole = Qt::UserRole + 12,
+        FolderColorRole = Qt::UserRole + 13,
     };
 
     QModelIndex index(int row, int column, const QModelIndex &parentIndex) const override;
@@ -53,6 +55,7 @@ public:
     void populateFromReady(const Discord::Ready &ready);
 
     static ChannelNode *getAccountNodeFor(ChannelNode *node);
+    static ChannelNode *findGuildNode(ChannelNode *node);
 
     ChannelNode *nodeFromIndex(const QModelIndex &index) const;
     void addChannel(const Discord::ChannelCreate &event, Snowflake accountId);
@@ -73,6 +76,10 @@ public:
     ChannelNode *findChannelTreeNode(Snowflake channelId, Snowflake accountId);
     QModelIndex indexForNode(ChannelNode *node) const;
 
+    QModelIndex serverIndex(Snowflake accountId, Snowflake guildId);
+    QModelIndex folderIndex(Snowflake accountId, Snowflake folderId);
+    QModelIndex dmHeaderIndex(Snowflake accountId);
+
 private:
     void initChannelReadStates(ChannelNode *node, Core::ClientInstance *instance);
     void updateChildrenReadState(ChannelNode *node, Snowflake guildId,
@@ -85,7 +92,6 @@ private:
     void updateNodeAggregates(ChannelNode *node);
     std::unique_ptr<ChannelNode> createGuildNode(const Discord::GatewayGuild &guild);
     ChannelNode *findChannelTreeNode(Snowflake channelId, ChannelNode *root);
-    ChannelNode *findGuildNode(ChannelNode *node);
     ChannelNode *findGuildNodeById(Snowflake guildId, ChannelNode *accountNode);
     ChannelNode *findCategoryNode(Snowflake categoryId, ChannelNode *guildNode);
     void emitDataChangedRecursive(const QModelIndex &index);

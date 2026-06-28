@@ -34,6 +34,7 @@ struct ChannelNode
     bool isMuted = false;
     bool collapsed = false;
     Core::Snowflake parentId;
+    Core::Snowflake rulesChannelId;
     QString TEMP_iconHash;
     std::optional<QString> folderName;
     std::optional<uint64_t> folderColor;

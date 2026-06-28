@@ -469,7 +469,7 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     }
 
     // mention badge for channels, servers
-    if (node->type != ChannelNode::Type::Category && node->mentionCount > 0 && !node->isMuted)
+    if (node->type != ChannelNode::Type::Category && node->type != ChannelNode::Type::DMHeader && node->mentionCount > 0)
         drawMentionBadge(painter, contentOpt, node->mentionCount);
 
     painter->restore();

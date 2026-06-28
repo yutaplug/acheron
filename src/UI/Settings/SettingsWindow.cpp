@@ -30,7 +30,10 @@ void SettingsWindow::setupUi()
     };
 
     addPage(tr("General"), new GeneralPage(this));
-    addPage(tr("Appearance"), new AppearancePage(this));
+
+    auto *appearance = new AppearancePage(this);
+    addPage(tr("Appearance"), appearance);
+    connect(appearance, &AppearancePage::channelListModeChanged, this, &SettingsWindow::channelListModeChanged);
 
     categoryList->setCurrentRow(0);
 

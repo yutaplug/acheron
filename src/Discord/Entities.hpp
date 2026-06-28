@@ -205,6 +205,7 @@ struct Guild : Core::JsonUtils::JsonObject
     Field<Core::Snowflake> ownerId;
     Field<QList<Role>, true> roles;
     Field<PremiumTier, true> premiumTier;
+    Field<Core::Snowflake, false, true> rulesChannelId;
 
     static Guild fromJson(const QJsonObject &obj)
     {
@@ -215,6 +216,7 @@ struct Guild : Core::JsonUtils::JsonObject
         get(obj, "owner_id", guild.ownerId);
         get(obj, "roles", guild.roles);
         get(obj, "premium_tier", guild.premiumTier);
+        get(obj, "rules_channel_id", guild.rulesChannelId);
         return guild;
     }
 };

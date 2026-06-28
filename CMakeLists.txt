@@ -131,6 +131,9 @@ set(PROJECT_SOURCES
     src/UI/ChannelList/ChannelTreeModel.cpp
     src/UI/ChannelList/ChannelFilterProxyModel.cpp
     src/UI/ChannelList/ChannelTreeView.cpp
+    src/UI/ChannelList/ServerRailModel.cpp
+    src/UI/ChannelList/ServerRailDelegate.cpp
+    src/UI/ChannelList/ServerRailView.cpp
     src/UI/TabBar/TabBar.cpp
     src/UI/Chat/ChatModel.cpp
     src/UI/Chat/ChatDelegate.cpp

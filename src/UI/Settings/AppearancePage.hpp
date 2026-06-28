@@ -20,6 +20,9 @@ class AppearancePage : public QWidget
 public:
     explicit AppearancePage(QWidget *parent = nullptr);
 
+signals:
+    void channelListModeChanged(bool classic);
+
 private:
     void rebuildSwatches();
     void refreshFontControls();

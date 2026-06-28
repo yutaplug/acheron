@@ -11,6 +11,9 @@ class SettingsWindow : public QWidget
 public:
     explicit SettingsWindow(QWidget *parent = nullptr);
 
+signals:
+    void channelListModeChanged(bool classic);
+
 private:
     void setupUi();
 

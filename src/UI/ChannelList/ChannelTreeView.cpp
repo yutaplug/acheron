@@ -43,7 +43,7 @@ void ChannelTreeView::performDefaultExpansion()
                 walk(idx);
         }
     };
-    walk({});
+    walk(rootIndex());
 }
 
 void ChannelTreeView::mousePressEvent(QMouseEvent *event)
@@ -110,6 +110,7 @@ void ChannelTreeView::contextMenuEvent(QContextMenuEvent *event)
         return;
 
     bool isUnread = sourceIndex.data(ChannelTreeModel::IsUnreadRole).toBool();
+    int mentionCount = sourceIndex.data(ChannelTreeModel::MentionCountRole).toInt();
     bool isChannel = (nodeType == ChannelNode::Type::Channel ||
                       nodeType == ChannelNode::Type::DMChannel);
     bool isVoiceChannel = (nodeType == ChannelNode::Type::VoiceChannel);
@@ -154,7 +155,7 @@ void ChannelTreeView::contextMenuEvent(QContextMenuEvent *event)
     }
 
     QAction *markReadAction = menu.addAction(tr("Mark As Read"));
-    markReadAction->setEnabled(isUnread);
+    markReadAction->setEnabled(isUnread || mentionCount > 0);
 
     connect(markReadAction, &QAction::triggered, this, [this, proxyIndex]() {
         emit markAsReadRequested(proxyIndex);

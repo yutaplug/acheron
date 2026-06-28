@@ -17,6 +17,7 @@
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QScrollArea>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QToolButton>
@@ -78,6 +79,23 @@ AppearancePage::AppearancePage(QWidget *parent)
     genLayout->addStretch(1);
 
     outer->addWidget(genGroup);
+
+    auto *layoutGroup = new QGroupBox(tr("Channel list"), this);
+    auto *layoutGroupLayout = new QHBoxLayout(layoutGroup);
+    layoutGroupLayout->addWidget(new QLabel(tr("Style:"), layoutGroup));
+    auto *channelListCombo = new QComboBox(layoutGroup);
+    channelListCombo->addItem(tr("Tree")); // 0
+    channelListCombo->addItem(tr("Classic")); // 1
+    channelListCombo->setCurrentIndex(QSettings().value("ui/channelListMode").toString() == "classic" ? 1 : 0);
+    layoutGroupLayout->addWidget(channelListCombo, 1);
+    outer->addWidget(layoutGroup);
+
+    connect(channelListCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this](int index) {
+                bool classic = index == 1;
+                QSettings().setValue("ui/channelListMode", classic ? "classic" : "tree");
+                emit channelListModeChanged(classic);
+            });
 
     connect(seedSwatch, &QPushButton::clicked, this, [this]() {
         const QColor picked = QColorDialog::getColor(seedColor, this, tr("Base color"));
