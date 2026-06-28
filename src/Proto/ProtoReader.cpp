@@ -38,16 +38,16 @@ bool ProtoReader::readVarint(uint64_t &value)
     uint8_t byte;
 
     do {
+        if (shift >= 64) {
+            qCWarning(LogProto) << "Varint overflow";
+            return false;
+        }
+
         if (!readByte(byte))
             return false;
 
         value |= static_cast<uint64_t>(byte & 0x7F) << shift;
         shift += 7;
-
-        if (shift > 63) {
-            qCWarning(LogProto) << "Varint overflow";
-            return false;
-        }
     } while (byte & 0x80);
 
     return true;
