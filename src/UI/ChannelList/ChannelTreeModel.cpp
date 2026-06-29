@@ -434,6 +434,7 @@ std::unique_ptr<ChannelNode> ChannelTreeModel::createGuildNode(const Discord::Ga
     guildNode->name = guild.properties->name;
     guildNode->type = ChannelNode::Type::Server;
     guildNode->TEMP_iconHash = guild.properties->icon;
+    guildNode->unavailable = guild.unavailable.hasValue() && guild.unavailable.get();
     if (guild.properties->rulesChannelId.hasValue() && guild.properties->rulesChannelId->isValid())
         guildNode->rulesChannelId = guild.properties->rulesChannelId.get();
 
@@ -672,10 +673,21 @@ void ChannelTreeModel::addGuild(const Discord::GatewayGuild &guild, Snowflake ac
         recomputeSubtreeAggregates(guildPtr);
     }
 
-    // handle an unavailable guild coming back
+    // handle a (potentially) unavailable guild coming back
     if (ChannelNode *existing = findGuildNodeById(guildId, accNode)) {
-        ChannelNode *parentNode = existing->parent;
         QModelIndex existingIdx = indexForNode(existing);
+
+        if (!existing->unavailable) {
+            existing->name = guildPtr->name;
+            existing->TEMP_iconHash = guildPtr->TEMP_iconHash;
+            if (guildPtr->rulesChannelId.isValid())
+                existing->rulesChannelId = guildPtr->rulesChannelId;
+            if (existingIdx.isValid())
+                emit dataChanged(existingIdx, existingIdx);
+            return;
+        }
+
+        ChannelNode *parentNode = existing->parent;
         if (!parentNode || !existingIdx.isValid())
             return;
 

@@ -264,6 +264,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
     Field<QList<Role>, true> roles;
     Field<QList<Member>, true> members;
     Field<QDateTime, true> joinedAt;
+    Field<bool, true> unavailable;
 
     static GatewayGuild fromJson(const QJsonObject &obj)
     {
@@ -273,6 +274,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
         get(obj, "roles", guild.roles);
         get(obj, "members", guild.members);
         get(obj, "joined_at", guild.joinedAt);
+        get(obj, "unavailable", guild.unavailable);
         return guild;
     }
 

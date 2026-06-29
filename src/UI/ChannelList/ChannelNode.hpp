@@ -34,6 +34,7 @@ struct ChannelNode
     bool isMuted = false;
     bool countsForGuildUnread = false;
     bool collapsed = false;
+    bool unavailable = false;
     Core::Snowflake parentId;
     Core::Snowflake rulesChannelId;
     QString TEMP_iconHash;
