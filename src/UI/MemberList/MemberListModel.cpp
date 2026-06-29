@@ -18,7 +18,7 @@ void MemberListModel::setManager(Core::MemberListManager *newManager)
     beginResetModel();
     disconnectManager();
     manager = newManager;
-    pendingAvatars.clear();
+    avatarTracker.clear();
     connectManager();
     endResetModel();
 }
@@ -84,10 +84,7 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const
             return imageManager->get(url, AvatarRequestSize);
 
         imageManager->get(url, AvatarRequestSize);
-        if (!pendingAvatars.contains(url))
-            pendingAvatars[url] = {};
-        if (!pendingAvatars[url].contains(row))
-            pendingAvatars[url].append(row);
+        avatarTracker.track(url, index);
 
         return QVariant();
     }
@@ -119,7 +116,7 @@ void MemberListModel::onListAboutToReset()
 
 void MemberListModel::onListReset()
 {
-    pendingAvatars.clear();
+    avatarTracker.clear();
     endResetModel();
 }
 
@@ -128,19 +125,10 @@ void MemberListModel::onImageFetched(const QUrl &url, const QSize &size, const Q
     Q_UNUSED(size);
     Q_UNUSED(pixmap);
 
-    auto it = pendingAvatars.find(url);
-    if (it == pendingAvatars.end())
-        return;
-
-    const QList<int> rows = it.value();
-    pendingAvatars.erase(it);
-
-    for (int row : rows) {
-        if (row < rowCount()) {
-            QModelIndex idx = createIndex(row, 0);
-            emit dataChanged(idx, idx);
-        }
-    }
+    avatarTracker.notify(url, [this](const QModelIndex &index) {
+        if (index.isValid())
+            emit dataChanged(index, index);
+    });
 }
 
 void MemberListModel::connectManager()

@@ -717,7 +717,7 @@ void VoiceWindow::setImageManager(Core::ImageManager *manager)
         QObject::disconnect(imageFetchedConn);
 
     imageManager = manager;
-    pendingAvatars.clear();
+    avatarTracker.clear();
 
     if (imageManager) {
         imageFetchedConn = connect(imageManager, &Core::ImageManager::imageFetched,
@@ -764,7 +764,7 @@ void VoiceWindow::disconnectManager()
 
     qDeleteAll(userWidgets);
     userWidgets.clear();
-    pendingAvatars.clear();
+    avatarTracker.clear();
     privacyCodeBtn->hide();
 }
 
@@ -855,7 +855,7 @@ void VoiceWindow::onParticipantsCleared()
 {
     qDeleteAll(userWidgets);
     userWidgets.clear();
-    pendingAvatars.clear();
+    avatarTracker.clear();
 }
 
 void VoiceWindow::onImageFetched(const QUrl &url, const QSize &size, const QPixmap &pixmap)
@@ -863,16 +863,11 @@ void VoiceWindow::onImageFetched(const QUrl &url, const QSize &size, const QPixm
     if (size != AVATAR_REQUEST_SIZE)
         return;
 
-    auto it = pendingAvatars.find(url);
-    if (it == pendingAvatars.end())
-        return;
-
-    Core::Snowflake userId = it.value();
-    pendingAvatars.erase(it);
-
-    auto widgetIt = userWidgets.constFind(userId);
-    if (widgetIt != userWidgets.constEnd())
-        widgetIt.value()->setAvatar(pixmap);
+    avatarTracker.notify(url, [this, &pixmap](Core::Snowflake userId) {
+        auto widgetIt = userWidgets.constFind(userId);
+        if (widgetIt != userWidgets.constEnd())
+            widgetIt.value()->setAvatar(pixmap);
+    });
 }
 
 static QDialog *createCodeDialog(QWidget *parent, const QString &title,
@@ -988,11 +983,8 @@ void VoiceWindow::requestAvatar(Core::Snowflake userId, VoiceUserWidget *widget)
     if (!url.isValid())
         return;
 
-    QPixmap pm = imageManager->get(url, AVATAR_REQUEST_SIZE);
+    QPixmap pm = avatarTracker.fetch(imageManager, url, AVATAR_REQUEST_SIZE, userId);
     widget->setAvatar(pm);
-
-    if (!imageManager->isCached(url, AVATAR_REQUEST_SIZE))
-        pendingAvatars.insert(url, userId);
 }
 
 } // namespace UI

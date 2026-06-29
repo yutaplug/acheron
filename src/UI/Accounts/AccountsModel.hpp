@@ -3,6 +3,7 @@
 #include <QAbstractListModel>
 #include <QVector>
 #include "Core/AccountInfo.hpp"
+#include "UI/AvatarRequestTracker.hpp"
 
 namespace Acheron {
 
@@ -44,7 +45,7 @@ private:
     Core::Session *session;
 
     QVector<Core::AccountInfo> accounts;
-    mutable QMultiHash<QUrl, QPersistentModelIndex> pendingRequests;
+    mutable AvatarRequestTracker<QPersistentModelIndex> avatarTracker;
 };
 
 } // namespace UI

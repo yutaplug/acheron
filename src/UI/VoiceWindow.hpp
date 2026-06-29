@@ -17,6 +17,7 @@
 #include <functional>
 
 #include "Core/Snowflake.hpp"
+#include "UI/AvatarRequestTracker.hpp"
 
 namespace Acheron {
 namespace Core {
@@ -156,7 +157,7 @@ private:
     QMetaObject::Connection imageFetchedConn;
     NameResolver nameResolver;
     AvatarResolver avatarResolver;
-    QHash<QUrl, Core::Snowflake> pendingAvatars;
+    AvatarRequestTracker<Core::Snowflake> avatarTracker;
 
     QScrollArea *userScrollArea;
     QWidget *userListContainer;

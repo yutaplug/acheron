@@ -7,9 +7,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLocale>
 #include <QPointer>
-#include <QTimeZone>
 #include <QTimer>
 
 #ifdef _WIN32
@@ -34,13 +32,6 @@ namespace Discord {
 
 static constexpr const char *gatewayUrl = "wss://remote-auth-gateway.discord.gg/?v=2";
 static constexpr const char *loginUrl = "https://discord.com/api/v9/users/@me/remote-auth/login";
-
-static size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
-{
-    size_t bytes = size * nmemb;
-    static_cast<QByteArray *>(userdata)->append(ptr, static_cast<int>(bytes));
-    return bytes;
-}
 
 RemoteAuthClient::RemoteAuthClient(CaptchaResolver *captchaResolver, QObject *parent)
     : QObject(parent), captchaResolver(captchaResolver)
@@ -166,17 +157,10 @@ void RemoteAuthClient::networkLoop()
         return;
     }
 
-    QString certPath = CurlUtils::getCertificatePath();
-    if (!certPath.isEmpty())
-        curl_easy_setopt(curl, CURLOPT_CAINFO, certPath.toUtf8().constData());
-
     curl_easy_setopt(curl, CURLOPT_URL, gatewayUrl);
     curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
-#ifdef IS_CURL_IMPERSONATE
-    curl_easy_impersonate(curl, CurlUtils::getImpersonateTarget().toUtf8().constData(), 1);
-#endif
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, CurlUtils::getUserAgent().toUtf8().constData());
+    CurlUtils::applyCommonOptions(curl);
 
     curl_slist *headers = curl_slist_append(nullptr, "Origin: https://discord.com");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -207,18 +191,7 @@ void RemoteAuthClient::networkLoop()
         }
 
         if (res == CURLE_AGAIN || (res == CURLE_OK && !meta)) {
-            curl_socket_t sockfd = CURL_SOCKET_BAD;
-            {
-                std::lock_guard lock(curlMutex);
-                curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
-            }
-            if (sockfd != CURL_SOCKET_BAD) {
-                timeval timeout{ 0, 10'000 };
-                fd_set readfds;
-                FD_ZERO(&readfds);
-                FD_SET(sockfd, &readfds);
-                select(static_cast<int>(sockfd) + 1, &readfds, nullptr, nullptr, &timeout);
-            }
+            CurlUtils::wsRecvWait(curl, curlMutex);
             continue;
         }
 
@@ -295,36 +268,7 @@ void RemoteAuthClient::heartbeatLoop()
 void RemoteAuthClient::send(const QJsonObject &obj)
 {
     QByteArray data = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-
-    std::lock_guard lock(curlMutex);
-    if (!curl)
-        return;
-
-    const char *payload = data.constData();
-    size_t total = data.size();
-    size_t sentTotal = 0;
-
-    while (sentTotal < total) {
-        size_t sentNow = 0;
-        CURLcode res = curl_ws_send(curl, payload + sentTotal, total - sentTotal, &sentNow, 0,
-                                    CURLWS_TEXT);
-        if (res == CURLE_OK) {
-            sentTotal += sentNow;
-        } else if (res == CURLE_AGAIN) {
-            curl_socket_t sockfd = CURL_SOCKET_BAD;
-            curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
-            if (sockfd != CURL_SOCKET_BAD) {
-                timeval timeout{ 0, 100'000 };
-                fd_set writefds;
-                FD_ZERO(&writefds);
-                FD_SET(sockfd, &writefds);
-                select(static_cast<int>(sockfd) + 1, nullptr, &writefds, nullptr, &timeout);
-            }
-        } else {
-            qCWarning(LogDiscord) << "Remote auth send error:" << curl_easy_strerror(res);
-            break;
-        }
-    }
+    CurlUtils::wsSend(curl, curlMutex, data.constData(), data.size(), CURLWS_TEXT, "remote auth");
 }
 
 void RemoteAuthClient::handleMessage(const QString &text)
@@ -458,37 +402,15 @@ void RemoteAuthClient::postLogin(const QString &ticket, std::optional<CaptchaSol
         bool ok = false;
 
         if (curl) {
-            QString certPath = CurlUtils::getCertificatePath();
-            if (!certPath.isEmpty())
-                curl_easy_setopt(curl, CURLOPT_CAINFO, certPath.toUtf8().constData());
-
-#ifdef IS_CURL_IMPERSONATE
-            curl_easy_impersonate(curl, CurlUtils::getImpersonateTarget().toUtf8().constData(), 1);
-#endif
-            curl_easy_setopt(curl, CURLOPT_USERAGENT,
-                             CurlUtils::getUserAgent().toUtf8().constData());
+            CurlUtils::applyCommonOptions(curl);
 
             curl_slist *headers = nullptr;
             headers = curl_slist_append(headers, "Content-Type: application/json");
 
-            static QString tz = QString::fromUtf8(QTimeZone::systemTimeZoneId());
-            static QString locale = QLocale::system().name();
             // todo: this probably isnt a perfect mimicry of the real client
-            ClientPropertiesBuildParams params;
-            params.clientAppState = "focused";
-            params.includeClientHeartbeatSessionId = true;
             ClientIdentity identity;
-            QString superProperties = QJsonDocument(identity.buildClientProperties(params).toJson())
-                                              .toJson(QJsonDocument::Compact)
-                                              .toBase64();
-            // clang-format off
-            curl_slist_append(headers, ("X-Discord-Timezone: " + tz).toUtf8().constData());
-            curl_slist_append(headers, ("X-Discord-Locale: " + locale).toUtf8().constData());
-            curl_slist_append(headers, ("X-Super-Properties: " + superProperties).toUtf8().constData());
-            curl_slist_append(headers, "X-Debug-Options: bugReporterEnabled");
-            curl_slist_append(headers, "Referer: https://discord.com/login");
-            curl_slist_append(headers, "Origin: https://discord.com");
-            // clang-format on
+            CurlUtils::appendDiscordHeaders(&headers, identity, "https://discord.com/login");
+            headers = curl_slist_append(headers, "Origin: https://discord.com");
 
             if (solution)
                 appendCaptchaHeaders(headers, *solution);
@@ -500,7 +422,7 @@ void RemoteAuthClient::postLogin(const QString &ticket, std::optional<CaptchaSol
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
             curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
             curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlUtils::writeToByteArray);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
             CURLcode res = curl_easy_perform(curl);

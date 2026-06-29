@@ -5,6 +5,7 @@
 #include <QTextDocument>
 #include "Core/Session.hpp"
 #include "Core/MessageManager.hpp"
+#include "UI/AvatarRequestTracker.hpp"
 
 using Acheron::Core::ClientInstance;
 
@@ -259,7 +260,7 @@ private:
     DisplayNameResolver displayNameResolver;
     RoleColorResolver roleColorResolver;
 
-    mutable QMultiMap<QUrl, QPersistentModelIndex> pendingRequests;
+    mutable AvatarRequestTracker<QPersistentModelIndex> avatarTracker;
     QSet<QString> pendingNonces;
     QSet<QString> erroredNonces;
     QHash<QString, QVector<QPair<qint64, qint64>>> uploadProgress; // by nonce

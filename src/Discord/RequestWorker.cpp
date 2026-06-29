@@ -6,8 +6,6 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLocale>
-#include <QTimeZone>
 
 #include <utility>
 
@@ -15,14 +13,6 @@
 
 namespace Acheron {
 namespace Discord {
-
-static size_t writeCallback(void *contents, size_t size, size_t nmemb, void *userp)
-{
-    size_t realsize = size * nmemb;
-    QByteArray *data = static_cast<QByteArray *>(userp);
-    data->append(static_cast<const char *>(contents), realsize);
-    return realsize;
-}
 
 static size_t readCallback(char *buffer, size_t size, size_t nitems, void *userp)
 {
@@ -195,14 +185,7 @@ CURL *RequestWorker::buildEasyHandle(TransferContext *ctx)
         }
     }
 
-    static const QString certPath = CurlUtils::getCertificatePath();
-    if (!certPath.isEmpty())
-        curl_easy_setopt(curl, CURLOPT_CAINFO, certPath.toUtf8().constData());
-
-#ifdef IS_CURL_IMPERSONATE
-    curl_easy_impersonate(curl, CurlUtils::getImpersonateTarget().toUtf8().constData(), 1);
-#endif
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, CurlUtils::getUserAgent().toUtf8().constData());
+    CurlUtils::applyCommonOptions(curl);
 
     curl_easy_setopt(curl, CURLOPT_COOKIEFILE, ""); // engine
     curl_easy_setopt(curl, CURLOPT_SHARE, share);
@@ -219,22 +202,7 @@ CURL *RequestWorker::buildEasyHandle(TransferContext *ctx)
         if (!desc.multipart)
             headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        static QString tz = QString::fromUtf8(QTimeZone::systemTimeZoneId());
-        static QString locale = QLocale::system().name();
-        ClientPropertiesBuildParams params;
-        params.clientAppState = "focused";
-        params.includeClientHeartbeatSessionId = true;
-        ClientProperties props = identity.buildClientProperties(params);
-        QString superProperties =
-                QJsonDocument(props.toJson()).toJson(QJsonDocument::Compact).toBase64();
-        // clang-format off
-        curl_slist_append(headers, ("X-Discord-Timezone: " + tz).toUtf8().constData());
-        curl_slist_append(headers, ("X-Discord-Locale: " + locale).toUtf8().constData());
-        curl_slist_append(headers, ("X-Super-Properties: " + superProperties).toUtf8().constData());
-        curl_slist_append(headers, "X-Debug-Options: bugReporterEnabled");
-        // there is more logic with referer but not super important
-        curl_slist_append(headers, "Referer: https://discord.com/channels/@me");
-        // clang-format on
+        CurlUtils::appendDiscordHeaders(&headers, identity, "https://discord.com/channels/@me");
 
         if (desc.solution)
             appendCaptchaHeaders(headers, *desc.solution);
@@ -247,7 +215,7 @@ CURL *RequestWorker::buildEasyHandle(TransferContext *ctx)
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     // otherwise body is compressed for some reason
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlUtils::writeToByteArray);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx->response.body);
 
     if (desc.multipart) {

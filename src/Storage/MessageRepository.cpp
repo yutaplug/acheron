@@ -67,10 +67,7 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
             qMsg.bindValue(":ref_msg_id", QVariant());
         }
 
-        if (!qMsg.exec()) {
-            qCWarning(LogDB) << "MessageRepository: Save messages failed:"
-                             << qMsg.lastError().text();
-        }
+        execLogged(qMsg, "MessageRepository: Save messages");
 
         userRepository.saveUser(message.author.get(), db);
 
@@ -83,14 +80,10 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
                 qAtt.bindValue(":size", static_cast<qint64>(att.size.get()));
                 qAtt.bindValue(":url", att.url);
                 qAtt.bindValue(":proxy_url", att.proxyUrl);
-                qAtt.bindValue(":width", att.width.hasValue() ? QVariant(*att.width) : QVariant());
-                qAtt.bindValue(":height",
-                               att.height.hasValue() ? QVariant(*att.height) : QVariant());
+                bindOptional(qAtt, ":width", att.width);
+                bindOptional(qAtt, ":height", att.height);
 
-                if (!qAtt.exec()) {
-                    qCWarning(LogDB) << "MessageRepository: Save attachment failed:"
-                                     << qAtt.lastError().text();
-                }
+                execLogged(qAtt, "MessageRepository: Save attachment");
             }
         }
     }
@@ -116,10 +109,7 @@ void MessageRepository::saveMessages(const QList<Discord::Message> &messages, QS
             qRef.bindValue(":flags", static_cast<qint64>(ref.flags.get()));
             qRef.bindValue(":embeds", ref.embedsJson.isEmpty() ? QVariant() : ref.embedsJson);
 
-            if (!qRef.exec()) {
-                qCWarning(LogDB) << "MessageRepository: Save referenced message failed:"
-                                 << qRef.lastError().text();
-            }
+            execLogged(qRef, "MessageRepository: Save referenced message");
 
             userRepository.saveUser(ref.author.get(), db);
         }
@@ -137,8 +127,7 @@ void MessageRepository::markMessageDeleted(Core::Snowflake messageId)
     )");
     q.bindValue(":id", static_cast<qint64>(messageId));
 
-    if (!q.exec())
-        qCWarning(LogDB) << "MessageRepository: Mark message deleted failed:" << q.lastError().text();
+    execLogged(q, "MessageRepository: Mark message deleted");
 }
 
 void MessageRepository::updateMessageContent(const Discord::Message &message)
@@ -156,8 +145,7 @@ void MessageRepository::updateMessageContent(const Discord::Message &message)
     q.bindValue(":flags", static_cast<qint64>(message.flags.get()));
     q.bindValue(":id", static_cast<qint64>(message.id.get()));
 
-    if (!q.exec())
-        qCWarning(LogDB) << "MessageRepository: Update message content failed:" << q.lastError().text();
+    execLogged(q, "MessageRepository: Update message content");
 }
 
 void MessageRepository::updateReactionsJson(Core::Snowflake messageId, const QString &reactionsJson)
@@ -170,8 +158,7 @@ void MessageRepository::updateReactionsJson(Core::Snowflake messageId, const QSt
     q.bindValue(":reactions", reactionsJson.isEmpty() ? QVariant() : reactionsJson);
     q.bindValue(":id", static_cast<qint64>(messageId));
 
-    if (!q.exec())
-        qCWarning(LogDB) << "MessageRepository: Update reactions failed:" << q.lastError().text();
+    execLogged(q, "MessageRepository: Update reactions");
 }
 
 QString MessageRepository::getReactionsJson(Core::Snowflake messageId)
@@ -213,10 +200,8 @@ QList<Discord::Message> MessageRepository::getLatestMessages(Core::Snowflake cha
     q.bindValue(":channel_id", static_cast<qint64>(channelId));
     q.bindValue(":limit", limit);
 
-    if (!q.exec()) {
-        qCWarning(LogDB) << "MessageRepository: Get messages failed:" << q.lastError().text();
+    if (!execLogged(q, "MessageRepository: Get messages"))
         return messages;
-    }
 
     while (q.next()) {
         Discord::Message message = readMessageFromQuery(q);
@@ -254,10 +239,8 @@ QList<Discord::Message> MessageRepository::getMessagesBefore(Core::Snowflake cha
     q.bindValue(":before_id", static_cast<qint64>(beforeId));
     q.bindValue(":limit", limit);
 
-    if (!q.exec()) {
-        qCWarning(LogDB) << "MessageRepository: Get messages failed:" << q.lastError().text();
+    if (!execLogged(q, "MessageRepository: Get messages"))
         return messages;
-    }
 
     while (q.next()) {
         Discord::Message message = readMessageFromQuery(q);

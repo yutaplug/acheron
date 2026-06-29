@@ -4,6 +4,7 @@
 
 #include "Core/MemberListManager.hpp"
 #include "Core/ImageManager.hpp"
+#include "UI/AvatarRequestTracker.hpp"
 
 namespace Acheron {
 namespace UI {
@@ -42,7 +43,7 @@ private:
     Core::MemberListManager *manager = nullptr;
     Core::ImageManager *imageManager;
 
-    mutable QHash<QUrl, QList<int>> pendingAvatars;
+    mutable AvatarRequestTracker<QPersistentModelIndex> avatarTracker;
 };
 
 } // namespace UI

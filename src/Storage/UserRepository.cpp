@@ -28,13 +28,11 @@ void UserRepository::saveUser(const Discord::User &user, QSqlDatabase &db)
 
     q.bindValue(":id", static_cast<qint64>(user.id.get()));
     q.bindValue(":username", user.username);
-    q.bindValue(":global_name", user.globalName.hasValue() ? user.globalName.get() : QVariant());
-    q.bindValue(":avatar", user.avatar.hasValue() ? user.avatar.get() : QVariant());
-    q.bindValue(":bot", user.bot.hasValue() ? static_cast<int>(user.bot.get()) : QVariant());
+    bindOptional(q, ":global_name", user.globalName);
+    bindOptional(q, ":avatar", user.avatar);
+    bindOptional(q, ":bot", user.bot);
 
-    if (!q.exec()) {
-        qCWarning(LogDB) << "UserRepository: Save user failed:" << q.lastError().text();
-    }
+    execLogged(q, "UserRepository: Save user");
 }
 
 void UserRepository::saveUsers(const QList<Discord::User> &users)

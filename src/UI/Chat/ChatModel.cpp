@@ -67,11 +67,10 @@ ChatModel::ChatModel(Core::ImageManager *imageManager, QObject *parent)
     connect(imageManager, &Core::ImageManager::imageFetched, this,
             [this](const QUrl &url, const QSize &size, const QPixmap &pixmap) {
                 // avatar pending requests
-                auto values = pendingRequests.values(url);
-                for (const auto &index : values) {
+                avatarTracker.notify(url, [this](const QModelIndex &index) {
                     if (index.isValid())
                         emit dataChanged(index, index, { Qt::DecorationRole });
-                }
+                });
 
                 // custom emoji in message content and embed text
                 if (url.host() == u"cdn.discordapp.com" && url.path().startsWith(u"/emojis/")) {
@@ -221,24 +220,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
             return imageManager->placeholder(desiredSize);
 
         QUrl url = avatarUrlResolver(msg.author.get());
-        QPixmap pixmap = imageManager->get(url, desiredSize, Core::PinGroup::ChatView);
-
-        if (!imageManager->isCached(url, desiredSize)) {
-            bool alreadyWaiting = false;
-            auto it = pendingRequests.constFind(url);
-            while (it != pendingRequests.cend() && it.key() == url) {
-                if (it.value() == index) {
-                    alreadyWaiting = true;
-                    break;
-                }
-                it++;
-            }
-
-            if (!alreadyWaiting)
-                pendingRequests.insert(url, QPersistentModelIndex(index));
-        }
-
-        return pixmap;
+        return avatarTracker.fetch(imageManager, url, desiredSize, index, Core::PinGroup::ChatView);
     }
     case TimestampRole:
         return msg.timestamp;

@@ -55,26 +55,20 @@ void MemberRepository::saveMember(Core::Snowflake guildId, Core::Snowflake userI
                 :deaf, :mute, :flags, :pending, :communication_disabled_until)
     )");
 
-    // clang-format off
     q.bindValue(":user_id", static_cast<qint64>(userId));
     q.bindValue(":guild_id", static_cast<qint64>(guildId));
-    q.bindValue(":nick", member.nick.hasValue() ? member.nick.get() : QVariant());
-    q.bindValue(":avatar", member.avatar.hasValue() ? member.avatar.get() : QVariant());
+    bindOptional(q, ":nick", member.nick);
+    bindOptional(q, ":avatar", member.avatar);
     q.bindValue(":roles", member.roles.hasValue() ? rolesToJson(member.roles.get()) : QVariant());
-    q.bindValue(":joined_at", member.joinedAt.hasValue() ? member.joinedAt.get() : QVariant());
-    q.bindValue(":premium_since", member.premiumSince.hasValue() ? member.premiumSince.get() : QVariant());
-    q.bindValue(":deaf", member.deaf.hasValue() ? static_cast<int>(member.deaf.get()) : QVariant());
-    q.bindValue(":mute", member.mute.hasValue() ? static_cast<int>(member.mute.get()) : QVariant());
-    q.bindValue(":flags", member.flags.hasValue() ? member.flags.get() : QVariant());
-    q.bindValue(":pending", member.pending.hasValue() ? static_cast<int>(member.pending.get()) : QVariant());
-    q.bindValue(":communication_disabled_until", member.communicationDisabledUntil.hasValue()
-                                                         ? member.communicationDisabledUntil.get()
-                                                         : QVariant());
-    // clang-format on
+    bindOptional(q, ":joined_at", member.joinedAt);
+    bindOptional(q, ":premium_since", member.premiumSince);
+    bindOptional(q, ":deaf", member.deaf);
+    bindOptional(q, ":mute", member.mute);
+    bindOptional(q, ":flags", member.flags);
+    bindOptional(q, ":pending", member.pending);
+    bindOptional(q, ":communication_disabled_until", member.communicationDisabledUntil);
 
-    if (!q.exec()) {
-        qCWarning(LogDB) << "MemberRepository: Save member failed:" << q.lastError().text();
-    }
+    execLogged(q, "MemberRepository: Save member");
 }
 
 void MemberRepository::saveMembers(Core::Snowflake guildId, const QList<Discord::Member> &members)

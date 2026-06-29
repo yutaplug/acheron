@@ -104,36 +104,7 @@ void VoiceGateway::sendBinaryPayload(int opcode, const QByteArray &data)
 
     qCDebug(LogVoice) << "Voice binary >>> opcode =" << opcode << "size =" << data.size();
 
-    std::lock_guard lock(curlMutex);
-    if (!curl)
-        return;
-
-    const char *payload = frame.constData();
-    size_t totalBytes = frame.size();
-    size_t bytesSentTotal = 0;
-
-    while (bytesSentTotal < totalBytes) {
-        size_t bytesSentNow = 0;
-        CURLcode res = curl_ws_send(curl, payload + bytesSentTotal, totalBytes - bytesSentTotal,
-                                    &bytesSentNow, 0, CURLWS_BINARY);
-
-        if (res == CURLE_OK) {
-            bytesSentTotal += bytesSentNow;
-        } else if (res == CURLE_AGAIN) {
-            curl_socket_t sockfd;
-            curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
-            if (sockfd != CURL_SOCKET_BAD) {
-                timeval timeout{ 0, 100'000 };
-                fd_set writefds;
-                FD_ZERO(&writefds);
-                FD_SET(sockfd, &writefds);
-                select((int)sockfd + 1, nullptr, &writefds, nullptr, &timeout);
-            }
-        } else {
-            qCWarning(LogVoice) << "Error sending binary voice payload:" << curl_easy_strerror(res);
-            break;
-        }
-    }
+    CurlUtils::wsSend(curl, curlMutex, frame.constData(), frame.size(), CURLWS_BINARY, "voice binary");
 }
 
 void VoiceGateway::sendDaveReadyForTransition(int transitionId)
@@ -167,38 +138,7 @@ void VoiceGateway::sendPayload(const QJsonObject &obj)
 
 void VoiceGateway::sendPayload(const QByteArray &data)
 {
-    std::lock_guard lock(curlMutex);
-
-    if (!curl)
-        return;
-
-    const char *payload = data.constData();
-    size_t totalBytes = data.size();
-    size_t bytesSentTotal = 0;
-
-    while (bytesSentTotal < totalBytes) {
-        size_t bytesSentNow = 0;
-        CURLcode res = curl_ws_send(curl, payload + bytesSentTotal, totalBytes - bytesSentTotal,
-                                    &bytesSentNow, 0, CURLWS_TEXT);
-
-        if (res == CURLE_OK) {
-            bytesSentTotal += bytesSentNow;
-        } else if (res == CURLE_AGAIN) {
-            curl_socket_t sockfd;
-            curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
-
-            if (sockfd != CURL_SOCKET_BAD) {
-                timeval timeout{ 0, 100'000 };
-                fd_set writefds;
-                FD_ZERO(&writefds);
-                FD_SET(sockfd, &writefds);
-                select((int)sockfd + 1, nullptr, &writefds, nullptr, &timeout);
-            }
-        } else {
-            qCWarning(LogVoice) << "Error sending voice payload:" << curl_easy_strerror(res);
-            break;
-        }
-    }
+    CurlUtils::wsSend(curl, curlMutex, data.constData(), data.size(), CURLWS_TEXT, "voice");
 }
 
 void VoiceGateway::onPayloadReceived(const QJsonObject &root)
@@ -421,10 +361,6 @@ void VoiceGateway::networkLoop()
             return;
         }
 
-        QString certPath = CurlUtils::getCertificatePath();
-        if (!certPath.isEmpty())
-            curl_easy_setopt(curl, CURLOPT_CAINFO, certPath.toUtf8().constData());
-
         curl_easy_setopt(curl, CURLOPT_URL, connectUrl.toUtf8().constData());
         curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);
 #if 0
@@ -432,10 +368,7 @@ void VoiceGateway::networkLoop()
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 #endif
-#ifdef IS_CURL_IMPERSONATE
-        curl_easy_impersonate(curl, CurlUtils::getImpersonateTarget().toUtf8().constData(), 1);
-#endif
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, CurlUtils::getUserAgent().toUtf8().constData());
+        CurlUtils::applyCommonOptions(curl);
 
         CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
@@ -500,18 +433,7 @@ void VoiceGateway::networkLoop()
             }
 
             if (res == CURLE_AGAIN || res == CURLE_GOT_NOTHING || !meta) {
-                curl_socket_t sockfd;
-                {
-                    std::lock_guard lock(curlMutex);
-                    curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
-                }
-                if (sockfd != CURL_SOCKET_BAD) {
-                    timeval timeout{ 0, 10'000 };
-                    fd_set readfds;
-                    FD_ZERO(&readfds);
-                    FD_SET(sockfd, &readfds);
-                    select(sockfd + 1, &readfds, nullptr, nullptr, &timeout);
-                }
+                CurlUtils::wsRecvWait(curl, curlMutex);
 
                 if (shouldReconnect)
                     break;

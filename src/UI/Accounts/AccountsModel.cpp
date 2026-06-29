@@ -49,11 +49,10 @@ AccountsModel::AccountsModel(Core::Session *session, QObject *parent)
 
     connect(session->getImageManager(), &Core::ImageManager::imageFetched, this,
             [this](const QUrl &url, const QSize &size, const QPixmap &pixmap) {
-                auto values = pendingRequests.values(url);
-                for (const auto &index : values) {
+                avatarTracker.notify(url, [this](const QModelIndex &index) {
                     if (index.isValid())
                         emit dataChanged(index, index, { Qt::DecorationRole });
-                }
+                });
             });
 }
 
@@ -81,26 +80,8 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const
     }
     case Qt::DecorationRole: {
         const QSize desiredSize(32, 32);
-        QUrl TEMPORARY = Discord::Cdn::userAvatar(acc.id, acc.avatar, desiredSize.width());
-
-        QPixmap pixmap = session->getImageManager()->get(TEMPORARY, desiredSize);
-
-        if (!session->getImageManager()->isCached(TEMPORARY, desiredSize)) {
-            bool alreadyWaiting = false;
-            auto it = pendingRequests.constFind(TEMPORARY);
-            while (it != pendingRequests.cend() && it.key() == TEMPORARY) {
-                if (it.value() == index) {
-                    alreadyWaiting = true;
-                    break;
-                }
-                it++;
-            }
-
-            if (!alreadyWaiting)
-                pendingRequests.insert(TEMPORARY, QPersistentModelIndex(index));
-        }
-
-        return pixmap;
+        QUrl avatarUrl = Discord::Cdn::userAvatar(acc.id, acc.avatar, desiredSize.width());
+        return avatarTracker.fetch(session->getImageManager(), avatarUrl, desiredSize, index);
     }
     case AccountObjectRole:
         return QVariant::fromValue((void *)&acc);

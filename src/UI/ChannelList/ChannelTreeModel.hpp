@@ -8,6 +8,7 @@
 #include "Core/Snowflake.hpp"
 #include "Core/Session.hpp"
 #include "Discord/Events.hpp"
+#include "UI/AvatarRequestTracker.hpp"
 
 using Acheron::Core::Session;
 using Acheron::Core::Snowflake;
@@ -111,7 +112,7 @@ private:
 
     std::unique_ptr<ChannelNode> root;
     QHash<Snowflake, ChannelNode *> accountNodes;
-    mutable QMultiMap<QUrl, QPersistentModelIndex> pendingRequests;
+    mutable AvatarRequestTracker<QPersistentModelIndex> avatarTracker;
 };
 } // namespace UI
 } // namespace Acheron

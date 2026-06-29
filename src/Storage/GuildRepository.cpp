@@ -27,9 +27,7 @@ void GuildRepository::saveGuild(const Discord::Guild &guild, QSqlDatabase &db)
     q.bindValue(":icon", guild.icon);
     q.bindValue(":owner_id", static_cast<qint64>(guild.ownerId.get()));
 
-    if (!q.exec()) {
-        qCWarning(LogDB) << "GuildRepository: Save failed:" << q.lastError().text();
-    }
+    execLogged(q, "GuildRepository: Save");
 }
 
 std::optional<Discord::Guild> GuildRepository::getGuild(Core::Snowflake guildId)

@@ -68,11 +68,10 @@ ChannelTreeModel::ChannelTreeModel(Session *session, QObject *parent)
 
     connect(session->getImageManager(), &Core::ImageManager::imageFetched, this,
             [this](const QUrl &url, const QSize &size, const QPixmap &pixmap) {
-                auto values = pendingRequests.values(url);
-                for (const auto &index : values) {
+                avatarTracker.notify(url, [this](const QModelIndex &index) {
                     if (index.isValid())
                         emit dataChanged(index, index, { Qt::DecorationRole });
-                }
+                });
             });
 }
 
@@ -125,26 +124,8 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
     if (role == Qt::DecorationRole) {
         if (node->type == ChannelNode::Type::Server) {
             const QSize desiredSize(64, 64);
-            QUrl TEMPORARY = Discord::Cdn::guildIcon(node->id, node->TEMP_iconHash,
-                                                     desiredSize.width());
-            QPixmap pixmap = session->getImageManager()->get(TEMPORARY, desiredSize, Core::PinGroup::ChannelList);
-
-            if (!session->getImageManager()->isCached(TEMPORARY, desiredSize)) {
-                bool alreadyWaiting = false;
-                auto it = pendingRequests.constFind(TEMPORARY);
-                while (it != pendingRequests.cend() && it.key() == TEMPORARY) {
-                    if (it.value() == index) {
-                        alreadyWaiting = true;
-                        break;
-                    }
-                    it++;
-                }
-
-                if (!alreadyWaiting)
-                    pendingRequests.insert(TEMPORARY, QPersistentModelIndex(index));
-            }
-
-            return pixmap;
+            QUrl iconUrl = Discord::Cdn::guildIcon(node->id, node->TEMP_iconHash, desiredSize.width());
+            return avatarTracker.fetch(session->getImageManager(), iconUrl, desiredSize, index, Core::PinGroup::ChannelList);
         }
 
         if (node->type == ChannelNode::Type::DMChannel) {
@@ -159,26 +140,8 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
                                                       desiredSize.width());
             }
 
-            if (!avatarUrl.isEmpty()) {
-                QPixmap pixmap = session->getImageManager()->get(avatarUrl, desiredSize, Core::PinGroup::ChannelList);
-
-                if (!session->getImageManager()->isCached(avatarUrl, desiredSize)) {
-                    bool alreadyWaiting = false;
-                    auto it = pendingRequests.constFind(avatarUrl);
-                    while (it != pendingRequests.cend() && it.key() == avatarUrl) {
-                        if (it.value() == index) {
-                            alreadyWaiting = true;
-                            break;
-                        }
-                        it++;
-                    }
-
-                    if (!alreadyWaiting)
-                        pendingRequests.insert(avatarUrl, QPersistentModelIndex(index));
-                }
-
-                return pixmap;
-            }
+            if (!avatarUrl.isEmpty())
+                return avatarTracker.fetch(session->getImageManager(), avatarUrl, desiredSize, index, Core::PinGroup::ChannelList);
         }
 
         if (node->type == ChannelNode::Type::VoiceParticipant &&
@@ -186,25 +149,7 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
             const QSize desiredSize(32, 32);
             QUrl avatarUrl = Discord::Cdn::userAvatar(node->dmRecipientId, node->dmAvatarHash,
                                                       desiredSize.width());
-
-            QPixmap pixmap = session->getImageManager()->get(avatarUrl, desiredSize, Core::PinGroup::ChannelList);
-
-            if (!session->getImageManager()->isCached(avatarUrl, desiredSize)) {
-                bool alreadyWaiting = false;
-                auto it = pendingRequests.constFind(avatarUrl);
-                while (it != pendingRequests.cend() && it.key() == avatarUrl) {
-                    if (it.value() == index) {
-                        alreadyWaiting = true;
-                        break;
-                    }
-                    it++;
-                }
-
-                if (!alreadyWaiting)
-                    pendingRequests.insert(avatarUrl, QPersistentModelIndex(index));
-            }
-
-            return pixmap;
+            return avatarTracker.fetch(session->getImageManager(), avatarUrl, desiredSize, index, Core::PinGroup::ChannelList);
         }
 
         return {};

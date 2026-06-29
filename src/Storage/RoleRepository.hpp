@@ -21,6 +21,9 @@ public:
 
     std::optional<Discord::Role> getRole(Core::Snowflake guildId, Core::Snowflake roleId);
     QList<Discord::Role> getRolesForGuild(Core::Snowflake guildId);
+
+private:
+    static void bindRole(QSqlQuery &q, Core::Snowflake guildId, const Discord::Role &role);
 };
 
 } // namespace Storage
