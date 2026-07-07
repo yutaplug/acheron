@@ -727,7 +727,7 @@ void Gateway::networkLoop()
             std::this_thread::sleep_for(std::chrono::milliseconds(delay));
         }
 
-    } while (shouldReconnect && running && reconnectAttempts <= maxReconnectAttempts);
+    } while (shouldReconnect && running && reconnectAttempts < maxReconnectAttempts);
 
     // Ensure heartbeat thread exits when the network loop is done
     running = false;
