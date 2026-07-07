@@ -137,6 +137,7 @@ MainWindow::MainWindow(Session *session, QWidget *parent) : QMainWindow(parent),
                     } else if (acc.state == Acheron::Core::ConnectionState::Disconnected) {
                         bool wasShowing = channelListMode == ChannelListMode::Classic && railSelectedAccountId == acc.id;
                         channelTreeModel->removeAccount(acc.id);
+                        instancesSignalsConnected.remove(acc.id);
                         if (wasShowing) {
                             railHasSelection = false;
                             channelTree->setRootIndex({});
