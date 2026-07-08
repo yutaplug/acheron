@@ -398,6 +398,15 @@ void ChatView::contextMenuEvent(QContextMenuEvent *event)
 
     QMenu menu(this);
 
+    if (region && !region->url.isEmpty() && !region->url.startsWith(QLatin1String("acheron://"))) {
+        QString linkUrl = region->url;
+        QAction *copyLinkAction = menu.addAction(tr("Copy Link"));
+        connect(copyLinkAction, &QAction::triggered, this, [linkUrl]() {
+            QGuiApplication::clipboard()->setText(linkUrl);
+        });
+        menu.addSeparator();
+    }
+
     QAction *copyAction = menu.addAction(tr("Copy Text"));
     copyAction->setShortcut(QKeySequence::Copy);
     if (hasTextSelection()) {
