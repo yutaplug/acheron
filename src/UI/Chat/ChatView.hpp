@@ -88,6 +88,7 @@ private slots:
     void onScrollBarValueChanged(int value);
     void onRowsAboutToBeInserted(const QModelIndex &parent, int start, int end);
     void onRowsInserted(const QModelIndex &parent, int start, int end);
+    void onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight);
 
 private:
     void copySelectedText();
@@ -112,7 +113,7 @@ private:
     QPersistentModelIndex anchorIndex;
     int anchorDistanceFromBottom = 0;
 
-    bool atBottom = false;
+    bool atBottom = true;
 
     Core::Snowflake currentUserId = Core::Snowflake::Invalid;
     bool canPinMessages = false;

@@ -55,12 +55,14 @@ void ChatView::setModel(QAbstractItemModel *model)
     connect(model, &QAbstractItemModel::modelReset, this, [this]() {
         isFetchingTop = false;
         anchorIndex = QPersistentModelIndex();
+        atBottom = true;
         QTimer::singleShot(0, this, &ChatView::scrollToBottom);
     });
 
     connect(model, &QAbstractItemModel::rowsAboutToBeInserted, this,
             &ChatView::onRowsAboutToBeInserted);
     connect(model, &QAbstractItemModel::rowsInserted, this, &ChatView::onRowsInserted);
+    connect(model, &QAbstractItemModel::dataChanged, this, &ChatView::onDataChanged);
 }
 
 void ChatView::mousePressEvent(QMouseEvent *event)
@@ -311,9 +313,6 @@ void ChatView::onHistoryRequestFinished()
 
 void ChatView::onRowsAboutToBeInserted(const QModelIndex &parent, int start, int end)
 {
-    QScrollBar *vbar = verticalScrollBar();
-    atBottom = (vbar->value() + vbar->pageStep() >= vbar->maximum());
-
     if (start == 0) {
         QPoint topPoint(5, 5);
         QModelIndex topVisible = indexAt(topPoint);
@@ -350,8 +349,23 @@ void ChatView::onRowsInserted(const QModelIndex &parent, int start, int end)
     }
 }
 
+void ChatView::onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight)
+{
+    if (!atBottom)
+        return;
+
+    int lastRow = model()->rowCount() - 1;
+    if (lastRow < 0 || bottomRight.row() < lastRow)
+        return;
+
+    scheduleDelayedItemsLayout();
+    scrollToBottom();
+}
+
 void ChatView::onScrollBarValueChanged(int value)
 {
+    atBottom = (value >= verticalScrollBar()->maximum());
+
     if (value < 200 && !isFetchingTop) {
         isFetchingTop = true;
         emit historyRequested();
