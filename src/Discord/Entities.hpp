@@ -3,11 +3,13 @@
 #include <memory>
 
 #include <QString>
+#include <QStringList>
 #include <QColor>
 #include <QImage>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSet>
 
 #include "Enums.hpp"
 
@@ -591,9 +593,16 @@ struct Message : Core::JsonUtils::JsonObject
     // sent
     bool isPendingOutbound = false;
 
+    // track for MESSAGE_UPDATE
+    QSet<QString> presentKeys;
+
     static Message fromJson(const QJsonObject &obj)
     {
         Message message;
+
+        const QStringList keys = obj.keys();
+        message.presentKeys = QSet<QString>(keys.cbegin(), keys.cend());
+
         get(obj, "id", message.id);
         get(obj, "nonce", message.nonce);
         get(obj, "channel_id", message.channelId);
@@ -634,6 +643,42 @@ struct Message : Core::JsonUtils::JsonObject
         }
 
         return message;
+    }
+
+    void applyUpdate(const Message &update)
+    {
+        const QSet<QString> &present = update.presentKeys;
+
+        if (present.contains(QStringLiteral("content")))
+            content = update.content;
+        if (present.contains(QStringLiteral("edited_timestamp")))
+            editedTimestamp = update.editedTimestamp;
+        if (present.contains(QStringLiteral("author")))
+            author = update.author;
+        if (present.contains(QStringLiteral("timestamp")))
+            timestamp = update.timestamp;
+        if (present.contains(QStringLiteral("type")))
+            type = update.type;
+        if (present.contains(QStringLiteral("flags")))
+            flags = update.flags;
+        if (present.contains(QStringLiteral("mentions")))
+            mentions = update.mentions;
+        if (present.contains(QStringLiteral("mention_roles")))
+            mentionRoles = update.mentionRoles;
+        if (present.contains(QStringLiteral("attachments")))
+            attachments = update.attachments;
+        if (present.contains(QStringLiteral("message_reference")))
+            messageReference = update.messageReference;
+
+        if (present.contains(QStringLiteral("embeds"))) {
+            embeds = update.embeds;
+            embedsJson = update.embedsJson;
+        }
+
+        if (present.contains(QStringLiteral("reactions"))) {
+            reactions = update.reactions;
+            reactionsJson = update.reactionsJson;
+        }
     }
 };
 

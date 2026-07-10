@@ -282,19 +282,39 @@ void MessageManager::onMessageCreated(const Discord::Message &message)
 
 void MessageManager::onMessageUpdated(const Discord::Message &message)
 {
-    Discord::Message updatedMsg = message;
+    Discord::Message merged;
+    bool haveBaseline = false;
+
+    if (auto *cached = messageCache.object(message.id)) {
+        merged = *cached;
+        haveBaseline = true;
+    } else if (auto existing = repo.getMessage(message.id)) {
+        merged = *existing;
+        haveBaseline = true;
+    }
+
+    if (haveBaseline) {
+        merged.applyUpdate(message);
+    } else {
+        if (!message.presentKeys.contains(QStringLiteral("content"))) {
+            return;
+        }
+        merged = message;
+    }
+
     Markdown::ParseState state;
     state.isInline = true;
-    auto ast = parser->parse(resolveSystemMessageContent(updatedMsg), state);
+    auto ast = parser->parse(resolveSystemMessageContent(merged), state);
     bool jumbo = Markdown::Parser::isEmojiOnly(ast);
-    updatedMsg.parsedContentCached = parser->toHtml(ast, jumbo);
+    merged.parsedContentCached = parser->toHtml(ast, jumbo);
 
-    if (messageCache.contains(message.id))
-        messageCache.insert(message.id, new Discord::Message(updatedMsg));
+    messageCache.insert(merged.id, new Discord::Message(merged));
+    repo.updateMessageContent(merged);
 
-    repo.updateMessageContent(updatedMsg);
+    if (message.presentKeys.contains(QStringLiteral("reactions")))
+        repo.updateReactionsJson(merged.id, merged.reactionsJson);
 
-    emit messagesReceived({ true, Discord::Client::MessageLoadType::Created, message.channelId, { updatedMsg } });
+    emit messagesReceived({ true, Discord::Client::MessageLoadType::Created, merged.channelId, { merged } });
 }
 
 void MessageManager::onMessageDeleted(const Discord::MessageDelete &event)

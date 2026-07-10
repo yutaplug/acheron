@@ -177,6 +177,32 @@ QString MessageRepository::getReactionsJson(Core::Snowflake messageId)
     return q.value(0).toString();
 }
 
+std::optional<Discord::Message> MessageRepository::getMessage(Core::Snowflake messageId)
+{
+    auto db = getDb();
+    QSqlQuery q(db);
+    q.prepare(R"(
+		SELECT m.id, m.channel_id, m.author_id, m.content, m.timestamp, m.edited_timestamp, m.type, m.flags, m.embeds, m.reactions,
+			   u.id, u.username, u.global_name, u.avatar, u.bot,
+			   m.referenced_message_id,
+			   rm.id, rm.channel_id, rm.author_id, rm.content, rm.timestamp, rm.edited_timestamp, rm.type, rm.flags, rm.embeds,
+			   ru.id, ru.username, ru.global_name, ru.avatar, ru.bot
+		FROM messages m
+		INNER JOIN users u ON m.author_id = u.id
+		LEFT JOIN messages rm ON m.referenced_message_id = rm.id
+		LEFT JOIN users ru ON rm.author_id = ru.id
+		WHERE m.id = :id
+	)");
+    q.bindValue(":id", static_cast<qint64>(messageId));
+
+    if (!execLogged(q, "MessageRepository: Get message") || !q.next())
+        return std::nullopt;
+
+    QList<Discord::Message> single{ readMessageFromQuery(q) };
+    loadAttachmentsForMessages(single, db);
+    return single.first();
+}
+
 QList<Discord::Message> MessageRepository::getLatestMessages(Core::Snowflake channelId, int limit)
 {
     auto db = getDb();

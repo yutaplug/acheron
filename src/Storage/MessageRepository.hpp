@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <QSqlDatabase>
 #include <QSqlQuery>
 
@@ -23,6 +25,7 @@ public:
     void updateMessageContent(const Discord::Message &message);
     void updateReactionsJson(Core::Snowflake messageId, const QString &reactionsJson);
     QString getReactionsJson(Core::Snowflake messageId);
+    std::optional<Discord::Message> getMessage(Core::Snowflake messageId);
 
     QList<Discord::Message> getLatestMessages(Core::Snowflake channelId, int limit);
     QList<Discord::Message> getMessagesBefore(Core::Snowflake channelId, Core::Snowflake beforeId,
