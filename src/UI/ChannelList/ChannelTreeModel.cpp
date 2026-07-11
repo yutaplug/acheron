@@ -1180,6 +1180,8 @@ void ChannelTreeModel::initChannelReadStates(ChannelNode *node, Core::ClientInst
 {
     if (node->type == ChannelNode::Type::Server)
         node->isMuted = instance->readState()->isGuildMuted(node->id);
+    else if (node->type == ChannelNode::Type::Category)
+        node->isMuted = instance->readState()->isChannelMuted(node->id);
 
     if (node->type == ChannelNode::Type::Channel ||
         node->type == ChannelNode::Type::DMChannel) {
@@ -1207,6 +1209,12 @@ void ChannelTreeModel::updateChildrenReadState(ChannelNode *node, Snowflake guil
             QModelIndex idx = indexForNode(child.get());
             if (idx.isValid())
                 emit dataChanged(idx, idx, { IsUnreadRole, MentionCountRole, IsMutedRole });
+        } else if (child->type == ChannelNode::Type::Category) {
+            child->isMuted = instance->readState()->isChannelMuted(child->id);
+
+            QModelIndex idx = indexForNode(child.get());
+            if (idx.isValid())
+                emit dataChanged(idx, idx, { IsMutedRole });
         }
 
         if (!child->children.empty())

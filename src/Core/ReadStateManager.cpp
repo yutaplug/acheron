@@ -66,15 +66,17 @@ ChannelReadState ReadStateManager::computeChannelReadState(Snowflake channelId, 
     Snowflake lastMessageId = lmIt != channelLastMessageIds.constEnd() ? lmIt.value()
                                                                        : Snowflake();
 
-    result.isMuted = (guildId.isValid() && isGuildMuted(guildId)) ||
-                     (parentId.isValid() && isChannelMuted(parentId)) ||
-                     isChannelMuted(channelId);
+    result.isMuted = isChannelMuted(channelId);
     result.isUnread = canView && isChannelUnread(channelId, lastMessageId, guildId);
     result.mentionCount = canView ? getMentionCount(channelId) : 0;
 
+    bool fullyMuted = result.isMuted ||
+                      (parentId.isValid() && isChannelMuted(parentId)) ||
+                      (guildId.isValid() && isGuildMuted(guildId));
     auto effective = isDM ? Discord::MessageNotificationLevel::ALL_MESSAGES : resolveMessageNotifications(guildId, channelId, parentId);
     result.countsForGuildUnread =
-            result.isUnread && !result.isMuted &&
+            result.isUnread &&
+            !fullyMuted &&
             (result.mentionCount > 0 || effective == Discord::MessageNotificationLevel::ALL_MESSAGES);
 
     return result;

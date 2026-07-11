@@ -410,6 +410,9 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     } else if (node->type == ChannelNode::Type::Server) {
         if (node->isUnread && !node->isMuted)
             textColor = option.palette.brightText().color();
+    } else if (node->type == ChannelNode::Type::Category) {
+        if (node->isMuted)
+            textColor = option.palette.text().color().darker(150);
     }
 
     if (node->type == ChannelNode::Type::Channel) {

@@ -123,7 +123,7 @@ bool ChannelFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex 
                 return true;
             bool unread = index.data(ChannelTreeModel::IsUnreadRole).toBool();
             bool muted = index.data(ChannelTreeModel::IsMutedRole).toBool();
-            if (!unread || muted)
+            if (!unread || muted || parentNode->isMuted)
                 return false;
         }
     }
