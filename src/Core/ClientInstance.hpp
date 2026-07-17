@@ -27,6 +27,7 @@ class VoiceManager;
 #endif
 
 class ReadStateManager;
+class ForumManager;
 
 class ClientInstance : public QObject
 {
@@ -42,6 +43,7 @@ public:
 
     [[nodiscard]] Discord::Client *discord() const;
     [[nodiscard]] MessageManager *messages() const;
+    [[nodiscard]] ForumManager *forums() const;
     [[nodiscard]] UserManager *users() const;
     [[nodiscard]] PermissionManager *permissions() const;
     [[nodiscard]] ReadStateManager *readState() const;
@@ -81,6 +83,8 @@ signals:
     void guildRoleDeleted(const Discord::GuildRoleDelete &event);
     void membersUpdated(Snowflake guildId, const QList<Snowflake> &userIds);
     void readStateChanged(Snowflake channelId);
+    void forumBadgeChanged(Snowflake forumId);
+    void forumJoinedPostsChanged(Snowflake forumId);
     void guildSettingsChanged(Snowflake guildId);
     void channelLastMessageUpdated(Snowflake channelId, Snowflake messageId);
     void voiceStateChanged(Snowflake channelId, Snowflake guildId);
@@ -112,6 +116,7 @@ private:
     AccountInfo account;
 
     MessageManager *messageManager;
+    ForumManager *forumManager;
     UserManager *userManager;
     Discord::Client *client;
     PermissionManager *permissionManager;

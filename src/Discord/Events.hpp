@@ -155,6 +155,80 @@ struct ChannelDelete : Core::JsonUtils::JsonObject
     }
 };
 
+struct ThreadDelete : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> id;
+    Field<Core::Snowflake, true, true> parentId;
+
+    static ThreadDelete fromJson(const QJsonObject &obj)
+    {
+        ThreadDelete event;
+        get(obj, "id", event.id);
+        get(obj, "parent_id", event.parentId);
+        return event;
+    }
+};
+
+struct ForumUnread : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> threadId;
+    Field<int, true> count;
+
+    static ForumUnread fromJson(const QJsonObject &obj)
+    {
+        ForumUnread unread;
+        get(obj, "thread_id", unread.threadId);
+        get(obj, "count", unread.count);
+        return unread;
+    }
+};
+
+struct ForumUnreads : Core::JsonUtils::JsonObject
+{
+    Field<QList<ForumUnread>, true> threads;
+    Field<bool, true> permissionDenied;
+
+    static ForumUnreads fromJson(const QJsonObject &obj)
+    {
+        ForumUnreads event;
+        get(obj, "threads", event.threads);
+        get(obj, "permission_denied", event.permissionDenied);
+        return event;
+    }
+};
+
+struct ThreadListSync : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> guildId;
+    Field<QList<Channel>, true> threads;
+    Field<QList<ThreadMember>, true> members;
+
+    static ThreadListSync fromJson(const QJsonObject &obj)
+    {
+        ThreadListSync event;
+        get(obj, "guild_id", event.guildId);
+        get(obj, "threads", event.threads);
+        get(obj, "members", event.members);
+        return event;
+    }
+};
+
+struct ThreadMemberUpdate : Core::JsonUtils::JsonObject
+{
+    ThreadMember member;
+    Field<Core::Snowflake, true> userId;
+    Field<Core::Snowflake, true> guildId;
+
+    static ThreadMemberUpdate fromJson(const QJsonObject &obj)
+    {
+        ThreadMemberUpdate event;
+        event.member = ThreadMember::fromJson(obj);
+        get(obj, "user_id", event.userId);
+        get(obj, "guild_id", event.guildId);
+        return event;
+    }
+};
+
 struct GuildMembersChunk : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> guildId;

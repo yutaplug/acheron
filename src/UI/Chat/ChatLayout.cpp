@@ -19,7 +19,7 @@ QRect dateSeparatorRectForRow(const QRect &rowRect)
     return QRect(rowRect.left(), rowRect.top(), rowRect.width(), separatorHeight());
 }
 
-static QString richTextStyleSheet()
+QString richTextStyleSheet()
 {
     using Core::Theme::Manager;
     using Core::Theme::Token;

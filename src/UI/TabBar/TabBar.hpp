@@ -22,6 +22,7 @@ struct TabEntry
     QString name;
     QUrl iconUrl;
     bool isDm = false;
+    bool isForum = false;
 
     bool operator==(const TabEntry &o) const { return channelId == o.channelId; }
 };

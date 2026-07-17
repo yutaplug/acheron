@@ -161,6 +161,50 @@ struct PermissionOverwrite : Core::JsonUtils::JsonObject
     }
 };
 
+struct ThreadMetadata : Core::JsonUtils::JsonObject
+{
+    Field<bool> archived;
+
+    static ThreadMetadata fromJson(const QJsonObject &obj)
+    {
+        ThreadMetadata meta;
+        get(obj, "archived", meta.archived);
+        return meta;
+    }
+};
+
+struct ForumTag : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> id;
+    Field<QString> name;
+    Field<Core::Snowflake, false, true> emojiId;
+    Field<QString, false, true> emojiName;
+
+    static ForumTag fromJson(const QJsonObject &obj)
+    {
+        ForumTag tag;
+        get(obj, "id", tag.id);
+        get(obj, "name", tag.name);
+        get(obj, "emoji_id", tag.emojiId);
+        get(obj, "emoji_name", tag.emojiName);
+        return tag;
+    }
+};
+
+struct ThreadMember : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake, true> id; // thread id
+    Field<QDateTime> joinTimestamp;
+
+    static ThreadMember fromJson(const QJsonObject &obj)
+    {
+        ThreadMember member;
+        get(obj, "id", member.id);
+        get(obj, "join_timestamp", member.joinTimestamp);
+        return member;
+    }
+};
+
 struct Channel : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;
@@ -177,6 +221,18 @@ struct Channel : Core::JsonUtils::JsonObject
     Field<Core::Snowflake, true> ownerId;
     Field<int, true> rateLimitPerUser;
     Field<int, true> userLimit;
+
+    // forum/thread specific
+    Field<ThreadMetadata, true> threadMetadata;
+    Field<ThreadMember, true> member;
+    Field<QList<ForumTag>, true> availableTags;
+    Field<QList<Core::Snowflake>, true> appliedTags;
+    Field<int, true> messageCount;
+    Field<ChannelFlags, true> flags;
+    Field<int, true, true> defaultSortOrder;
+
+    // available_tags persistence
+    QString availableTagsJson;
 
     static Channel fromJson(const QJsonObject &obj)
     {
@@ -195,8 +251,35 @@ struct Channel : Core::JsonUtils::JsonObject
         get(obj, "owner_id", channel.ownerId);
         get(obj, "rate_limit_per_user", channel.rateLimitPerUser);
         get(obj, "user_limit", channel.userLimit);
+        get(obj, "thread_metadata", channel.threadMetadata);
+        get(obj, "member", channel.member);
+        get(obj, "available_tags", channel.availableTags);
+        get(obj, "applied_tags", channel.appliedTags);
+        get(obj, "message_count", channel.messageCount);
+        get(obj, "flags", channel.flags);
+        get(obj, "default_sort_order", channel.defaultSortOrder);
+
+        if (obj.contains("available_tags")) {
+            QJsonDocument doc(obj.value("available_tags").toArray());
+            channel.availableTagsJson = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
+        }
+
         return channel;
     }
+
+    Core::Snowflake effectiveLastMessageId() const
+    {
+        if (lastMessageId.hasValue() && lastMessageId->isValid())
+            return lastMessageId.get();
+        return id.get();
+    }
+
+    bool isArchived() const
+    {
+        return threadMetadata.hasValue() && threadMetadata->archived.hasValue() && threadMetadata->archived.get();
+    }
+
+    bool isPinned() const { return flags.hasValue() && flags->testFlag(ChannelFlag::PINNED); }
 };
 
 struct Guild : Core::JsonUtils::JsonObject
@@ -263,6 +346,8 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
 {
     Field<Guild> properties;
     Field<QList<Channel>> channels;
+    // active/joined
+    Field<QList<Channel>, true> threads;
     Field<QList<Role>, true> roles;
     Field<QList<Member>, true> members;
     Field<QDateTime, true> joinedAt;
@@ -273,6 +358,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
         GatewayGuild guild;
         get(obj, "properties", guild.properties);
         get(obj, "channels", guild.channels);
+        get(obj, "threads", guild.threads);
         get(obj, "roles", guild.roles);
         get(obj, "members", guild.members);
         get(obj, "joined_at", guild.joinedAt);

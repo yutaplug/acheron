@@ -163,6 +163,9 @@ void DatabaseManager::setupCacheTables(const QString &connName)
 	        "icon" TEXT,
 	        "owner_id" INTEGER,
 	        "rate_limit_per_user" INTEGER,
+	        "available_tags" TEXT,
+	        "default_sort_order" INTEGER,
+	        "flags" INTEGER,
 	        PRIMARY KEY("id")
         );
     )");

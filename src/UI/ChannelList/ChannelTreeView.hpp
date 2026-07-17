@@ -35,6 +35,8 @@ private:
 
     bool handleMouseEventForExpansion(QMouseEvent *event);
 
+    void onRowsInserted(const QModelIndex &parent, int first, int last);
+
     Core::Snowflake findAccountIdForIndex(const QModelIndex &sourceIndex) const;
 
     QHash<Core::Snowflake, Core::Snowflake> accountVoiceChannels; // accountId -> channelId

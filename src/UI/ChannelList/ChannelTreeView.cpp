@@ -8,24 +8,41 @@
 namespace Acheron {
 namespace UI {
 
+static bool isAlwaysExpanded(ChannelNode::Type type)
+{
+    return type == ChannelNode::Type::Forum;
+}
+
 ChannelTreeView::ChannelTreeView(QWidget *parent)
     : QTreeView(parent)
 {
+    connect(this, &QTreeView::collapsed, this, [this](const QModelIndex &index) {
+        auto nodeType = static_cast<ChannelNode::Type>(index.data(ChannelTreeModel::TypeRole).toInt());
+        if (isAlwaysExpanded(nodeType))
+            expand(index);
+    });
 }
 
 void ChannelTreeView::setModel(QAbstractItemModel *m)
 {
     QTreeView::setModel(m);
-    if (m) {
-        connect(m, &QAbstractItemModel::rowsInserted, this,
-                [this](const QModelIndex &parent, int, int) {
-                    if (!parent.isValid())
-                        return;
-                    auto nodeType = static_cast<ChannelNode::Type>(
-                            parent.data(ChannelTreeModel::TypeRole).toInt());
-                    if (nodeType == ChannelNode::Type::VoiceChannel && !isExpanded(parent))
-                        expand(parent);
-                });
+    if (m)
+        connect(m, &QAbstractItemModel::rowsInserted, this, &ChannelTreeView::onRowsInserted);
+}
+
+void ChannelTreeView::onRowsInserted(const QModelIndex &parent, int first, int last)
+{
+    if (parent.isValid()) {
+        auto parentType = static_cast<ChannelNode::Type>(parent.data(ChannelTreeModel::TypeRole).toInt());
+        if ((parentType == ChannelNode::Type::VoiceChannel || isAlwaysExpanded(parentType)) && !isExpanded(parent))
+            expand(parent);
+    }
+
+    for (int row = first; row <= last; row++) {
+        QModelIndex index = model()->index(row, 0, parent);
+        auto nodeType = static_cast<ChannelNode::Type>(index.data(ChannelTreeModel::TypeRole).toInt());
+        if (isAlwaysExpanded(nodeType) && !isExpanded(index))
+            expand(index);
     }
 }
 
@@ -37,7 +54,7 @@ void ChannelTreeView::performDefaultExpansion()
             QModelIndex idx = model()->index(i, 0, parent);
             auto nodeType = static_cast<ChannelNode::Type>(idx.data(ChannelTreeModel::TypeRole).toInt());
             if (nodeType == ChannelNode::Type::Category || nodeType == ChannelNode::Type::Account ||
-                nodeType == ChannelNode::Type::VoiceChannel)
+                nodeType == ChannelNode::Type::VoiceChannel || isAlwaysExpanded(nodeType))
                 expand(idx);
             if (model()->hasChildren(idx))
                 walk(idx);
@@ -85,7 +102,7 @@ bool ChannelTreeView::handleMouseEventForExpansion(QMouseEvent *event)
         sourceModel->toggleCollapsed(sourceIndex);
         proxy->invalidateFilter();
         return true;
-    } else if (model()->hasChildren(proxyIndex)) {
+    } else if (!isAlwaysExpanded(nodeType) && model()->hasChildren(proxyIndex)) {
         setExpanded(proxyIndex, !isExpanded(proxyIndex));
         return true;
     }

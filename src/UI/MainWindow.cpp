@@ -1,11 +1,16 @@
 #include "MainWindow.hpp"
 
 #include <QMessageBox>
+#include <QPointer>
 #include <QSettings>
 
 #include "Chat/ChatModel.hpp"
 #include "Chat/ChatDelegate.hpp"
 #include "Chat/ChatView.hpp"
+#include "Forum/ForumBrowser.hpp"
+#include "Forum/ForumPostModel.hpp"
+#include "Forum/NewPostDialog.hpp"
+#include "Core/ForumManager.hpp"
 #include "ChannelList/ChannelTreeModel.hpp"
 #include "ChannelList/ChannelFilterProxyModel.hpp"
 #include "ChannelList/ChannelDelegate.hpp"
@@ -191,8 +196,7 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     QModelIndex sourceIndex = channelFilterProxy->mapToSource(current);
     auto node = static_cast<ChannelNode *>(sourceIndex.internalPointer());
 
-    if (!node || (node->type != ChannelNode::Type::Channel &&
-                  node->type != ChannelNode::Type::DMChannel))
+    if (!node || !node->opensChat())
         return;
 
     ChannelNode *accountNode = channelTreeModel->getAccountNodeFor(node);
@@ -213,101 +217,110 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     if (selectedInstance != currentInstance)
         switchActiveInstance(selectedInstance);
 
-    selectedInstance->readState()->setActiveChannel(node->id);
+    ChannelNode *forumNode = node->type == ChannelNode::Type::Thread ? node->parent : node;
 
-    Core::Snowflake userId = selectedInstance->accountId();
-    Core::Snowflake channelId = node->id;
-
-    messageInput->setMaxUploadSize(selectedInstance->discord()->getMaxUploadSize(channelId));
-
-    if (node->type == ChannelNode::Type::DMChannel) {
-        messageInput->setEnabled(true);
-        messageInput->setSendBlocked(false);
-        messageInput->setPlaceholder("Message @" + node->name);
-        chatView->setCanPinMessages(true);
-        chatView->setCanManageMessages(false);
-        slowModeIndicator->setSlowMode(channelId, 0, false);
-        memberListView->hide();
-        selectedInstance->memberList()->clear();
-    } else {
-        bool canSend = selectedInstance->permissions()->hasChannelPermission(
-                userId, channelId, Discord::Permission::SEND_MESSAGES);
-        bool canPin = selectedInstance->permissions()->hasChannelPermission(
-                userId, channelId, Discord::Permission::PIN_MESSAGES);
-        bool canManage = selectedInstance->permissions()->hasChannelPermission(
-                userId, channelId, Discord::Permission::MANAGE_MESSAGES);
-
-        int rateLimit = selectedInstance->getChannelRateLimit(channelId);
-        bool canBypass = selectedInstance->permissions()->hasChannelPermission(
-                userId, channelId, Discord::Permission::BYPASS_SLOWMODE);
-        slowModeIndicator->setSlowMode(channelId, rateLimit, canBypass);
-
-        bool onCooldown = rateLimit > 0 && !canBypass && slowModeIndicator->isOnCooldown(channelId);
-        messageInput->setEnabled(canSend);
-        messageInput->setSendBlocked(onCooldown);
-        chatView->setCanPinMessages(canPin);
-        chatView->setCanManageMessages(canManage);
-
-        if (!canSend)
-            messageInput->setPlaceholder("You do not have permission to send messages");
-        else if (onCooldown)
-            messageInput->setPlaceholder("Slowmode is active");
-        else
-            messageInput->setPlaceholder("Message #" + node->name);
-
+    if (forumNode && forumNode->type == ChannelNode::Type::Forum) {
         ChannelNode *gNode = ChannelTreeModel::findGuildNode(node);
         Snowflake gId = gNode ? gNode->id : Snowflake::Invalid;
 
-        if (gId.isValid()) {
-            memberListView->show();
-            selectedInstance->memberList()->setActiveChannel(gId, node->id);
-        }
+        openForumChannel(selectedInstance, forumNode->id, gId);
+        tabBar->updateCurrentTab(makeTabEntry(forumNode, accountNode));
+
+        if (gNode)
+            recordLastViewedChannel(accountNode->id, gNode->id, forumNode->id);
+
+        if (node->type == ChannelNode::Type::Thread)
+            openForumPost(node->id, gId);
+        return;
     }
 
-    MessageManager *messages = selectedInstance->messages();
+    selectedInstance->readState()->setActiveChannel(node->id);
+    setViewMode(ViewMode::TextChannel);
 
-    if (node->id != chatModel->getActiveChannelId()) {
-        ChannelNode *guildNode = ChannelTreeModel::findGuildNode(node);
-        Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
+    ChannelNode *guildNode = ChannelTreeModel::findGuildNode(node);
+    Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
+    bool isDm = node->type == ChannelNode::Type::DMChannel;
 
-        if (guildId != cachedGuildId) {
-            cachedGuildId = guildId;
-            userColorCache.clear();
-        }
-
-        chatModel->setActiveChannel(node->id, guildId);
-        typingTracker->setActiveChannel(node->id);
-        messageInput->clearReplyTarget();
-    }
-
-    messages->requestLoadChannel(node->id);
+    applyChannelChrome(selectedInstance, node->id, node->name, isDm, guildId);
+    switchChatChannel(node->id, guildId);
+    selectedInstance->messages()->requestLoadChannel(node->id);
 
     if (node->isUnread && node->lastMessageId.isValid())
         selectedInstance->readState()->markChannelAsRead(node->id, node->lastMessageId);
 
-    {
-        ChannelNode *serverNode = ChannelTreeModel::findGuildNode(node);
+    tabBar->updateCurrentTab(makeTabEntry(node, accountNode));
 
-        TabEntry entry;
-        entry.channelId = node->id;
-        entry.guildId = serverNode ? serverNode->id : Snowflake::Invalid;
-        entry.accountId = accountNode->id;
-        entry.name = node->name;
-        entry.isDm = (node->type == ChannelNode::Type::DMChannel);
-        if (serverNode && !serverNode->TEMP_iconHash.isEmpty())
-            entry.iconUrl = Discord::Cdn::guildIcon(serverNode->id, serverNode->TEMP_iconHash, 64);
-        tabBar->updateCurrentTab(entry);
+    if (node->type == ChannelNode::Type::Channel && guildNode)
+        recordLastViewedChannel(accountNode->id, guildNode->id, node->id);
+    else if (isDm)
+        recordLastViewedChannel(accountNode->id, Snowflake::Invalid, node->id);
+}
 
-        if (node->type == ChannelNode::Type::Channel && serverNode)
-            recordLastViewedChannel(accountNode->id, serverNode->id, node->id);
-        else if (node->type == ChannelNode::Type::DMChannel)
-            recordLastViewedChannel(accountNode->id, Snowflake::Invalid, node->id);
+void MainWindow::applyChannelChrome(Core::ClientInstance *instance, Core::Snowflake channelId,
+                                    const QString &name, bool isDm, Core::Snowflake guildId)
+{
+    Snowflake userId = instance->accountId();
+    messageInput->setMaxUploadSize(instance->discord()->getMaxUploadSize(channelId));
+
+    if (isDm) {
+        messageInput->setEnabled(true);
+        messageInput->setSendBlocked(false);
+        messageInput->setPlaceholder("Message @" + name);
+        chatView->setCanPinMessages(true);
+        chatView->setCanManageMessages(false);
+        slowModeIndicator->setSlowMode(channelId, 0, false);
+        setMemberListVisible(false);
+        instance->memberList()->clear();
+        return;
     }
+
+    bool canSend = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::SEND_MESSAGES);
+    bool canPin = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::PIN_MESSAGES);
+    bool canManage = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::MANAGE_MESSAGES);
+
+    int rateLimit = instance->getChannelRateLimit(channelId);
+    bool canBypass = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::BYPASS_SLOWMODE);
+    slowModeIndicator->setSlowMode(channelId, rateLimit, canBypass);
+
+    bool onCooldown = rateLimit > 0 && !canBypass && slowModeIndicator->isOnCooldown(channelId);
+    messageInput->setEnabled(canSend);
+    messageInput->setSendBlocked(onCooldown);
+    chatView->setCanPinMessages(canPin);
+    chatView->setCanManageMessages(canManage);
+
+    if (!canSend)
+        messageInput->setPlaceholder("You do not have permission to send messages");
+    else if (onCooldown)
+        messageInput->setPlaceholder("Slowmode is active");
+    else
+        messageInput->setPlaceholder("Message #" + name);
+
+    if (guildId.isValid()) {
+        setMemberListVisible(true);
+        instance->memberList()->setActiveChannel(guildId, channelId);
+    }
+}
+
+void MainWindow::switchChatChannel(Core::Snowflake channelId, Core::Snowflake guildId)
+{
+    if (channelId == chatModel->getActiveChannelId())
+        return;
+
+    if (guildId != cachedGuildId) {
+        cachedGuildId = guildId;
+        userColorCache.clear();
+    }
+
+    chatModel->setActiveChannel(channelId, guildId);
+    typingTracker->setActiveChannel(channelId);
+    messageInput->clearReplyTarget();
 }
 
 void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
 {
     if (currentInstance) {
+        currentInstance->forums()->setCurrentForum({});
+
         auto *msgs = currentInstance->messages();
         disconnect(msgs, nullptr, chatModel, nullptr);
         disconnect(msgs, nullptr, this, nullptr);
@@ -315,12 +328,20 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
         disconnect(currentInstance->permissions(), nullptr, this, nullptr);
         disconnect(currentInstance, &Core::ClientInstance::membersUpdated, this, nullptr);
         disconnect(memberListView, nullptr, currentInstance->memberList(), nullptr);
+        disconnect(currentInstance->forums(), nullptr, this, nullptr);
     }
 
     currentInstance = newInstance;
     auto *msgs = currentInstance->messages();
 
     memberListModel->setManager(currentInstance->memberList());
+
+    forumModel->setManager(currentInstance->forums());
+    connect(currentInstance->forums(), &Core::ForumManager::loadingChanged, this,
+            [this](Core::Snowflake forumId, bool loading) {
+                if (forumId == currentForumId)
+                    forumBrowser->setLoading(loading);
+            });
     connect(memberListView, &MemberListView::visibleRangeChanged,
             currentInstance->memberList(), &Core::MemberListManager::updateSubscriptionRange);
 
@@ -357,11 +378,159 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
                     userColorCache.remove(userId);
 
                 chatModel->refreshUsersInView(userIds);
+                forumModel->refreshAuthors();
             });
 
 #ifndef ACHERON_NO_VOICE
     updateVoiceStatusLabel();
 #endif
+}
+
+void MainWindow::setViewMode(ViewMode mode)
+{
+    viewMode = mode;
+
+    if (currentInstance)
+        currentInstance->forums()->setCurrentForum(
+                mode == ViewMode::TextChannel ? Core::Snowflake() : currentForumId);
+
+    switch (mode) {
+    case ViewMode::TextChannel:
+        forumBrowser->setVisible(false);
+        threadPane->setVisible(true);
+        threadHeader->setVisible(false);
+        break;
+    case ViewMode::ForumBrowse:
+        forumBrowser->setVisible(true);
+        threadPane->setVisible(false);
+        threadHeader->setVisible(false);
+        break;
+    case ViewMode::ForumSplit:
+        forumBrowser->setVisible(true);
+        threadPane->setVisible(true);
+        threadHeader->setVisible(true);
+        popOutButton->setText(tr("Open as channel"));
+        break;
+    case ViewMode::ThreadPopout:
+        forumBrowser->setVisible(false);
+        threadPane->setVisible(true);
+        threadHeader->setVisible(true);
+        popOutButton->setText(tr("Back to forum"));
+        break;
+    }
+
+    updateMemberListVisibility();
+}
+
+void MainWindow::setMemberListVisible(bool visible)
+{
+    memberListWanted = visible;
+    updateMemberListVisibility();
+}
+
+void MainWindow::updateMemberListVisibility()
+{
+    memberListView->setVisible(memberListWanted && viewMode == ViewMode::TextChannel);
+}
+
+TabEntry MainWindow::makeTabEntry(ChannelNode *node, ChannelNode *accountNode) const
+{
+    ChannelNode *guildNode = ChannelTreeModel::findGuildNode(node);
+
+    TabEntry entry;
+    entry.channelId = node->id;
+    entry.guildId = guildNode ? guildNode->id : Snowflake::Invalid;
+    entry.accountId = accountNode->id;
+    entry.name = node->name;
+    entry.isDm = (node->type == ChannelNode::Type::DMChannel);
+    entry.isForum = (node->type == ChannelNode::Type::Forum);
+    if (guildNode && !guildNode->TEMP_iconHash.isEmpty())
+        entry.iconUrl = Discord::Cdn::guildIcon(guildNode->id, guildNode->TEMP_iconHash, 64);
+    return entry;
+}
+
+void MainWindow::openForumChannel(Core::ClientInstance *instance, Core::Snowflake forumId,
+                                  Core::Snowflake guildId)
+{
+    instance->readState()->setActiveChannel(forumId);
+
+    currentForumId = forumId;
+    currentForumGuildId = guildId;
+    forumBrowser->setSortMode(static_cast<int>(instance->forums()->sortMode(forumId)));
+    forumModel->setForum(forumId, guildId);
+    setViewMode(ViewMode::ForumBrowse);
+    forumBrowser->setLoading(instance->forums()->isLoading(forumId));
+
+    Snowflake newestPost = instance->readState()->getChannelLastMessageId(forumId);
+    if (newestPost.isValid())
+        instance->readState()->markChannelAsRead(forumId, newestPost);
+}
+
+void MainWindow::openForumPost(Core::Snowflake threadId, Core::Snowflake guildId)
+{
+    if (!currentInstance)
+        return;
+
+    setViewMode(ViewMode::ForumSplit);
+
+    Core::Snowflake userId = currentInstance->accountId();
+    bool canSend = currentInstance->permissions()->hasChannelPermission(userId, currentForumId, Discord::Permission::SEND_MESSAGES_IN_THREADS);
+    messageInput->setEnabled(canSend);
+    messageInput->setSendBlocked(false);
+    messageInput->setMaxUploadSize(currentInstance->discord()->getMaxUploadSize(threadId));
+    messageInput->setPlaceholder(canSend ? tr("Message this post")
+                                         : tr("You do not have permission to send messages"));
+    chatView->setCanPinMessages(false);
+    chatView->setCanManageMessages(false);
+
+    switchChatChannel(threadId, guildId);
+    currentInstance->readState()->setActiveChannel(threadId);
+    Snowflake lastMsgId = currentInstance->readState()->getChannelLastMessageId(threadId);
+    currentInstance->readState()->markForumPostAsRead(threadId, lastMsgId.isValid() ? lastMsgId : threadId);
+    currentInstance->messages()->requestLoadChannel(threadId);
+}
+
+void MainWindow::onNewPostRequested()
+{
+    if (!currentInstance || !currentForumId.isValid())
+        return;
+
+    Core::ClientInstance *instance = currentInstance;
+    Core::Snowflake forumId = currentForumId;
+    Core::Snowflake guildId = currentForumGuildId;
+
+    auto *dialog = new NewPostDialog(instance->forums()->availableTags(forumId), instance->forums()->requiresTag(forumId), this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setMaxUploadSize(instance->discord()->getMaxUploadSize(forumId));
+
+    connect(dialog, &NewPostDialog::submitted, this, [this, dialog, instance, forumId, guildId]() {
+        dialog->setBusy(true);
+
+        QPointer<NewPostDialog> guard(dialog);
+        instance->discord()->createForumThread(
+                forumId, dialog->title(), dialog->selectedTagIds(), dialog->content(),
+                Core::Snowflake::generateNonce().toString(), dialog->attachments(),
+                [this, guard, instance, forumId,
+                 guildId](const Core::Result<Discord::Client::CreatedForumThread> &res) {
+                    if (!res.success()) {
+                        qCWarning(LogUI) << "Failed to create forum post:" << res.error;
+                        if (guard)
+                            guard->showError(tr("Could not post: %1").arg(res.error));
+                        return;
+                    }
+
+                    if (guard)
+                        guard->accept();
+
+                    Core::Snowflake threadId = res.value->thread.id.get();
+                    if (res.value->starterMessage)
+                        instance->forums()->addStarterMessage(threadId, *res.value->starterMessage);
+                    if (currentInstance == instance && currentForumId == forumId)
+                        openForumPost(threadId, guildId);
+                });
+    });
+
+    dialog->open();
 }
 
 void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
@@ -432,6 +601,17 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
             [this, instance](Core::Snowflake channelId) {
                 channelTreeModel->updateReadState(channelId, instance->accountId());
                 refreshTabReadStates();
+                forumModel->refreshPost(channelId);
+            });
+
+    connect(instance, &Core::ClientInstance::forumBadgeChanged, this,
+            [this, instance](Core::Snowflake forumId) {
+                channelTreeModel->updateForumBadge(forumId, instance->accountId());
+            });
+
+    connect(instance, &Core::ClientInstance::forumJoinedPostsChanged, this,
+            [this, instance](Core::Snowflake forumId) {
+                channelTreeModel->updateForumThreads(forumId, instance->accountId());
             });
 
     connect(instance, &Core::ClientInstance::channelLastMessageUpdated, this,
@@ -590,11 +770,63 @@ void MainWindow::setupUi()
                 }
             });
 
+    threadHeader = new QWidget(rightSideWidget);
+    auto *threadHeaderLayout = new QHBoxLayout(threadHeader);
+    threadHeaderLayout->setContentsMargins(8, 4, 8, 4);
+    popOutButton = new QPushButton(tr("Open as channel"), threadHeader);
+    closeThreadButton = new QPushButton(tr("Close"), threadHeader);
+    threadHeaderLayout->addStretch(1);
+    threadHeaderLayout->addWidget(popOutButton, 0);
+    threadHeaderLayout->addWidget(closeThreadButton, 0);
+    threadHeader->setVisible(false);
+
+    connect(popOutButton, &QPushButton::clicked, this, [this]() {
+        setViewMode(viewMode == ViewMode::ThreadPopout ? ViewMode::ForumSplit
+                                                       : ViewMode::ThreadPopout);
+    });
+    connect(closeThreadButton, &QPushButton::clicked, this,
+            [this]() { setViewMode(ViewMode::ForumBrowse); });
+
+    threadPane = new QWidget(rightSideWidget);
+    auto *threadPaneLayout = new QVBoxLayout(threadPane);
+    threadPaneLayout->setContentsMargins(0, 0, 0, 0);
+    threadPaneLayout->setSpacing(0);
+    threadPaneLayout->addWidget(threadHeader, 0);
+    threadPaneLayout->addWidget(chatView, 1);
+    threadPaneLayout->addWidget(statusRow, 0);
+    threadPaneLayout->addWidget(messageInput, 0);
+
+    forumModel = new ForumPostModel(session->getImageManager(), this);
+    forumModel->setDisplayNameResolver([this](Snowflake userId, Snowflake guildId) -> QString {
+        if (!currentInstance || !guildId.isValid())
+            return QString();
+        auto member = currentInstance->users()->getMember(guildId, userId);
+        if (member && member->nick.hasValue())
+            return member->nick.get();
+        return QString();
+    });
+    forumModel->setRoleColorResolver([this](Snowflake userId, Snowflake guildId) { return resolveRoleColor(userId, guildId); });
+    forumBrowser = new ForumBrowser(rightSideWidget);
+    forumBrowser->setModel(forumModel);
+    forumBrowser->setVisible(false);
+
+    connect(forumBrowser, &ForumBrowser::postActivated, this, &MainWindow::openForumPost);
+    connect(forumBrowser, &ForumBrowser::newPostRequested, this, &MainWindow::onNewPostRequested);
+    connect(forumBrowser, &ForumBrowser::sortModeChanged, this, [this](int mode) {
+        if (currentInstance && currentForumId.isValid())
+            currentInstance->forums()->setSortMode(currentForumId, static_cast<Core::ForumSortMode>(mode));
+    });
+
+    centerSplitter = new QSplitter(Qt::Horizontal, rightSideWidget);
+    centerSplitter->addWidget(forumBrowser);
+    centerSplitter->addWidget(threadPane);
+    centerSplitter->setStretchFactor(0, 1);
+    centerSplitter->setStretchFactor(1, 1);
+    centerSplitter->setSizes({ 350, 550 });
+
     rightLayout->addWidget(connectionBanner, 0);
     rightLayout->addWidget(tabBar, 0);
-    rightLayout->addWidget(chatView, 1);
-    rightLayout->addWidget(statusRow, 0);
-    rightLayout->addWidget(messageInput, 0);
+    rightLayout->addWidget(centerSplitter, 1);
 
     memberListView = new MemberListView(central);
     memberListView->setModel(memberListModel);
@@ -815,19 +1047,7 @@ void MainWindow::setupUi()
                 if (!accountNode)
                     return;
 
-                ChannelNode *guildNode = ChannelTreeModel::findGuildNode(node);
-                Snowflake guildId = guildNode ? guildNode->id : Snowflake::Invalid;
-
-                TabEntry entry;
-                entry.channelId = node->id;
-                entry.guildId = guildId;
-                entry.accountId = accountNode->id;
-                entry.name = node->name;
-                entry.isDm = (node->type == ChannelNode::Type::DMChannel);
-                if (guildNode && !guildNode->TEMP_iconHash.isEmpty())
-                    entry.iconUrl = Discord::Cdn::guildIcon(guildNode->id, guildNode->TEMP_iconHash,
-                                                            64);
-                tabBar->openNewTab(entry);
+                tabBar->openNewTab(makeTabEntry(node, accountNode));
             });
 
 #ifndef ACHERON_NO_VOICE
@@ -1319,66 +1539,24 @@ void MainWindow::activateChannel(const TabEntry &entry)
     if (instance != currentInstance)
         switchActiveInstance(instance);
 
+    if (entry.isForum) {
+        openForumChannel(instance, entry.channelId, entry.guildId);
+        if (entry.guildId.isValid())
+            recordLastViewedChannel(entry.accountId, entry.guildId, entry.channelId);
+        refreshTabReadStates();
+        return;
+    }
+
     instance->readState()->setActiveChannel(entry.channelId);
+    setViewMode(ViewMode::TextChannel);
 
     if (!entry.isDm && entry.guildId.isValid())
         recordLastViewedChannel(entry.accountId, entry.guildId, entry.channelId);
     else if (entry.isDm)
         recordLastViewedChannel(entry.accountId, Snowflake::Invalid, entry.channelId);
 
-    Snowflake userId = instance->accountId();
-
-    messageInput->setMaxUploadSize(instance->discord()->getMaxUploadSize(entry.channelId));
-
-    if (entry.isDm) {
-        messageInput->setEnabled(true);
-        messageInput->setSendBlocked(false);
-        messageInput->setPlaceholder("Message @" + entry.name);
-        chatView->setCanPinMessages(true);
-        chatView->setCanManageMessages(false);
-        slowModeIndicator->setSlowMode(entry.channelId, 0, false);
-        memberListView->hide();
-        instance->memberList()->clear();
-    } else {
-        bool canSend = instance->permissions()->hasChannelPermission(userId, entry.channelId, Discord::Permission::SEND_MESSAGES);
-        bool canPin = instance->permissions()->hasChannelPermission(userId, entry.channelId, Discord::Permission::PIN_MESSAGES);
-        bool canManage = instance->permissions()->hasChannelPermission(userId, entry.channelId, Discord::Permission::MANAGE_MESSAGES);
-
-        int rateLimit = instance->getChannelRateLimit(entry.channelId);
-        bool canBypass = instance->permissions()->hasChannelPermission(
-                userId, entry.channelId, Discord::Permission::BYPASS_SLOWMODE);
-        slowModeIndicator->setSlowMode(entry.channelId, rateLimit, canBypass);
-
-        bool onCooldown = rateLimit > 0 && !canBypass && slowModeIndicator->isOnCooldown(entry.channelId);
-        messageInput->setEnabled(canSend);
-        messageInput->setSendBlocked(onCooldown);
-        chatView->setCanPinMessages(canPin);
-        chatView->setCanManageMessages(canManage);
-
-        if (!canSend)
-            messageInput->setPlaceholder("You do not have permission to send messages");
-        else if (onCooldown)
-            messageInput->setPlaceholder("Slowmode is active");
-        else
-            messageInput->setPlaceholder("Message #" + entry.name);
-
-        if (entry.guildId.isValid()) {
-            memberListView->show();
-            instance->memberList()->setActiveChannel(entry.guildId, entry.channelId);
-        }
-    }
-
-    if (entry.channelId != chatModel->getActiveChannelId()) {
-        if (entry.guildId != cachedGuildId) {
-            cachedGuildId = entry.guildId;
-            userColorCache.clear();
-        }
-
-        chatModel->setActiveChannel(entry.channelId, entry.guildId);
-        typingTracker->setActiveChannel(entry.channelId);
-        messageInput->clearReplyTarget();
-    }
-
+    applyChannelChrome(instance, entry.channelId, entry.name, entry.isDm, entry.guildId);
+    switchChatChannel(entry.channelId, entry.guildId);
     instance->messages()->requestLoadChannel(entry.channelId);
 
     Snowflake lastMsgId = instance->readState()->getChannelLastMessageId(entry.channelId);
@@ -1401,6 +1579,11 @@ void MainWindow::refreshTabReadStates()
 
         auto state = inst->readState()->computeChannelReadState(
                 entry.channelId, entry.guildId, Snowflake::Invalid, entry.isDm);
+        if (entry.isForum) {
+            auto posts = inst->forums()->joinedPostsContribution(entry.channelId);
+            state.isUnread = state.isUnread || posts.unread;
+            state.mentionCount += posts.mentions;
+        }
         tabBar->updateChannelReadState(entry.channelId, state.isUnread, state.mentionCount);
     }
 }
@@ -1556,6 +1739,7 @@ void MainWindow::saveWindowState()
         settings.setValue("name", entry.name);
         settings.setValue("iconUrl", entry.iconUrl);
         settings.setValue("isDm", entry.isDm);
+        settings.setValue("isForum", entry.isForum);
     }
     settings.endArray();
     settings.setValue("layout/activeTab", newActive);
@@ -1640,6 +1824,7 @@ void MainWindow::restoreWindowState()
         entry.name = settings.value("name").toString();
         entry.iconUrl = settings.value("iconUrl").toUrl();
         entry.isDm = settings.value("isDm").toBool();
+        entry.isForum = settings.value("isForum").toBool();
         if (entry.channelId.isValid())
             entries.append(entry);
     }
@@ -1791,6 +1976,7 @@ void MainWindow::refreshGuildRoleData(Snowflake guildId)
     if (cachedGuildId == guildId) {
         userColorCache.clear();
         chatModel->refreshUsersInView({});
+        forumModel->refreshAuthors();
     }
 }
 

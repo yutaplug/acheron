@@ -20,6 +20,8 @@ struct ChannelNode
         Server,
         Category,
         Channel,
+        Forum,
+        Thread,
         VoiceChannel,
         VoiceParticipant,
         DMChannel,
@@ -30,7 +32,8 @@ struct ChannelNode
     Type type;
     int position = 0;
     bool isUnread = false;
-    int mentionCount = 0;
+    int mentionCount = 0; // what this row shows
+    int subtreeMentionCount = 0; // what gets handed above
     bool isMuted = false;
     bool countsForGuildUnread = false;
     bool collapsed = false;
@@ -47,9 +50,16 @@ struct ChannelNode
     bool isPrivate = false;
     int voiceParticipantCount = 0;
     int userLimit = 0;
+    int forumBadgeCount = 0;
+    bool forumBadgeIsNew = false;
 
     std::vector<std::unique_ptr<ChannelNode>> children;
     ChannelNode *parent = nullptr;
+
+    [[nodiscard]] bool opensChat() const
+    {
+        return type == Type::Channel || type == Type::DMChannel || type == Type::Forum || type == Type::Thread;
+    }
 
     ChannelNode *addChild(std::unique_ptr<ChannelNode> node)
     {

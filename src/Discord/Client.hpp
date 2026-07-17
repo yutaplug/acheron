@@ -2,10 +2,13 @@
 
 #include <QObject>
 #include <QNetworkReply>
+#include <QHash>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QUrlQuery>
+
+#include <optional>
 
 #include "Core/Result.hpp"
 #include "Core/Snowflake.hpp"
@@ -55,6 +58,33 @@ public:
 
     void setUserNote(Snowflake userId, const QString &note);
 
+    struct ForumThreadSearchResult
+    {
+        QList<Channel> threads;
+        QHash<Snowflake, Message> firstMessages; // (thread id, starter message)
+        bool hasMore = false;
+        bool indexNotReady = false; // 202
+        int retryAfterSeconds = 0;
+    };
+    using ForumThreadsCallback = std::function<void(const Core::Result<ForumThreadSearchResult> &)>;
+    // "last_message_time" / "creation_time"
+    void searchForumThreads(Snowflake forumId, int offset, const QString &sortBy, ForumThreadsCallback callback);
+
+    struct CreatedForumThread
+    {
+        Channel thread;
+        std::optional<Message> starterMessage;
+    };
+    using ForumThreadCallback = std::function<void(const Core::Result<CreatedForumThread> &)>;
+    void createForumThread(Snowflake forumId, const QString &name,
+                           const QList<Snowflake> &appliedTags, const QString &content,
+                           const QString &nonce,
+                           const QList<Core::PendingAttachment> &attachments,
+                           ForumThreadCallback callback);
+
+    using ForumPostDataCallback = std::function<void(const Core::Result<QHash<Snowflake, Message>> &)>;
+    void fetchForumPostData(Snowflake forumId, const QList<Snowflake> &threadIds, ForumPostDataCallback callback);
+
     void sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
                      Snowflake replyToMessageId = Snowflake::Invalid,
                      const QList<Core::PendingAttachment> &attachments = {});
@@ -86,6 +116,7 @@ public:
     void subscribeToGuildChannel(Snowflake guildId, Snowflake channelId,
                                  const QList<QPair<int, int>> &ranges);
     void ensureSubscriptionByChannel(Snowflake channelId);
+    void requestForumUnreads(Snowflake forumId, const QList<QPair<Snowflake, Snowflake>> &threads);
     void requestGuildMembers(Snowflake guildId, const QList<Snowflake> &userIds);
 
     [[nodiscard]] Snowflake getGuildIdForChannel(Snowflake channelId) const;
@@ -107,6 +138,12 @@ signals:
     void channelCreated(const ChannelCreate &event);
     void channelUpdated(const ChannelUpdate &event);
     void channelDeleted(const ChannelDelete &event);
+    void threadCreated(const ChannelCreate &event);
+    void threadUpdated(const ChannelUpdate &event);
+    void threadDeleted(const ThreadDelete &event);
+    void threadListSync(const ThreadListSync &event);
+    void threadMemberUpdated(const ThreadMemberUpdate &event);
+    void forumUnreads(const ForumUnreads &event);
     void guildCreated(const GatewayGuild &guild);
     void guildMembersChunk(const GuildMembersChunk &chunk);
     void guildMemberUpdated(const GuildMemberUpdate &event);
@@ -146,6 +183,10 @@ private slots:
     void onGatewayChannelCreate(const ChannelCreate &event);
     void onGatewayChannelUpdate(const ChannelUpdate &event);
     void onGatewayChannelDelete(const ChannelDelete &event);
+    void onGatewayThreadCreate(const ChannelCreate &event);
+    void onGatewayThreadUpdate(const ChannelUpdate &event);
+    void onGatewayThreadDelete(const ThreadDelete &event);
+    void onGatewayThreadListSync(const ThreadListSync &event);
     void onGatewayGuildCreate(const GatewayGuild &guild);
     void onGatewayGuildRoleCreate(const GuildRoleCreate &event);
     void onGatewayGuildRoleUpdate(const GuildRoleUpdate &event);
@@ -155,7 +196,6 @@ private:
     struct UploadState
     {
         Snowflake channelId;
-        QJsonObject payload;
         QString nonce;
         QList<Core::PendingAttachment> attachments;
         QStringList uploadFilenames;
@@ -163,11 +203,19 @@ private:
         int remaining = 0;
         bool failed = false;
         std::shared_ptr<std::atomic<bool>> cancelFlag;
+
+        std::function<void(const QJsonArray &attachmentsJson)> onUploaded;
+        std::function<void(const QString &error)> onFailed;
     };
 
     void setState(Core::ConnectionState state);
     void uploadAttachmentsAndSend(const std::shared_ptr<UploadState> &state);
     void finishUpload(const std::shared_ptr<UploadState> &state);
+    void failUpload(const std::shared_ptr<UploadState> &state, const QString &error);
+    void postForumThread(Snowflake forumId, const QString &name,
+                         const QList<Snowflake> &appliedTags,
+                         const QJsonObject &message,
+                         ForumThreadCallback callback);
     void cleanupUploadedSlots(const std::shared_ptr<UploadState> &state);
     void settleUpload(const std::shared_ptr<UploadState> &state);
 

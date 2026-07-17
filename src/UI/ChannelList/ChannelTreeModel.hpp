@@ -16,6 +16,7 @@ using Acheron::Core::Snowflake;
 namespace Acheron::Core {
 struct ChannelReadState;
 class ClientInstance;
+class ReadStateManager;
 } // namespace Acheron::Core
 
 namespace Acheron::Proto {
@@ -70,6 +71,8 @@ public:
     void deleteChannel(const Discord::ChannelDelete &event, Snowflake accountId);
     void invalidateGuildData(Snowflake guildId);
     void updateReadState(Snowflake channelId, Snowflake accountId);
+    void updateForumBadge(Snowflake forumId, Snowflake accountId);
+    void updateForumThreads(Snowflake forumId, Snowflake accountId);
     void updateGuildSettings(Snowflake guildId, Snowflake accountId);
     void updateChannelLastMessageId(Snowflake channelId, Snowflake messageId, Snowflake accountId);
     void updateVoiceCount(Snowflake channelId, int count, Snowflake accountId);
@@ -94,6 +97,18 @@ private:
     static void collectMarkableChannels(ChannelNode *node,
                                         QList<QPair<Snowflake, Snowflake>> &out);
     void applyChannelReadState(ChannelNode *node, const Core::ChannelReadState &state);
+    void applyForumReadState(ChannelNode *node, Core::ReadStateManager *readState, Snowflake guildId);
+    struct ReadStateSnapshot
+    {
+        bool isUnread;
+        bool isMuted;
+        bool countsForGuildUnread;
+        int mentionCount;
+        int subtreeMentionCount;
+    };
+    static ReadStateSnapshot readStateSnapshot(const ChannelNode *node);
+    bool notifyIfReadStateChanged(ChannelNode *node, const ReadStateSnapshot &before);
+    bool refreshForumNode(ChannelNode *forumNode, Core::ClientInstance *instance, Snowflake guildId);
     static void aggregateChildren(ChannelNode *node);
     void recomputeSubtreeAggregates(ChannelNode *root);
     void updateNodeAggregates(ChannelNode *node);

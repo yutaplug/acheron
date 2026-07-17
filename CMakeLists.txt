@@ -148,6 +148,7 @@ set(PROJECT_SOURCES
     src/Core/Session.cpp
     src/Core/Logging.cpp
     src/Core/MessageManager.cpp
+    src/Core/ForumManager.cpp
     src/Core/ImageManager.cpp
     src/Core/UserManager.cpp
     src/Core/TypingTracker.cpp
@@ -188,6 +189,10 @@ set(PROJECT_SOURCES
     src/UI/Chat/ChatDelegate.cpp
     src/UI/Chat/ChatView.cpp
     src/UI/Chat/ChatLayout.cpp
+    src/UI/Forum/ForumPostModel.cpp
+    src/UI/Forum/ForumPostDelegate.cpp
+    src/UI/Forum/ForumBrowser.cpp
+    src/UI/Forum/NewPostDialog.cpp
     src/UI/Dialogs/TokenInputDialog.cpp
     src/UI/Dialogs/QRLoginDialog.cpp
     src/UI/Dialogs/BasePopup.cpp

@@ -65,6 +65,54 @@ static void drawHashIcon(QPainter *painter, const QRect &contentRect, const QCol
     painter->restore();
 }
 
+static void drawThreadBranchIcon(QPainter *painter, const QRect &contentRect, const QColor &color)
+{
+    constexpr int iconSize = 16;
+    int x = contentRect.left() + (24 - iconSize) / 2;
+    int y = contentRect.top() + (contentRect.height() - iconSize) / 2;
+
+    QColor branch = color;
+    branch.setAlphaF(0.4f);
+    QPen pen(branch, 1.5);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    painter->save();
+    painter->setPen(pen);
+    painter->setBrush(Qt::NoBrush);
+
+    QPainterPath path;
+    path.moveTo(x + 5, y - 2);
+    path.lineTo(x + 5, y + 6);
+    path.quadTo(x + 5, y + 9, x + 8, y + 9);
+    path.lineTo(x + 13, y + 9);
+    painter->drawPath(path);
+
+    painter->restore();
+}
+
+static void drawForumIcon(QPainter *painter, const QRect &contentRect, const QColor &color)
+{
+    constexpr int iconSize = 16;
+    int x = contentRect.left() + (24 - iconSize) / 2;
+    int y = contentRect.top() + (contentRect.height() - iconSize) / 2;
+
+    QPen pen(color, 1.5);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    painter->save();
+    painter->setPen(pen);
+    painter->setBrush(Qt::NoBrush);
+
+    // speech bubble with a small tail and two text lines
+    painter->drawRoundedRect(QRectF(x + 1.5, y + 2, 13, 9), 2.5, 2.5);
+    painter->drawLine(QLineF(x + 4.5, y + 11, x + 4, y + 14));
+    painter->drawLine(QLineF(x + 4, y + 14, x + 8, y + 11));
+    painter->drawLine(QLineF(x + 4, y + 5.5, x + 12, y + 5.5));
+    painter->drawLine(QLineF(x + 4, y + 8, x + 10, y + 8));
+
+    painter->restore();
+}
+
 static void drawPadlockOverlay(QPainter *painter, const QRect &contentRect, const QColor &color,
                                const QColor &bgColor)
 {
@@ -401,8 +449,7 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     // determine text color
     QColor textColor = option.palette.text().color();
     bool isSelected = index.data(ChannelFilterProxyModel::SelectedRole).toBool();
-    if (node->type == ChannelNode::Type::Channel || node->type == ChannelNode::Type::VoiceChannel ||
-        node->type == ChannelNode::Type::DMChannel) {
+    if (node->opensChat() || node->type == ChannelNode::Type::VoiceChannel) {
         if (node->isMuted)
             textColor = option.palette.text().color().darker(150);
         else if (isSelected || (node->isUnread && node->type != ChannelNode::Type::VoiceChannel))
@@ -419,11 +466,25 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         drawHashIcon(painter, contentOpt.rect, textColor);
         if (node->isPrivate)
             drawPadlockOverlay(painter, contentOpt.rect, textColor, option.palette.base().color());
+    } else if (node->type == ChannelNode::Type::Forum) {
+        drawForumIcon(painter, contentOpt.rect, textColor);
+        if (node->isPrivate)
+            drawPadlockOverlay(painter, contentOpt.rect, textColor, option.palette.base().color());
+    } else if (node->type == ChannelNode::Type::Thread) {
+        drawThreadBranchIcon(painter, contentOpt.rect, textColor);
     } else if (node->type == ChannelNode::Type::VoiceChannel) {
         drawSpeakerIcon(painter, contentOpt.rect, textColor);
         if (node->isPrivate)
             drawPadlockOverlay(painter, contentOpt.rect, textColor, option.palette.base().color());
     }
+
+    const bool showForumBadge =
+            node->type == ChannelNode::Type::Forum && node->forumBadgeCount > 0 && !node->isMuted;
+    const QString forumBadgeText =
+            !showForumBadge ? QString()
+            : node->forumBadgeIsNew
+                    ? ChannelDelegate::tr("%1 New").arg(node->forumBadgeCount)
+                    : QString::number(node->forumBadgeCount);
 
     // reserve right-side space for voice limit badge
     int rightReserve = iconSize;
@@ -431,6 +492,8 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         QString countText = QStringLiteral("%1/%2").arg(node->voiceParticipantCount).arg(node->userLimit);
         QFontMetrics fm(painter->font());
         rightReserve = fm.horizontalAdvance(countText) + fm.height() / 2 + 8;
+    } else if (showForumBadge) {
+        rightReserve = painter->fontMetrics().horizontalAdvance(forumBadgeText) + 12;
     }
 
     QRect textRect = contentOpt.rect.adjusted(iconSize, 0, -rightReserve, 0);
@@ -444,9 +507,8 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         drawBranchIndicator(painter, contentOpt, !node->collapsed);
 
     // unread pill for channels and servers (draws in the left margin)
-    if ((node->type == ChannelNode::Type::Channel || node->type == ChannelNode::Type::DMChannel ||
-         node->type == ChannelNode::Type::Server) &&
-        node->isUnread && !node->isMuted)
+    if ((node->opensChat() || node->type == ChannelNode::Type::Server) && node->isUnread &&
+        !node->isMuted)
         drawUnreadPill(painter, option);
 
     // voice user limit for voice channels
@@ -469,6 +531,16 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
         painter->setPen(textColor);
         painter->drawText(badgeRect, Qt::AlignCenter, countText);
+    }
+
+    if (showForumBadge && node->mentionCount == 0) {
+        QFontMetrics fm(painter->font());
+        QRect badgeRect(contentOpt.rect.right() - fm.horizontalAdvance(forumBadgeText) - 4,
+                        contentOpt.rect.top(),
+                        fm.horizontalAdvance(forumBadgeText), contentOpt.rect.height());
+        painter->setPen(node->forumBadgeIsNew ? option.palette.highlight().color()
+                                              : option.palette.text().color().darker(150));
+        painter->drawText(badgeRect, Qt::AlignRight | Qt::AlignVCenter, forumBadgeText);
     }
 
     // mention badge for channels, servers

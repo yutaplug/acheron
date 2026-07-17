@@ -182,6 +182,24 @@ void Gateway::handleDispatch(const Inbound &data)
     case GatewayEvent::CHANNEL_DELETE:
         handleChannelDelete(data);
         break;
+    case GatewayEvent::THREAD_CREATE:
+        handleThreadCreate(data);
+        break;
+    case GatewayEvent::THREAD_UPDATE:
+        handleThreadUpdate(data);
+        break;
+    case GatewayEvent::THREAD_DELETE:
+        handleThreadDelete(data);
+        break;
+    case GatewayEvent::THREAD_LIST_SYNC:
+        handleThreadListSync(data);
+        break;
+    case GatewayEvent::THREAD_MEMBER_UPDATE:
+        handleThreadMemberUpdate(data);
+        break;
+    case GatewayEvent::FORUM_UNREADS:
+        handleForumUnreads(data);
+        break;
     case GatewayEvent::GUILD_CREATE:
         handleGuildCreate(data);
         break;
@@ -325,6 +343,59 @@ void Gateway::handleChannelDelete(const Inbound &data)
     ChannelDelete event = data.getData<ChannelDelete>();
 
     emit gatewayChannelDelete(event);
+}
+
+void Gateway::handleThreadCreate(const Inbound &data)
+{
+    ChannelCreate event = data.getData<ChannelCreate>();
+
+    emit gatewayThreadCreate(event);
+}
+
+void Gateway::handleThreadUpdate(const Inbound &data)
+{
+    ChannelUpdate event = data.getData<ChannelUpdate>();
+
+    emit gatewayThreadUpdate(event);
+}
+
+void Gateway::handleThreadDelete(const Inbound &data)
+{
+    ThreadDelete event = data.getData<ThreadDelete>();
+
+    emit gatewayThreadDelete(event);
+}
+
+void Gateway::handleThreadListSync(const Inbound &data)
+{
+    ThreadListSync event = data.getData<ThreadListSync>();
+
+    emit gatewayThreadListSync(event);
+}
+
+void Gateway::handleThreadMemberUpdate(const Inbound &data)
+{
+    ThreadMemberUpdate event = data.getData<ThreadMemberUpdate>();
+
+    emit gatewayThreadMemberUpdate(event);
+}
+
+void Gateway::handleForumUnreads(const Inbound &data)
+{
+    ForumUnreads event = data.getData<ForumUnreads>();
+
+    emit gatewayForumUnreads(event);
+}
+
+void Gateway::requestForumUnreads(Core::Snowflake guildId, Core::Snowflake forumId,
+                                  const QList<QPair<Core::Snowflake, Core::Snowflake>> &threads)
+{
+    RequestForumUnreads request;
+    request.guildId = guildId;
+    request.channelId = forumId;
+    request.threads = threads;
+
+    sendPayload(request.toJson());
 }
 
 void Gateway::handleGuildCreate(const Inbound &data)

@@ -121,6 +121,34 @@ struct GuildSubscriptionsBulkData : Core::JsonUtils::JsonObject
 using GuildSubscriptionsBulk =
         Outbound<OpCode::GUILD_SUBSCRIPTIONS_BULK, GuildSubscriptionsBulkData>;
 
+struct RequestForumUnreadsData : Core::JsonUtils::JsonObject
+{
+    Core::Snowflake guildId;
+    Core::Snowflake channelId; // the forum
+    // (post id, message id or invalid if not acked)
+    QList<QPair<Core::Snowflake, Core::Snowflake>> threads;
+
+    QJsonObject toJson() const
+    {
+        QJsonObject obj;
+        obj["guild_id"] = QString::number(guildId);
+        obj["channel_id"] = QString::number(channelId);
+
+        QJsonArray arr;
+        for (const auto &[threadId, ackMessageId] : threads) {
+            QJsonObject t;
+            t["thread_id"] = QString::number(threadId);
+            t["ack_message_id"] = ackMessageId.isValid()
+                                          ? QJsonValue(QString::number(ackMessageId))
+                                          : QJsonValue::Null;
+            arr.append(t);
+        }
+        obj["threads"] = arr;
+        return obj;
+    }
+};
+using RequestForumUnreads = Outbound<OpCode::REQUEST_FORUM_UNREADS, RequestForumUnreadsData>;
+
 struct RequestGuildMembersData : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> guildId;

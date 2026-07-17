@@ -54,6 +54,12 @@ Client::Client(const QString &token, const QString &gatewayUrl, const QString &b
     connect(gateway, &Gateway::gatewayChannelCreate, this, &Client::onGatewayChannelCreate);
     connect(gateway, &Gateway::gatewayChannelUpdate, this, &Client::onGatewayChannelUpdate);
     connect(gateway, &Gateway::gatewayChannelDelete, this, &Client::onGatewayChannelDelete);
+    connect(gateway, &Gateway::gatewayThreadCreate, this, &Client::onGatewayThreadCreate);
+    connect(gateway, &Gateway::gatewayThreadUpdate, this, &Client::onGatewayThreadUpdate);
+    connect(gateway, &Gateway::gatewayThreadDelete, this, &Client::onGatewayThreadDelete);
+    connect(gateway, &Gateway::gatewayThreadListSync, this, &Client::onGatewayThreadListSync);
+    connect(gateway, &Gateway::gatewayThreadMemberUpdate, this, &Client::threadMemberUpdated);
+    connect(gateway, &Gateway::gatewayForumUnreads, this, &Client::forumUnreads);
     connect(gateway, &Gateway::gatewayGuildCreate, this, &Client::onGatewayGuildCreate);
     connect(gateway, &Gateway::gatewayGuildMembersChunk, this, &Client::guildMembersChunk);
     connect(gateway, &Gateway::gatewayGuildMemberUpdate, this, &Client::guildMemberUpdated);
@@ -188,6 +194,150 @@ void Client::setUserNote(Snowflake userId, const QString &note)
     });
 }
 
+void Client::searchForumThreads(Snowflake forumId, int offset, const QString &sortBy, ForumThreadsCallback callback)
+{
+    QString endpoint = "/channels/" + QString::number(forumId) + "/threads/search";
+    QUrlQuery query;
+    query.addQueryItem("sort_by", sortBy);
+    query.addQueryItem("sort_order", "desc");
+    query.addQueryItem("limit", "25");
+    query.addQueryItem("tag_setting", "match_some");
+    if (offset > 0)
+        query.addQueryItem("offset", QString::number(offset));
+
+    httpClient->get(endpoint, query, [callback](const HttpResponse &response) {
+        if (response.statusCode == 202) {
+            QJsonObject obj = QJsonDocument::fromJson(response.body).object();
+            ForumThreadSearchResult result;
+            result.indexNotReady = true;
+            result.retryAfterSeconds = qMax(1, qRound(obj.value("retry_after").toDouble(1.0)));
+            callback(Core::Result<ForumThreadSearchResult>::makeOk(result));
+            return;
+        }
+
+        if (!response.success) {
+            qCWarning(LogDiscord) << "Failed to search forum threads:" << response.error;
+            callback(Core::Result<ForumThreadSearchResult>::makeError("Failed to search forum threads: " + response.error));
+            return;
+        }
+
+        QJsonObject obj = QJsonDocument::fromJson(response.body).object();
+        ForumThreadSearchResult result;
+        result.hasMore = obj.value("has_more").toBool();
+        for (const QJsonValue &val : obj.value("threads").toArray())
+            result.threads.append(Channel::fromJson(val.toObject()));
+        for (const QJsonValue &val : obj.value("first_messages").toArray()) {
+            Message msg = Message::fromJson(val.toObject());
+            if (msg.channelId.hasValue())
+                result.firstMessages.insert(msg.channelId.get(), msg);
+        }
+        callback(Core::Result<ForumThreadSearchResult>::makeOk(result));
+    });
+}
+
+void Client::createForumThread(Snowflake forumId, const QString &name,
+                               const QList<Snowflake> &appliedTags, const QString &content,
+                               const QString &nonce,
+                               const QList<Core::PendingAttachment> &attachments,
+                               ForumThreadCallback callback)
+{
+    QJsonObject message;
+    message["content"] = content;
+
+    if (attachments.isEmpty()) {
+        postForumThread(forumId, name, appliedTags, message, callback);
+        return;
+    }
+
+    auto state = std::make_shared<UploadState>();
+    state->channelId = forumId;
+    state->nonce = nonce;
+    state->attachments = attachments;
+    state->onUploaded = [this, forumId, name, appliedTags, message, callback](const QJsonArray &attachmentsJson) {
+        QJsonObject withFiles = message;
+        withFiles["attachments"] = attachmentsJson;
+        postForumThread(forumId, name, appliedTags, withFiles, callback);
+    };
+    state->onFailed = [callback](const QString &error) {
+        if (callback)
+            callback(Core::Result<CreatedForumThread>::makeError("Failed to create forum post: " + error));
+    };
+
+    for (int i = 0; i < attachments.size(); i++) {
+        state->uploadFilenames.append(QString());
+        state->uploaded.append(false);
+    }
+    state->cancelFlag = std::make_shared<std::atomic<bool>>(false);
+    activeUploads.insert(nonce, state);
+    uploadAttachmentsAndSend(state);
+}
+
+void Client::postForumThread(Snowflake forumId, const QString &name,
+                             const QList<Snowflake> &appliedTags,
+                             const QJsonObject &message,
+                             ForumThreadCallback callback)
+{
+    QJsonArray tags;
+    for (Snowflake tag : appliedTags)
+        tags.append(QString::number(tag));
+
+    QJsonObject body;
+    body["name"] = name;
+    body["auto_archive_duration"] = 1440;
+    body["applied_tags"] = tags;
+    body["message"] = message;
+
+    QString endpoint = "/channels/" + QString::number(forumId) + "/threads?use_nested_fields=true";
+    httpClient->post(endpoint, body, [callback](const HttpResponse &response) {
+        if (!response.success) {
+            qCWarning(LogDiscord) << "Failed to create forum thread:" << response.error;
+            if (callback)
+                callback(Core::Result<CreatedForumThread>::makeError(
+                        "Failed to create forum thread: " + response.error));
+            return;
+        }
+        QJsonObject obj = QJsonDocument::fromJson(response.body).object();
+        CreatedForumThread created;
+        created.thread = Channel::fromJson(obj);
+        if (obj.contains("message"))
+            created.starterMessage = Message::fromJson(obj.value("message").toObject());
+        if (callback)
+            callback(Core::Result<CreatedForumThread>::makeOk(created));
+    });
+}
+
+void Client::fetchForumPostData(Snowflake forumId, const QList<Snowflake> &threadIds,
+                                ForumPostDataCallback callback)
+{
+    QJsonArray ids;
+    for (Snowflake id : threadIds)
+        ids.append(QString::number(id));
+
+    QJsonObject body;
+    body["thread_ids"] = ids;
+
+    QString endpoint = "/channels/" + QString::number(forumId) + "/post-data";
+    httpClient->post(endpoint, body, [callback](const HttpResponse &response) {
+        if (!response.success) {
+            qCWarning(LogDiscord) << "Failed to fetch forum post data:" << response.error;
+            callback(Core::Result<QHash<Snowflake, Message>>::makeError(
+                    "Failed to fetch forum post data: " + response.error));
+            return;
+        }
+
+        // { "threads": { "<threadId>": { "first_message": message|null, "owner": … } } }
+        QHash<Snowflake, Message> firstMessages;
+        QJsonObject threads = QJsonDocument::fromJson(response.body).object().value("threads").toObject();
+        for (auto it = threads.constBegin(); it != threads.constEnd(); ++it) {
+            QJsonValue fm = it.value().toObject().value("first_message");
+            if (fm.isObject())
+                firstMessages.insert(Snowflake(it.key().toULongLong()),
+                                     Message::fromJson(fm.toObject()));
+        }
+        callback(Core::Result<QHash<Snowflake, Message>>::makeOk(firstMessages));
+    });
+}
+
 void Client::onConnected()
 {
     qInfo() << "Connected to gateway";
@@ -300,6 +450,47 @@ void Client::onGatewayChannelDelete(const ChannelDelete &event)
     emit channelDeleted(event);
 }
 
+void Client::onGatewayThreadCreate(const ChannelCreate &event)
+{
+    const Channel &thread = event.channel.get();
+    Snowflake guildId = thread.guildId.hasValue() ? thread.guildId.get() : Snowflake::Invalid;
+    if (!guildId.isValid() && thread.parentId.hasValue()) {
+        auto it = channelToGuild.constFind(thread.parentId.get());
+        if (it != channelToGuild.constEnd())
+            guildId = it.value();
+    }
+    if (guildId.isValid())
+        channelToGuild.insert(thread.id, guildId);
+
+    emit threadCreated(event);
+}
+
+void Client::onGatewayThreadUpdate(const ChannelUpdate &event)
+{
+    const Channel &thread = event.channel.get();
+    if (thread.guildId.hasValue())
+        channelToGuild.insert(thread.id, thread.guildId.get());
+
+    emit threadUpdated(event);
+}
+
+void Client::onGatewayThreadDelete(const ThreadDelete &event)
+{
+    channelToGuild.remove(event.id);
+
+    emit threadDeleted(event);
+}
+
+void Client::onGatewayThreadListSync(const ThreadListSync &event)
+{
+    Snowflake guildId = event.guildId.get();
+    if (event.threads.hasValue())
+        for (const auto &thread : event.threads.get())
+            channelToGuild.insert(thread.id, guildId);
+
+    emit threadListSync(event);
+}
+
 void Client::onGatewayGuildRoleCreate(const GuildRoleCreate &event)
 {
     emit guildRoleCreated(event);
@@ -336,9 +527,24 @@ void Client::sendMessage(Snowflake channelId, const QString &content, const QStr
     if (!attachments.isEmpty()) {
         auto state = std::make_shared<UploadState>();
         state->channelId = channelId;
-        state->payload = payload;
         state->nonce = nonce;
         state->attachments = attachments;
+        state->onUploaded = [this, channelId, nonce, payload](const QJsonArray &attachmentsJson) {
+            QJsonObject withFiles = payload;
+            withFiles["attachments"] = attachmentsJson;
+
+            QString endpoint = "/channels/" + QString::number(channelId) + "/messages";
+            httpClient->post(endpoint, withFiles, [this, nonce](const HttpResponse &response) {
+                if (!response.success) {
+                    qCWarning(LogDiscord) << "Failed to send message:" << response.error
+                                          << "Status:" << response.statusCode;
+                    emit messageSendFailed(nonce, response.error);
+                }
+            });
+        };
+        state->onFailed = [this, nonce](const QString &error) {
+            emit messageSendFailed(nonce, error);
+        };
         for (int i = 0; i < attachments.size(); i++) {
             state->uploadFilenames.append(QString());
             state->uploaded.append(false);
@@ -385,14 +591,14 @@ void Client::uploadAttachmentsAndSend(const std::shared_ptr<UploadState> &state)
             qCWarning(LogDiscord) << "Failed to request upload slots:" << response.error
                                   << "Status:" << response.statusCode;
             settleUpload(state);
-            emit messageSendFailed(state->nonce, response.error);
+            failUpload(state, response.error);
             return;
         }
 
         const auto uploadSlots = QJsonDocument::fromJson(response.body).object()["attachments"].toArray();
         if (uploadSlots.size() != state->attachments.size()) {
             settleUpload(state);
-            emit messageSendFailed(state->nonce, "Unexpected upload slot response");
+            failUpload(state, "Unexpected upload slot response");
             return;
         }
 
@@ -405,7 +611,7 @@ void Client::uploadAttachmentsAndSend(const std::shared_ptr<UploadState> &state)
             if (index < 0 || index >= state->attachments.size()) {
                 // wut
                 settleUpload(state);
-                emit messageSendFailed(state->nonce, "Unexpected upload slot response");
+                failUpload(state, "Unexpected upload slot response");
                 return;
             }
             state->uploadFilenames[index] = slot["upload_filename"].toString();
@@ -424,7 +630,7 @@ void Client::uploadAttachmentsAndSend(const std::shared_ptr<UploadState> &state)
                     state->failed = true;
                     qCWarning(LogDiscord) << "Attachment upload failed:" << putResponse.error
                                           << "Status:" << putResponse.statusCode;
-                    emit messageSendFailed(state->nonce, putResponse.error);
+                    failUpload(state, putResponse.error);
                     state->cancelFlag->store(true); // abort !!!
                 }
                 if (state->remaining > 0)
@@ -474,20 +680,16 @@ void Client::finishUpload(const std::shared_ptr<UploadState> &state)
             obj["description"] = attachment.description;
         attachmentsJson.append(obj);
     }
-    QJsonObject payload = state->payload;
-    payload["attachments"] = attachmentsJson;
 
+    auto onUploaded = state->onUploaded;
     settleUpload(state);
+    onUploaded(attachmentsJson);
+}
 
-    QString endpoint = "/channels/" + QString::number(state->channelId) + "/messages";
-    httpClient->post(endpoint, payload, [this, state](const HttpResponse &response) {
-        if (!response.success) {
-            qCWarning(LogDiscord) << "Failed to send message:" << response.error
-                                  << "Status:" << response.statusCode;
-            emit messageSendFailed(state->nonce, response.error);
-            return;
-        }
-    });
+void Client::failUpload(const std::shared_ptr<UploadState> &state, const QString &error)
+{
+    if (state->onFailed)
+        state->onFailed(error);
 }
 
 void Client::cleanupUploadedSlots(const std::shared_ptr<UploadState> &state)
@@ -664,6 +866,18 @@ void Client::ensureSubscriptionByChannel(Snowflake channelId)
         QList<QPair<int, int>> defaultRanges = { { 0, 99 } };
         subscribeToGuildChannel(guildId, channelId, defaultRanges);
     }
+}
+
+void Client::requestForumUnreads(Snowflake forumId, const QList<QPair<Snowflake, Snowflake>> &threads)
+{
+    if (threads.isEmpty())
+        return;
+
+    Snowflake guildId = getGuildIdForChannel(forumId);
+    if (!guildId.isValid())
+        return;
+
+    gateway->requestForumUnreads(guildId, forumId, threads);
 }
 
 Snowflake Client::getGuildIdForChannel(Snowflake channelId) const

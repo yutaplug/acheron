@@ -37,6 +37,8 @@ public:
 
     void subscribeToGuild(Core::Snowflake guildId, Core::Snowflake channelId, const QList<QPair<int, int>> &ranges);
     void requestGuildMembers(Core::Snowflake guildId, const QList<Core::Snowflake> &userIds);
+    void requestForumUnreads(Core::Snowflake guildId, Core::Snowflake forumId,
+                             const QList<QPair<Core::Snowflake, Core::Snowflake>> &threads);
     void sendVoiceStateUpdate(Core::Snowflake guildId, Core::Snowflake channelId, bool selfMute, bool selfDeaf);
 
     // Debug: simulate a server RECONNECT opcode
@@ -57,6 +59,12 @@ signals:
     void gatewayChannelCreate(const ChannelCreate &data);
     void gatewayChannelUpdate(const ChannelUpdate &data);
     void gatewayChannelDelete(const ChannelDelete &data);
+    void gatewayThreadCreate(const ChannelCreate &data);
+    void gatewayThreadUpdate(const ChannelUpdate &data);
+    void gatewayThreadDelete(const ThreadDelete &data);
+    void gatewayThreadListSync(const ThreadListSync &data);
+    void gatewayThreadMemberUpdate(const ThreadMemberUpdate &data);
+    void gatewayForumUnreads(const ForumUnreads &data);
     void gatewayGuildCreate(const GatewayGuild &data);
     void gatewayGuildMembersChunk(const GuildMembersChunk &data);
     void gatewayGuildMemberUpdate(const GuildMemberUpdate &data);
@@ -94,6 +102,12 @@ private:
     void handleChannelCreate(const Inbound &data);
     void handleChannelUpdate(const Inbound &data);
     void handleChannelDelete(const Inbound &data);
+    void handleThreadCreate(const Inbound &data);
+    void handleThreadUpdate(const Inbound &data);
+    void handleThreadDelete(const Inbound &data);
+    void handleThreadListSync(const Inbound &data);
+    void handleThreadMemberUpdate(const Inbound &data);
+    void handleForumUnreads(const Inbound &data);
     void handleGuildCreate(const Inbound &data);
     void handleGuildMembersChunk(const Inbound &data);
     void handleGuildMemberUpdate(const Inbound &data);

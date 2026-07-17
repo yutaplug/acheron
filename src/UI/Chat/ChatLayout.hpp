@@ -262,6 +262,7 @@ int calculateEmbedsHeight(const QList<EmbedData> &embeds, const QFont &font, int
 
 QRect dateSeparatorRectForRow(const QRect &rowRect);
 
+QString richTextStyleSheet();
 void setupDocument(QTextDocument &doc, const QString &htmlContent, const QFont &font,
                    int textWidth);
 QRectF charRectInDocument(const QTextDocument &doc, int charIndex);

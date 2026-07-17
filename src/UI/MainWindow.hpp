@@ -24,6 +24,8 @@ struct TypingStart;
 namespace UI {
 class ChatView;
 class ChatModel;
+class ForumBrowser;
+class ForumPostModel;
 class ChannelTreeModel;
 class ChannelFilterProxyModel;
 class AccountsWindow;
@@ -57,6 +59,8 @@ protected:
 
 private slots:
     void onChannelSelectionChanged(const QModelIndex &current, const QModelIndex &previous);
+    void openForumPost(Core::Snowflake threadId, Core::Snowflake guildId);
+    void onNewPostRequested();
     void onTypingStart(const Discord::TypingStart &event);
     void onChannelPermissionsChanged(Core::Snowflake channelId);
 
@@ -110,8 +114,34 @@ private:
     void setupUi();
     void setupMenu();
 
+    [[nodiscard]] TabEntry makeTabEntry(ChannelNode *node, ChannelNode *accountNode) const;
+
+    enum class ViewMode { TextChannel,
+                          ForumBrowse,
+                          ForumSplit,
+                          ThreadPopout };
+    void setViewMode(ViewMode mode);
+    void setMemberListVisible(bool visible);
+    void updateMemberListVisibility();
+    void openForumChannel(Core::ClientInstance *instance, Core::Snowflake forumId, Core::Snowflake guildId);
+    void applyChannelChrome(Core::ClientInstance *instance, Core::Snowflake channelId, const QString &name, bool isDm, Core::Snowflake guildId);
+    void switchChatChannel(Core::Snowflake channelId, Core::Snowflake guildId);
+
     ChatView *chatView;
     ChatModel *chatModel;
+
+    // forum/split state
+    ViewMode viewMode = ViewMode::TextChannel;
+    bool memberListWanted = false;
+    QSplitter *centerSplitter = nullptr;
+    QWidget *threadPane = nullptr;
+    QWidget *threadHeader = nullptr;
+    QPushButton *popOutButton = nullptr;
+    QPushButton *closeThreadButton = nullptr;
+    ForumBrowser *forumBrowser = nullptr;
+    ForumPostModel *forumModel = nullptr;
+    Core::Snowflake currentForumId;
+    Core::Snowflake currentForumGuildId;
 
     ChannelTreeView *channelTree;
     ChannelTreeModel *channelTreeModel;

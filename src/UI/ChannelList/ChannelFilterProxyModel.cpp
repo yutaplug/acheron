@@ -56,14 +56,15 @@ bool ChannelFilterProxyModel::lessThan(const QModelIndex &left, const QModelInde
     auto rightType = static_cast<ChannelNode::Type>(right.data(ChannelTreeModel::TypeRole).toInt());
 
     auto isGuildType = [](ChannelNode::Type t) {
-        return t == ChannelNode::Type::Channel || t == ChannelNode::Type::VoiceChannel ||
+        return t == ChannelNode::Type::Channel ||
+               t == ChannelNode::Type::Forum ||
+               t == ChannelNode::Type::VoiceChannel ||
                t == ChannelNode::Type::Category;
     };
 
     if (isGuildType(leftType) && isGuildType(rightType)) {
-        // sort order: Channel < VoiceChannel < Category
         auto rank = [](ChannelNode::Type t) -> int {
-            if (t == ChannelNode::Type::Channel)
+            if (t == ChannelNode::Type::Channel || t == ChannelNode::Type::Forum)
                 return 0;
             if (t == ChannelNode::Type::VoiceChannel)
                 return 1;
@@ -105,6 +106,9 @@ bool ChannelFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex 
     if (nodeType == ChannelNode::Type::VoiceParticipant)
         return true;
 
+    if (nodeType == ChannelNode::Type::Thread)
+        return true;
+
     Core::Snowflake userId = getUserIdForNode(index);
     if (!userId.isValid())
         return true;
@@ -114,7 +118,7 @@ bool ChannelFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex 
         return true;
 
     // hide read channels under collapsed categories, but keep selected channel visible
-    if (nodeType == ChannelNode::Type::Channel) {
+    if (nodeType == ChannelNode::Type::Channel || nodeType == ChannelNode::Type::Forum) {
         ChannelNode *parentNode = static_cast<ChannelNode *>(sourceParent.internalPointer());
         if (parentNode && parentNode->type == ChannelNode::Type::Category && parentNode->collapsed) {
             Core::Snowflake channelId =
@@ -135,7 +139,7 @@ bool ChannelFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex 
             return false;
     }
 
-    if (nodeType == ChannelNode::Type::Channel || nodeType == ChannelNode::Type::VoiceChannel) {
+    if (nodeType == ChannelNode::Type::Channel || nodeType == ChannelNode::Type::VoiceChannel || nodeType == ChannelNode::Type::Forum) {
         return hasChannelViewPermission(index);
     } else if (nodeType == ChannelNode::Type::Category) {
         auto *permissionManager = instance->permissions();

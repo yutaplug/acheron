@@ -47,6 +47,12 @@ public:
     bool isChannelMuted(Snowflake channelId) const;
     bool isGuildMuted(Snowflake guildId) const;
 
+    [[nodiscard]] bool isForumPostUnread(Snowflake threadId, Snowflake lastMessageId, bool archived) const;
+    [[nodiscard]] bool isForumPostNew(Snowflake threadId, Snowflake forumId, Snowflake guildId, bool archived) const;
+    void markForumPostAsRead(Snowflake threadId, Snowflake lastMessageId);
+    [[nodiscard]] bool hasBeenRead(Snowflake channelId) const;
+    [[nodiscard]] Snowflake effectiveAckId(Snowflake channelId, Snowflake guildId) const;
+
     void onMessageAck(const Discord::MessageAck &ack);
     void onUserGuildSettingsUpdate(const Discord::UserGuildSettings &settings);
     void updateLocalReadState(Snowflake channelId, Snowflake lastMessageId);
@@ -74,7 +80,6 @@ signals:
 private:
     void rebuildChannelOverrideCache(Snowflake guildSettingsKey);
 
-    Snowflake effectiveAckId(Snowflake channelId, Snowflake guildId) const;
     Discord::MessageNotificationLevel resolveMessageNotifications(Snowflake guildId,
                                                                   Snowflake channelId,
                                                                   Snowflake parentId) const;
@@ -91,6 +96,7 @@ private:
 
     QHash<Snowflake, Discord::ReadStateEntry> channelReadStates;
     QHash<Snowflake, Snowflake> channelLastMessageIds;
+    QHash<Snowflake, Snowflake> ackIdAtSelect;
     QHash<Snowflake, Discord::UserGuildSettings> guildSettingsMap; // Snowflake(0) for DMs
 
     QHash<Snowflake, Discord::ChannelOverride> channelOverrideCache;

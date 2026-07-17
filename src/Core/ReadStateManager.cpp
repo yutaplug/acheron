@@ -32,6 +32,7 @@ void ReadStateManager::loadFromReady(const QList<Discord::ReadStateEntry> &readS
     guildSettingsMap.clear();
     guildInfo.clear();
     channelGuildMap.clear();
+    ackIdAtSelect.clear();
 
     for (const auto &entry : readStates) {
         int rsType = entry.readStateType.hasValue() ? entry.readStateType.get() : 0;
@@ -88,6 +89,61 @@ bool ReadStateManager::isChannelUnread(Snowflake channelId, Snowflake channelLas
         return false;
 
     return channelLastMessageId > effectiveAckId(channelId, guildId);
+}
+
+bool ReadStateManager::hasBeenRead(Snowflake channelId) const
+{
+    auto it = channelReadStates.constFind(channelId);
+    return it != channelReadStates.constEnd() && it->lastMessageId.hasValue();
+}
+
+bool ReadStateManager::isForumPostUnread(Snowflake threadId, Snowflake lastMessageId,
+                                         bool archived) const
+{
+    if (archived || !lastMessageId.isValid())
+        return false;
+
+    auto it = channelReadStates.constFind(threadId);
+    if (it != channelReadStates.constEnd() && it->lastMessageId.hasValue())
+        return lastMessageId > it->lastMessageId.get();
+
+    return true;
+}
+
+bool ReadStateManager::isForumPostNew(Snowflake threadId, Snowflake forumId, Snowflake guildId,
+                                      bool archived) const
+{
+    if (archived || !threadId.isValid() || !forumId.isValid())
+        return false;
+
+    if (hasBeenRead(threadId))
+        return false;
+
+    auto snap = ackIdAtSelect.constFind(forumId);
+    if (snap == ackIdAtSelect.constEnd() || threadId <= snap.value())
+        return false;
+
+    if (!guildId.isValid())
+        return true;
+
+    auto gi = guildInfo.constFind(guildId);
+    qint64 joinedAtMs = gi != guildInfo.constEnd() && gi->joinedAtMs > 0
+                                ? gi->joinedAtMs
+                                : QDateTime::currentMSecsSinceEpoch();
+    return threadId.toDateTime().toMSecsSinceEpoch() > joinedAtMs;
+}
+
+void ReadStateManager::markForumPostAsRead(Snowflake threadId, Snowflake lastMessageId)
+{
+    if (!lastMessageId.isValid())
+        return;
+
+    auto it = channelReadStates.constFind(threadId);
+    if (it != channelReadStates.constEnd() && it->lastMessageId.hasValue() && lastMessageId <= it->lastMessageId.get())
+        return;
+
+    updateLocalReadState(threadId, lastMessageId);
+    emit ackRequested(threadId, lastMessageId);
 }
 
 Snowflake ReadStateManager::effectiveAckId(Snowflake channelId, Snowflake guildId) const
@@ -273,6 +329,9 @@ void ReadStateManager::setActiveChannel(Snowflake channelId)
 {
     if (activeChannelId == channelId)
         return;
+
+    if (channelId.isValid())
+        ackIdAtSelect.insert(channelId, effectiveAckId(channelId, guildForChannel(channelId)));
 
     activeChannelId = channelId;
     activeChannelAckPending = false;

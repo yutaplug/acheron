@@ -139,6 +139,12 @@ enum class GatewayEvent {
     CHANNEL_CREATE,
     CHANNEL_UPDATE,
     CHANNEL_DELETE,
+    THREAD_CREATE,
+    THREAD_UPDATE,
+    THREAD_DELETE,
+    THREAD_LIST_SYNC,
+    THREAD_MEMBER_UPDATE,
+    FORUM_UNREADS,
     GUILD_CREATE,
     GUILD_MEMBERS_CHUNK,
     GUILD_MEMBER_UPDATE,
@@ -183,6 +189,12 @@ inline GatewayEvent parseGatewayEvent(const QString &event)
         { "CHANNEL_CREATE", GatewayEvent::CHANNEL_CREATE },
         { "CHANNEL_UPDATE", GatewayEvent::CHANNEL_UPDATE },
         { "CHANNEL_DELETE", GatewayEvent::CHANNEL_DELETE },
+        { "THREAD_CREATE", GatewayEvent::THREAD_CREATE },
+        { "THREAD_UPDATE", GatewayEvent::THREAD_UPDATE },
+        { "THREAD_DELETE", GatewayEvent::THREAD_DELETE },
+        { "THREAD_LIST_SYNC", GatewayEvent::THREAD_LIST_SYNC },
+        { "THREAD_MEMBER_UPDATE", GatewayEvent::THREAD_MEMBER_UPDATE },
+        { "FORUM_UNREADS", GatewayEvent::FORUM_UNREADS },
         { "GUILD_CREATE", GatewayEvent::GUILD_CREATE },
         { "GUILD_MEMBERS_CHUNK", GatewayEvent::GUILD_MEMBERS_CHUNK },
         { "GUILD_MEMBER_UPDATE", GatewayEvent::GUILD_MEMBER_UPDATE },
@@ -230,6 +242,27 @@ enum class ChannelType {
     LOBBY = 17,
     EPHEMERAL_DM = 18,
 };
+
+enum class ChannelFlag {
+    GUILD_FEED_REMOVED = 1 << 0,
+    PINNED = 1 << 1,
+    ACTIVE_CHANNELS_REMOVED = 1 << 2,
+    REQUIRE_TAG = 1 << 4,
+    IS_SPAM = 1 << 5,
+    IS_GUILD_RESOURCE_CHANNEL = 1 << 7,
+    CLYDE_AI = 1 << 8,
+    IS_SCHEDULED_FOR_DELETION = 1 << 9,
+    SUMMARIES_DISABLED = 1 << 11,
+    IS_ROLE_SUBSCRIPTION_TEMPLATE_PREVIEW_CHANNEL = 1 << 13,
+    IS_BROADCASTING = 1 << 14,
+    HIDE_MEDIA_DOWNLOAD_OPTIONS = 1 << 15,
+    IS_JOIN_REQUEST_INTERVIEW_CHANNEL = 1 << 16,
+    OBFUSCATED = 1 << 17,
+    IS_MODERATOR_REPORT_CHANNEL = 1 << 19,
+    IS_SPOILER_CHANNEL = 1 << 21,
+};
+Q_DECLARE_FLAGS(ChannelFlags, ChannelFlag);
+Q_DECLARE_OPERATORS_FOR_FLAGS(ChannelFlags);
 
 // user
 enum class PremiumType {

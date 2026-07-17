@@ -10,6 +10,7 @@
 #include <QTimer>
 
 #include "Core/Logging.hpp"
+#include "ForumManager.hpp"
 #include "Discord/Enums.hpp"
 #include "Storage/DatabaseManager.hpp"
 #include "Storage/GuildRepository.hpp"
@@ -45,6 +46,7 @@ ClientInstance::ClientInstance(const AccountInfo &info,
 
     permissionManager = new PermissionManager(info.id, this);
     readStateManager = new ReadStateManager(info.id, permissionManager, this);
+    forumManager = new ForumManager(client, channelRepo, readStateManager, this);
     memberListManager = new MemberListManager(channelRepo, roleRepo, this);
     relationshipManager = new RelationshipManager(this);
 #ifndef ACHERON_NO_VOICE
@@ -110,6 +112,8 @@ ClientInstance::ClientInstance(const AccountInfo &info,
         for (const auto &guild : ready.guilds.get())
             initGuildReadState(guild);
 
+        forumManager->loadFromReady(ready.guilds.get());
+
         if (ready.privateChannels.hasValue()) {
             for (const auto &channel : ready.privateChannels.get()) {
                 Snowflake lastMsg = channel.lastMessageId.hasValue()
@@ -154,32 +158,19 @@ ClientInstance::ClientInstance(const AccountInfo &info,
 #endif
             });
 
-    connect(client, &Discord::Client::messageCreated, messageManager,
-            &MessageManager::onMessageCreated);
-    connect(client, &Discord::Client::messageUpdated, messageManager,
-            &MessageManager::onMessageUpdated);
-    connect(client, &Discord::Client::messageDeleted, messageManager,
-            &MessageManager::onMessageDeleted);
-    connect(client, &Discord::Client::messageSendFailed, messageManager,
-            &MessageManager::onMessageSendFailed);
-    connect(client, &Discord::Client::attachmentUploadProgress, messageManager,
-            &MessageManager::attachmentUploadProgress);
-    connect(client, &Discord::Client::messageReactionAdd, messageManager,
-            &MessageManager::onReactionAdd);
-    connect(client, &Discord::Client::messageReactionAddMany, messageManager,
-            &MessageManager::onReactionAddMany);
-    connect(client, &Discord::Client::messageReactionRemove, messageManager,
-            &MessageManager::onReactionRemove);
-    connect(client, &Discord::Client::messageReactionRemoveAll, messageManager,
-            &MessageManager::onReactionRemoveAll);
-    connect(client, &Discord::Client::messageReactionRemoveEmoji, messageManager,
-            &MessageManager::onReactionRemoveEmoji);
-    connect(client, &Discord::Client::relationshipAdded, relationshipManager,
-            &RelationshipManager::onRelationshipAdded);
-    connect(client, &Discord::Client::relationshipUpdated, relationshipManager,
-            &RelationshipManager::onRelationshipUpdated);
-    connect(client, &Discord::Client::relationshipRemoved, relationshipManager,
-            &RelationshipManager::onRelationshipRemoved);
+    connect(client, &Discord::Client::messageCreated, messageManager, &MessageManager::onMessageCreated);
+    connect(client, &Discord::Client::messageUpdated, messageManager, &MessageManager::onMessageUpdated);
+    connect(client, &Discord::Client::messageDeleted, messageManager, &MessageManager::onMessageDeleted);
+    connect(client, &Discord::Client::messageSendFailed, messageManager, &MessageManager::onMessageSendFailed);
+    connect(client, &Discord::Client::attachmentUploadProgress, messageManager, &MessageManager::attachmentUploadProgress);
+    connect(client, &Discord::Client::messageReactionAdd, messageManager, &MessageManager::onReactionAdd);
+    connect(client, &Discord::Client::messageReactionAddMany, messageManager, &MessageManager::onReactionAddMany);
+    connect(client, &Discord::Client::messageReactionRemove, messageManager, &MessageManager::onReactionRemove);
+    connect(client, &Discord::Client::messageReactionRemoveAll, messageManager, &MessageManager::onReactionRemoveAll);
+    connect(client, &Discord::Client::messageReactionRemoveEmoji, messageManager, &MessageManager::onReactionRemoveEmoji);
+    connect(client, &Discord::Client::relationshipAdded, relationshipManager, &RelationshipManager::onRelationshipAdded);
+    connect(client, &Discord::Client::relationshipUpdated, relationshipManager, &RelationshipManager::onRelationshipUpdated);
+    connect(client, &Discord::Client::relationshipRemoved, relationshipManager, &RelationshipManager::onRelationshipRemoved);
     connect(client, &Discord::Client::userNoteUpdated, this,
             [this](const Discord::UserNoteUpdate &event) {
                 if (event.id.hasValue() && event.note.hasValue())
@@ -193,35 +184,34 @@ ClientInstance::ClientInstance(const AccountInfo &info,
     connect(client, &Discord::Client::guildRoleCreated, this, &ClientInstance::onGuildRoleCreated);
     connect(client, &Discord::Client::guildRoleUpdated, this, &ClientInstance::onGuildRoleUpdated);
     connect(client, &Discord::Client::guildRoleDeleted, this, &ClientInstance::onGuildRoleDeleted);
-    connect(client, &Discord::Client::guildMembersChunk, this,
-            &ClientInstance::onGuildMembersChunk);
-    connect(client, &Discord::Client::guildMemberUpdated, this,
-            &ClientInstance::onGuildMemberUpdate);
-    connect(client, &Discord::Client::guildMemberListUpdate, memberListManager,
-            &MemberListManager::handleMemberListUpdate);
-    connect(client, &Discord::Client::guildMemberListUpdate, this,
-            &ClientInstance::onGuildMemberListUpdate);
-    connect(memberListManager, &MemberListManager::subscriptionRequested, client,
-            &Discord::Client::subscribeToGuildChannel);
-    connect(messageManager, &MessageManager::messagesReceived, this,
-            &ClientInstance::onMessagesReceived);
+    connect(client, &Discord::Client::guildMembersChunk, this, &ClientInstance::onGuildMembersChunk);
+    connect(client, &Discord::Client::guildMemberUpdated, this, &ClientInstance::onGuildMemberUpdate);
+    connect(client, &Discord::Client::guildMemberListUpdate, memberListManager, &MemberListManager::handleMemberListUpdate);
+    connect(client, &Discord::Client::guildMemberListUpdate, this, &ClientInstance::onGuildMemberListUpdate);
+    connect(memberListManager, &MemberListManager::subscriptionRequested, client, &Discord::Client::subscribeToGuildChannel);
+    connect(messageManager, &MessageManager::messagesReceived, this, &ClientInstance::onMessagesReceived);
 
-    connect(client, &Discord::Client::messageAcked, readStateManager,
-            &ReadStateManager::onMessageAck);
-    connect(client, &Discord::Client::userGuildSettingsUpdated, readStateManager,
-            &ReadStateManager::onUserGuildSettingsUpdate);
+    connect(client, &Discord::Client::messageAcked, readStateManager, &ReadStateManager::onMessageAck);
+    connect(client, &Discord::Client::userGuildSettingsUpdated, readStateManager, &ReadStateManager::onUserGuildSettingsUpdate);
 
     connect(client, &Discord::Client::messageCreated, this, &ClientInstance::onMessageCreated);
 
-    connect(readStateManager, &ReadStateManager::readStateUpdated, this,
-            &ClientInstance::readStateChanged);
-    connect(readStateManager, &ReadStateManager::guildSettingsUpdated, this,
-            &ClientInstance::guildSettingsChanged);
+    connect(client, &Discord::Client::threadCreated, forumManager, &ForumManager::onThreadCreated);
+    connect(client, &Discord::Client::threadUpdated, forumManager, &ForumManager::onThreadUpdated);
+    connect(client, &Discord::Client::threadDeleted, forumManager, &ForumManager::onThreadDeleted);
+    connect(client, &Discord::Client::threadListSync, forumManager, &ForumManager::onThreadListSync);
+    connect(client, &Discord::Client::threadMemberUpdated, forumManager, &ForumManager::onThreadMemberUpdate);
+    connect(client, &Discord::Client::forumUnreads, forumManager, &ForumManager::onForumUnreads);
+    connect(client, &Discord::Client::messageCreated, forumManager, &ForumManager::onMessageCreated);
 
-    connect(readStateManager, &ReadStateManager::ackRequested, this,
-            &ClientInstance::handleAckRequest);
-    connect(readStateManager, &ReadStateManager::bulkAckRequested, this,
-            &ClientInstance::handleBulkAckRequest);
+    connect(forumManager, &ForumManager::badgeChanged, this, &ClientInstance::forumBadgeChanged);
+    connect(forumManager, &ForumManager::joinedPostsChanged, this, &ClientInstance::forumJoinedPostsChanged);
+
+    connect(readStateManager, &ReadStateManager::readStateUpdated, this, &ClientInstance::readStateChanged);
+    connect(readStateManager, &ReadStateManager::guildSettingsUpdated, this, &ClientInstance::guildSettingsChanged);
+
+    connect(readStateManager, &ReadStateManager::ackRequested, this, &ClientInstance::handleAckRequest);
+    connect(readStateManager, &ReadStateManager::bulkAckRequested, this, &ClientInstance::handleBulkAckRequest);
 
     connect(client, &Discord::Client::voiceStateUpdated, this,
             [this](const Discord::VoiceState &event) {
@@ -689,6 +679,8 @@ void ClientInstance::handleAckRequest(Snowflake channelId, Snowflake messageId)
 {
     auto channelOpt = channelRepo.getChannel(channelId);
     bool isGuildChannel = channelOpt && channelOpt->guildId.hasValue();
+    if (!isGuildChannel)
+        isGuildChannel = client->getGuildIdForChannel(channelId).isValid();
     int ackFlags = isGuildChannel
                            ? static_cast<int>(Discord::ReadStateFlag::IS_GUILD_CHANNEL)
                            : 0;
@@ -747,6 +739,11 @@ Discord::Client *ClientInstance::discord() const
 MessageManager *ClientInstance::messages() const
 {
     return messageManager;
+}
+
+ForumManager *ClientInstance::forums() const
+{
+    return forumManager;
 }
 
 UserManager *ClientInstance::users() const
