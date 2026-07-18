@@ -65,26 +65,45 @@ static void drawHashIcon(QPainter *painter, const QRect &contentRect, const QCol
     painter->restore();
 }
 
-static void drawThreadBranchIcon(QPainter *painter, const QRect &contentRect, const QColor &color)
+static bool isLastThreadSibling(const ChannelNode *node)
 {
-    constexpr int iconSize = 16;
-    int x = contentRect.left() + (24 - iconSize) / 2;
-    int y = contentRect.top() + (contentRect.height() - iconSize) / 2;
+    if (!node || !node->parent)
+        return true;
+    const ChannelNode *last = nullptr;
+    for (const auto &sibling : node->parent->children)
+        if (sibling->type == ChannelNode::Type::Thread)
+            last = sibling.get();
+    return last == node;
+}
+
+static void drawThreadBranchIcon(QPainter *painter, const QRect &contentRect, const QColor &color, bool lastSibling)
+{
+    const qreal vx = contentRect.left() + 9.5;
+    const qreal branchY = contentRect.top() + contentRect.height() / 2.0;
+    const qreal hEnd = contentRect.left() + 17.0;
+    const qreal radius = 3.0;
 
     QColor branch = color;
     branch.setAlphaF(0.4f);
     QPen pen(branch, 1.5);
     pen.setJoinStyle(Qt::RoundJoin);
-    pen.setCapStyle(Qt::RoundCap);
+    pen.setCapStyle(Qt::FlatCap);
     painter->save();
     painter->setPen(pen);
     painter->setBrush(Qt::NoBrush);
 
     QPainterPath path;
-    path.moveTo(x + 5, y - 2);
-    path.lineTo(x + 5, y + 6);
-    path.quadTo(x + 5, y + 9, x + 8, y + 9);
-    path.lineTo(x + 13, y + 9);
+    if (lastSibling) {
+        path.moveTo(vx, contentRect.top());
+        path.lineTo(vx, branchY - radius);
+        path.quadTo(vx, branchY, vx + radius, branchY);
+        path.lineTo(hEnd, branchY);
+    } else {
+        path.moveTo(vx, contentRect.top());
+        path.lineTo(vx, contentRect.bottom() + 1.0);
+        path.moveTo(vx, branchY);
+        path.lineTo(hEnd, branchY);
+    }
     painter->drawPath(path);
 
     painter->restore();
@@ -471,7 +490,7 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         if (node->isPrivate)
             drawPadlockOverlay(painter, contentOpt.rect, textColor, option.palette.base().color());
     } else if (node->type == ChannelNode::Type::Thread) {
-        drawThreadBranchIcon(painter, contentOpt.rect, textColor);
+        drawThreadBranchIcon(painter, contentOpt.rect, textColor, isLastThreadSibling(node));
     } else if (node->type == ChannelNode::Type::VoiceChannel) {
         drawSpeakerIcon(painter, contentOpt.rect, textColor);
         if (node->isPrivate)
