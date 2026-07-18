@@ -41,6 +41,8 @@ public:
     [[nodiscard]] ChannelReadState computeChannelReadState(Snowflake channelId, Snowflake guildId,
                                                            Snowflake parentId,
                                                            bool isDM = false) const;
+    [[nodiscard]] ChannelReadState computeThreadReadState(Snowflake threadId, Snowflake guildId,
+                                                          Snowflake parentId, bool joined) const;
 
     bool isChannelUnread(Snowflake channelId, Snowflake channelLastMessageId, Snowflake guildId) const;
     int getMentionCount(Snowflake channelId) const;
@@ -48,6 +50,8 @@ public:
     bool isGuildMuted(Snowflake guildId) const;
 
     [[nodiscard]] bool isForumPostUnread(Snowflake threadId, Snowflake lastMessageId, bool archived) const;
+    // should it be in channel list
+    [[nodiscard]] bool isThreadRelevant(const Discord::Channel &thread) const;
     [[nodiscard]] bool isForumPostNew(Snowflake threadId, Snowflake forumId, Snowflake guildId, bool archived) const;
     void markForumPostAsRead(Snowflake threadId, Snowflake lastMessageId);
     [[nodiscard]] bool hasBeenRead(Snowflake channelId) const;

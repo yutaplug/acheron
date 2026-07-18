@@ -189,6 +189,23 @@ void ChatModel::setRoleColorResolver(RoleColorResolver resolver)
     roleColorResolver = std::move(resolver);
 }
 
+QString ChatModel::resolveAuthorName(const Discord::User &author) const
+{
+    if (displayNameResolver) {
+        QString name = displayNameResolver(author.id.get(), currentGuildId);
+        if (!name.isEmpty())
+            return name;
+    }
+    return author.getDisplayName();
+}
+
+QColor ChatModel::resolveAuthorColor(const Discord::User &author) const
+{
+    if (!roleColorResolver || currentGuildId == Snowflake::Invalid)
+        return {};
+    return roleColorResolver(author.id.get(), currentGuildId);
+}
+
 int ChatModel::rowCount(const QModelIndex &parent) const
 {
     return messages.size();
@@ -205,14 +222,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         [[fallthrough]];
     case ContentRole:
         return msg.content;
-    case UsernameRole: {
-        if (displayNameResolver) {
-            QString name = displayNameResolver(msg.author->id.get(), currentGuildId);
-            if (!name.isEmpty())
-                return name;
-        }
-        return msg.author->getDisplayName();
-    }
+    case UsernameRole:
+        return resolveAuthorName(msg.author.get());
     case AvatarRole: {
         const QSize desiredSize(32, 32);
 
@@ -266,6 +277,41 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         return false;
     }
     case HtmlRole: {
+        if (msg.type.get() == Discord::MessageType::THREAD_CREATED) {
+            QString threadName = msg.content.hasValue() ? msg.content.get().toHtmlEscaped() : QString();
+            Core::Snowflake threadId = Core::Snowflake::Invalid;
+            if (msg.messageReference.hasValue() && msg.messageReference->channelId.hasValue())
+                threadId = msg.messageReference->channelId.get();
+            else if (msg.flags.hasValue() && msg.flags->testFlag(Discord::MessageFlag::HAS_THREAD))
+                threadId = msg.id.get();
+
+            QString authorName = resolveAuthorName(msg.author.get()).toHtmlEscaped();
+            QColor authorColor = resolveAuthorColor(msg.author.get());
+            QString authorHtml = authorColor.isValid()
+                                         ? QStringLiteral("<span style=\"color:%1;font-weight:600\">%2</span>")
+                                                   .arg(authorColor.name(), authorName)
+                                         : QStringLiteral("<b>%1</b>").arg(authorName);
+
+            QString label = threadName.isEmpty() ? tr("a thread") : threadName;
+            QString threadHtml = threadId.isValid()
+                                         ? QStringLiteral("<a href=\"acheron://channel/%1\">%2</a>")
+                                                   .arg(QString::number(static_cast<quint64>(threadId)), label)
+                                         : QStringLiteral("<b>%1</b>").arg(label);
+
+            return authorHtml + tr(" started a thread: ") + threadHtml;
+        }
+
+        if (msg.type.get() == Discord::MessageType::THREAD_STARTER_MESSAGE) {
+            if (msg.referencedMessage) {
+                if (!msg.referencedMessage->parsedContentCached.isEmpty())
+                    return msg.referencedMessage->parsedContentCached;
+                if (msg.referencedMessage->content.hasValue())
+                    return msg.referencedMessage->content.get().toHtmlEscaped();
+                return QString();
+            }
+            return tr("Sorry, we couldn't load the first message in this thread.");
+        }
+
         // for image embeds, suppress text if content is just the embed url
         if (msg.embeds.hasValue() && msg.embeds->size() == 1) {
             const auto &embed = msg.embeds->first();
@@ -276,7 +322,18 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
                     return QString();
             }
         }
-        return msg.parsedContentCached;
+
+        QString html = msg.parsedContentCached;
+
+        if (msg.flags.hasValue() && msg.flags->testFlag(Discord::MessageFlag::HAS_THREAD)) {
+            QString sep = html.isEmpty() ? QString() : QStringLiteral("<br>");
+            html += sep +
+                    QStringLiteral("<a href=\"acheron://channel/%1\">%2</a>")
+                            .arg(QString::number(static_cast<quint64>(msg.id.get())),
+                                 tr("\U0001F9F5 View Thread"));
+        }
+
+        return html;
     }
     case AttachmentsRole: {
         if (!msg.attachments.hasValue() || msg.attachments->isEmpty())
@@ -548,11 +605,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         return msg.nonce.hasValue() && pendingNonces.contains(msg.nonce.get());
     case IsErroredRole:
         return msg.nonce.hasValue() && erroredNonces.contains(msg.nonce.get());
-    case UsernameColorRole: {
-        if (!roleColorResolver || currentGuildId == Snowflake::Invalid)
-            return QColor();
-        return roleColorResolver(msg.author->id.get(), currentGuildId);
-    }
+    case UsernameColorRole:
+        return resolveAuthorColor(msg.author.get());
     case MessageIdRole:
         return msg.id;
     case ReactionsRole: {
@@ -632,18 +686,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         reply.authorId = ref->author->id;
         reply.contentSnippet = ref->content;
 
-        if (roleColorResolver && currentGuildId != Snowflake::Invalid)
-            reply.authorColor = roleColorResolver(ref->author->id.get(), currentGuildId);
-
-        // resolve display name via the same resolver used for messages
-        if (displayNameResolver) {
-            QString name = displayNameResolver(ref->author->id.get(), currentGuildId);
-            if (!name.isEmpty()) {
-                reply.authorName = name;
-                return QVariant::fromValue(reply);
-            }
-        }
-        reply.authorName = ref->author->getDisplayName();
+        reply.authorColor = resolveAuthorColor(ref->author.get());
+        reply.authorName = resolveAuthorName(ref->author.get());
 
         return QVariant::fromValue(reply);
     }
@@ -678,7 +722,7 @@ Snowflake ChatModel::getActiveChannelId() const
     return currentChannelId;
 }
 
-void ChatModel::setMessages(const QList<Discord::Message> &messages) { }
+void ChatModel::setMessages(const QList<Discord::Message> &messages) {}
 
 void ChatModel::handleIncomingMessages(const Core::MessageRequestResult &result)
 {

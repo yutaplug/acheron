@@ -69,7 +69,7 @@ static CardLayout cardLayout(const QFont &font, bool hasTags)
     return l;
 }
 
-ForumPostDelegate::ForumPostDelegate(QObject *parent) : QStyledItemDelegate(parent) { }
+ForumPostDelegate::ForumPostDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
 
 void ForumPostDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
                               const QModelIndex &index) const

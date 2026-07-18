@@ -64,6 +64,7 @@ signals:
     void gatewayThreadDelete(const ThreadDelete &data);
     void gatewayThreadListSync(const ThreadListSync &data);
     void gatewayThreadMemberUpdate(const ThreadMemberUpdate &data);
+    void gatewayThreadMembersUpdate(const ThreadMembersUpdate &data);
     void gatewayForumUnreads(const ForumUnreads &data);
     void gatewayGuildCreate(const GatewayGuild &data);
     void gatewayGuildMembersChunk(const GuildMembersChunk &data);
@@ -107,6 +108,7 @@ private:
     void handleThreadDelete(const Inbound &data);
     void handleThreadListSync(const Inbound &data);
     void handleThreadMemberUpdate(const Inbound &data);
+    void handleThreadMembersUpdate(const Inbound &data);
     void handleForumUnreads(const Inbound &data);
     void handleGuildCreate(const Inbound &data);
     void handleGuildMembersChunk(const Inbound &data);

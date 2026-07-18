@@ -34,10 +34,15 @@ struct ChannelNode
     bool isUnread = false;
     int mentionCount = 0; // what this row shows
     int subtreeMentionCount = 0; // what gets handed above
+    bool selfUnread = false;
+    int selfMentionCount = 0;
+    bool selfCountsForGuildUnread = false;
     bool isMuted = false;
     bool countsForGuildUnread = false;
     bool collapsed = false;
     bool unavailable = false;
+    bool isArchived = false;
+    bool isTemporary = false;
     Core::Snowflake parentId;
     Core::Snowflake rulesChannelId;
     QString TEMP_iconHash;

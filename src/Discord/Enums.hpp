@@ -144,6 +144,7 @@ enum class GatewayEvent {
     THREAD_DELETE,
     THREAD_LIST_SYNC,
     THREAD_MEMBER_UPDATE,
+    THREAD_MEMBERS_UPDATE,
     FORUM_UNREADS,
     GUILD_CREATE,
     GUILD_MEMBERS_CHUNK,
@@ -194,6 +195,7 @@ inline GatewayEvent parseGatewayEvent(const QString &event)
         { "THREAD_DELETE", GatewayEvent::THREAD_DELETE },
         { "THREAD_LIST_SYNC", GatewayEvent::THREAD_LIST_SYNC },
         { "THREAD_MEMBER_UPDATE", GatewayEvent::THREAD_MEMBER_UPDATE },
+        { "THREAD_MEMBERS_UPDATE", GatewayEvent::THREAD_MEMBERS_UPDATE },
         { "FORUM_UNREADS", GatewayEvent::FORUM_UNREADS },
         { "GUILD_CREATE", GatewayEvent::GUILD_CREATE },
         { "GUILD_MEMBERS_CHUNK", GatewayEvent::GUILD_MEMBERS_CHUNK },
@@ -242,6 +244,13 @@ enum class ChannelType {
     LOBBY = 17,
     EPHEMERAL_DM = 18,
 };
+
+inline bool isThreadType(ChannelType t)
+{
+    return t == ChannelType::NEWS_THREAD ||
+           t == ChannelType::PUBLIC_THREAD ||
+           t == ChannelType::PRIVATE_THREAD;
+}
 
 enum class ChannelFlag {
     GUILD_FEED_REMOVED = 1 << 0,

@@ -242,6 +242,8 @@ public slots:
 
 private:
     void setMessages(const QList<Discord::Message> &messages);
+    QString resolveAuthorName(const Discord::User &author) const;
+    QColor resolveAuthorColor(const Discord::User &author) const;
     QPixmap localPixmap(const QUrl &url, const QSize &displaySize) const;
     QPixmap previewPixmap(Snowflake attachmentId, const QImage &image, const QSize &displaySize) const;
     void prunePreviewCaches(const Discord::Message &msg);

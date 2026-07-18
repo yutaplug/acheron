@@ -80,6 +80,24 @@ MessageManager::MessageManager(Snowflake accountId, Discord::Client *client,
 
 MessageManager::~MessageManager() { }
 
+void MessageManager::parseMessageContent(Discord::Message &msg)
+{
+    Markdown::ParseState state;
+    state.isInline = true;
+    auto ast = parser->parse(resolveSystemMessageContent(msg), state);
+    bool jumbo = Markdown::Parser::isEmojiOnly(ast);
+    msg.parsedContentCached = parser->toHtml(ast, jumbo);
+
+    if (msg.type.hasValue() && msg.type.get() == Discord::MessageType::THREAD_STARTER_MESSAGE &&
+        msg.referencedMessage && msg.referencedMessage->content.hasValue() &&
+        msg.referencedMessage->parsedContentCached.isEmpty()) {
+        Markdown::ParseState refState;
+        refState.isInline = true;
+        auto refAst = parser->parse(msg.referencedMessage->content.get(), refState);
+        msg.referencedMessage->parsedContentCached = parser->toHtml(refAst, Markdown::Parser::isEmojiOnly(refAst));
+    }
+}
+
 void MessageManager::setChannelResolver(std::function<QString(Snowflake)> resolver)
 {
     parser->setChannelResolver([resolver](const QString &channelId) {
@@ -126,13 +144,8 @@ void MessageManager::requestLoadChannel(Snowflake channelId)
         // disk cache
         QList<Discord::Message> msgs = repo.getLatestMessages(channelId, 30);
         if (!msgs.isEmpty()) { // probably good
-            for (auto &msg : msgs) {
-                Markdown::ParseState state;
-                state.isInline = true;
-                auto ast = parser->parse(resolveSystemMessageContent(msg), state);
-                bool jumbo = Markdown::Parser::isEmojiOnly(ast);
-                msg.parsedContentCached = parser->toHtml(ast, jumbo);
-            }
+            for (auto &msg : msgs)
+                parseMessageContent(msg);
 
             emit messagesReceived({
                     true,
@@ -217,13 +230,8 @@ void MessageManager::requestLoadHistory(Snowflake channelId, Snowflake beforeId)
         // disk cache
         QList<Discord::Message> msgs = repo.getMessagesBefore(channelId, beforeId, 30);
 
-        for (auto &msg : msgs) {
-            Markdown::ParseState state;
-            state.isInline = true;
-            auto ast = parser->parse(resolveSystemMessageContent(msg), state);
-            bool jumbo = Markdown::Parser::isEmojiOnly(ast);
-            msg.parsedContentCached = parser->toHtml(ast, jumbo);
-        }
+        for (auto &msg : msgs)
+            parseMessageContent(msg);
 
         if (!msgs.isEmpty()) { // probably good
             emit messagesReceived({
@@ -302,11 +310,7 @@ void MessageManager::onMessageUpdated(const Discord::Message &message)
         merged = message;
     }
 
-    Markdown::ParseState state;
-    state.isInline = true;
-    auto ast = parser->parse(resolveSystemMessageContent(merged), state);
-    bool jumbo = Markdown::Parser::isEmojiOnly(ast);
-    merged.parsedContentCached = parser->toHtml(ast, jumbo);
+    parseMessageContent(merged);
 
     messageCache.insert(merged.id, new Discord::Message(merged));
     repo.updateMessageContent(merged);
@@ -783,13 +787,8 @@ void MessageManager::onApiMessagesReceived(const QList<Discord::Message> &messag
             lowestKnownId[channelId] = sortedMessages.first().id;
     }
 
-    for (auto &msg : sortedMessages) {
-        Markdown::ParseState state;
-        state.isInline = true;
-        auto ast = parser->parse(resolveSystemMessageContent(msg), state);
-        bool jumbo = Markdown::Parser::isEmojiOnly(ast);
-        msg.parsedContentCached = parser->toHtml(ast, jumbo);
-    }
+    for (auto &msg : sortedMessages)
+        parseMessageContent(msg);
 
     for (const auto &msg : sortedMessages) {
         // cache owns its own copy

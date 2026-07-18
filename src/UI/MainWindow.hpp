@@ -26,6 +26,7 @@ class ChatView;
 class ChatModel;
 class ForumBrowser;
 class ForumPostModel;
+class ThreadBrowserPopup;
 class ChannelTreeModel;
 class ChannelFilterProxyModel;
 class AccountsWindow;
@@ -127,6 +128,10 @@ private:
     void applyChannelChrome(Core::ClientInstance *instance, Core::Snowflake channelId, const QString &name, bool isDm, Core::Snowflake guildId);
     void switchChatChannel(Core::Snowflake channelId, Core::Snowflake guildId);
 
+    void openThreadBrowser();
+    void navigateToChannel(Core::Snowflake channelId);
+    void setThreadBrowserTarget(Core::Snowflake channelId);
+
     ChatView *chatView;
     ChatModel *chatModel;
 
@@ -156,6 +161,10 @@ private:
     AccountsModel *accountsModel;
 
     TabBar *tabBar;
+    QWidget *channelToolbar = nullptr;
+    QToolButton *threadBrowserButton = nullptr;
+    ThreadBrowserPopup *threadBrowser = nullptr;
+    Core::Snowflake threadBrowserChannelId = Core::Snowflake::Invalid;
     MessageInput *messageInput;
     TypingIndicator *typingIndicator;
     SlowModeIndicator *slowModeIndicator;

@@ -159,12 +159,14 @@ struct ThreadDelete : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> id;
     Field<Core::Snowflake, true, true> parentId;
+    Field<Core::Snowflake, true> guildId;
 
     static ThreadDelete fromJson(const QJsonObject &obj)
     {
         ThreadDelete event;
         get(obj, "id", event.id);
         get(obj, "parent_id", event.parentId);
+        get(obj, "guild_id", event.guildId);
         return event;
     }
 };
@@ -200,6 +202,7 @@ struct ForumUnreads : Core::JsonUtils::JsonObject
 struct ThreadListSync : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> guildId;
+    Field<QList<Core::Snowflake>, true> channelIds;
     Field<QList<Channel>, true> threads;
     Field<QList<ThreadMember>, true> members;
 
@@ -207,6 +210,7 @@ struct ThreadListSync : Core::JsonUtils::JsonObject
     {
         ThreadListSync event;
         get(obj, "guild_id", event.guildId);
+        get(obj, "channel_ids", event.channelIds);
         get(obj, "threads", event.threads);
         get(obj, "members", event.members);
         return event;
@@ -225,6 +229,26 @@ struct ThreadMemberUpdate : Core::JsonUtils::JsonObject
         event.member = ThreadMember::fromJson(obj);
         get(obj, "user_id", event.userId);
         get(obj, "guild_id", event.guildId);
+        return event;
+    }
+};
+
+struct ThreadMembersUpdate : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> id; // thread id
+    Field<Core::Snowflake, true> guildId;
+    Field<int, true> memberCount;
+    Field<QList<ThreadMember>, true> addedMembers;
+    Field<QList<Core::Snowflake>, true> removedMemberIds;
+
+    static ThreadMembersUpdate fromJson(const QJsonObject &obj)
+    {
+        ThreadMembersUpdate event;
+        get(obj, "id", event.id);
+        get(obj, "guild_id", event.guildId);
+        get(obj, "member_count", event.memberCount);
+        get(obj, "added_members", event.addedMembers);
+        get(obj, "removed_member_ids", event.removedMemberIds);
         return event;
     }
 };

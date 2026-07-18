@@ -10,6 +10,7 @@
 #include "Forum/ForumBrowser.hpp"
 #include "Forum/ForumPostModel.hpp"
 #include "Forum/NewPostDialog.hpp"
+#include "ThreadBrowser/ThreadBrowserPopup.hpp"
 #include "Core/ForumManager.hpp"
 #include "ChannelList/ChannelTreeModel.hpp"
 #include "ChannelList/ChannelFilterProxyModel.hpp"
@@ -217,12 +218,15 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     if (selectedInstance != currentInstance)
         switchActiveInstance(selectedInstance);
 
+    channelTreeModel->clearTemporaryThread(node->id);
+
     ChannelNode *forumNode = node->type == ChannelNode::Type::Thread ? node->parent : node;
 
     if (forumNode && forumNode->type == ChannelNode::Type::Forum) {
         ChannelNode *gNode = ChannelTreeModel::findGuildNode(node);
         Snowflake gId = gNode ? gNode->id : Snowflake::Invalid;
 
+        setThreadBrowserTarget(Snowflake::Invalid);
         openForumChannel(selectedInstance, forumNode->id, gId);
         tabBar->updateCurrentTab(makeTabEntry(forumNode, accountNode));
 
@@ -262,6 +266,16 @@ void MainWindow::applyChannelChrome(Core::ClientInstance *instance, Core::Snowfl
     Snowflake userId = instance->accountId();
     messageInput->setMaxUploadSize(instance->discord()->getMaxUploadSize(channelId));
 
+    Snowflake threadParentId = Snowflake::Invalid;
+    bool archived = false;
+    if (auto ch = instance->getChannel(channelId); ch && ch->isThread()) {
+        threadParentId = ch->parentId.hasValue() ? ch->parentId.get() : Snowflake::Invalid;
+        archived = ch->isArchived();
+    }
+    bool isThread = threadParentId.isValid();
+
+    setThreadBrowserTarget(isDm ? Snowflake::Invalid : (isThread ? threadParentId : channelId));
+
     if (isDm) {
         messageInput->setEnabled(true);
         messageInput->setSendBlocked(false);
@@ -274,30 +288,35 @@ void MainWindow::applyChannelChrome(Core::ClientInstance *instance, Core::Snowfl
         return;
     }
 
-    bool canSend = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::SEND_MESSAGES);
-    bool canPin = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::PIN_MESSAGES);
-    bool canManage = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::MANAGE_MESSAGES);
+    Snowflake permChannel = isThread ? threadParentId : channelId;
+    Discord::Permission sendPerm = isThread ? Discord::Permission::SEND_MESSAGES_IN_THREADS : Discord::Permission::SEND_MESSAGES;
+
+    bool canSend = instance->permissions()->hasChannelPermission(userId, permChannel, sendPerm);
+    bool canPin = instance->permissions()->hasChannelPermission(userId, permChannel, Discord::Permission::PIN_MESSAGES);
+    bool canManage = instance->permissions()->hasChannelPermission(userId, permChannel, Discord::Permission::MANAGE_MESSAGES);
 
     int rateLimit = instance->getChannelRateLimit(channelId);
-    bool canBypass = instance->permissions()->hasChannelPermission(userId, channelId, Discord::Permission::BYPASS_SLOWMODE);
+    bool canBypass = instance->permissions()->hasChannelPermission(userId, permChannel, Discord::Permission::BYPASS_SLOWMODE);
     slowModeIndicator->setSlowMode(channelId, rateLimit, canBypass);
 
     bool onCooldown = rateLimit > 0 && !canBypass && slowModeIndicator->isOnCooldown(channelId);
-    messageInput->setEnabled(canSend);
+    messageInput->setEnabled(canSend && !archived);
     messageInput->setSendBlocked(onCooldown);
     chatView->setCanPinMessages(canPin);
     chatView->setCanManageMessages(canManage);
 
-    if (!canSend)
+    if (archived)
+        messageInput->setPlaceholder("This thread is archived");
+    else if (!canSend)
         messageInput->setPlaceholder("You do not have permission to send messages");
     else if (onCooldown)
         messageInput->setPlaceholder("Slowmode is active");
     else
-        messageInput->setPlaceholder("Message #" + name);
+        messageInput->setPlaceholder((isThread ? "Message " : "Message #") + name);
 
     if (guildId.isValid()) {
         setMemberListVisible(true);
-        instance->memberList()->setActiveChannel(guildId, channelId);
+        instance->memberList()->setActiveChannel(guildId, isThread ? threadParentId : channelId);
     }
 }
 
@@ -578,6 +597,40 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
                 channelTreeModel->deleteChannel(event, instance->accountId());
             });
 
+    connect(instance, &Core::ClientInstance::threadCreated, this,
+            [this, instance](const Discord::Channel &thread) {
+                channelTreeModel->addThread(thread, instance->accountId());
+            });
+    connect(instance, &Core::ClientInstance::threadUpdated, this,
+            [this, instance](const Discord::Channel &thread) {
+                channelTreeModel->updateThread(thread, instance->accountId());
+            });
+    connect(instance, &Core::ClientInstance::threadDeleted, this,
+            [this, instance](Core::Snowflake threadId, Core::Snowflake, Core::Snowflake) {
+                channelTreeModel->removeThread(threadId, instance->accountId());
+            });
+    connect(instance, &Core::ClientInstance::threadListSynced, this,
+            [this, instance](Core::Snowflake guildId, const QList<Core::Snowflake> &parentIds,
+                             const QList<Discord::Channel> &threads) {
+                channelTreeModel->syncThreads(guildId, parentIds, threads, instance->accountId());
+            });
+    connect(instance, &Core::ClientInstance::threadMembershipChanged, this,
+            [this, instance](Core::Snowflake threadId) {
+                Core::Snowflake acc = instance->accountId();
+                if (instance->isThreadJoined(threadId)) {
+                    if (channelTreeModel->findChannelTreeNode(threadId, acc))
+                        channelTreeModel->promoteTemporaryThread(threadId);
+                    else if (auto ch = instance->getChannel(threadId))
+                        channelTreeModel->addThread(*ch, acc);
+                    channelTreeModel->updateReadState(threadId, acc);
+                } else if (chatModel->getActiveChannelId() == threadId) {
+                    if (auto ch = instance->getChannel(threadId))
+                        channelTreeModel->showTemporaryThread(*ch, acc);
+                } else {
+                    channelTreeModel->removeThread(threadId, acc);
+                }
+            });
+
     // todo: i dont really like the refresh users logic rn
     connect(instance, &Core::ClientInstance::guildRoleCreated, this,
             [this](const Discord::GuildRoleCreate &event) {
@@ -737,6 +790,27 @@ void MainWindow::setupUi()
 
     connectionBanner = new ConnectionBanner(rightSideWidget);
     tabBar = new TabBar(session->getImageManager(), rightSideWidget);
+
+    threadBrowserButton = new QToolButton(rightSideWidget);
+    threadBrowserButton->setText(QStringLiteral("\U0001F9F5 Threads"));
+    threadBrowserButton->setToolTip(tr("Browse threads"));
+    threadBrowserButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    threadBrowserButton->setAutoRaise(true);
+    threadBrowserButton->setCursor(Qt::PointingHandCursor);
+    connect(threadBrowserButton, &QToolButton::clicked, this, &MainWindow::openThreadBrowser);
+
+    channelToolbar = new QWidget(rightSideWidget);
+    channelToolbar->setObjectName("channelToolbar");
+    channelToolbar->setAttribute(Qt::WA_StyledBackground, true);
+    auto *channelToolbarLayout = new QHBoxLayout(channelToolbar);
+    channelToolbarLayout->setContentsMargins(8, 3, 8, 3);
+    channelToolbarLayout->setSpacing(4);
+    channelToolbarLayout->addStretch(1);
+    channelToolbarLayout->addWidget(threadBrowserButton, 0);
+    channelToolbar->setStyleSheet(
+            "#channelToolbar { border-bottom: 1px solid rgba(128, 128, 128, 0.25); }");
+    channelToolbar->hide();
+
     chatView = new ChatView(rightSideWidget);
     chatView->setFont(Core::Theme::Manager::instance().font(Core::Theme::FontRole::Message));
     messageInput = new MessageInput(rightSideWidget);
@@ -826,6 +900,7 @@ void MainWindow::setupUi()
 
     rightLayout->addWidget(connectionBanner, 0);
     rightLayout->addWidget(tabBar, 0);
+    rightLayout->addWidget(channelToolbar, 0);
     rightLayout->addWidget(centerSplitter, 1);
 
     memberListView = new MemberListView(central);
@@ -1029,7 +1104,7 @@ void MainWindow::setupUi()
                 showUserContextMenu(userId, cachedGuildId, globalPos);
             });
 
-    connect(chatView, &ChatView::channelMentionClicked, this, &MainWindow::selectChannelInTree);
+    connect(chatView, &ChatView::channelMentionClicked, this, &MainWindow::navigateToChannel);
 
     connect(channelTree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             &MainWindow::onChannelSelectionChanged);
@@ -1049,6 +1124,25 @@ void MainWindow::setupUi()
 
                 tabBar->openNewTab(makeTabEntry(node, accountNode));
             });
+
+    auto threadMembership = [this](const QModelIndex &proxyIndex, bool join) {
+        QModelIndex sourceIndex = channelFilterProxy->mapToSource(proxyIndex);
+        auto *node = channelTreeModel->nodeFromIndex(sourceIndex);
+        if (!node || node->type != ChannelNode::Type::Thread)
+            return;
+        ChannelNode *accountNode = channelTreeModel->getAccountNodeFor(node);
+        if (!accountNode)
+            return;
+        auto *instance = session->client(accountNode->id);
+        if (!instance)
+            return;
+        if (join)
+            instance->discord()->joinThread(node->id);
+        else
+            instance->discord()->leaveThread(node->id);
+    };
+    connect(channelTree, &ChannelTreeView::joinThreadRequested, this, [threadMembership](const QModelIndex &proxyIndex) { threadMembership(proxyIndex, true); });
+    connect(channelTree, &ChannelTreeView::leaveThreadRequested, this, [threadMembership](const QModelIndex &proxyIndex) { threadMembership(proxyIndex, false); });
 
 #ifndef ACHERON_NO_VOICE
     connect(channelTree, &ChannelTreeView::joinVoiceChannelRequested, this,
@@ -1509,6 +1603,8 @@ void MainWindow::switchToTabEntry(const TabEntry &entry)
 
 void MainWindow::activateChannel(const TabEntry &entry)
 {
+    channelTreeModel->clearTemporaryThread(entry.channelId);
+
     // update the proxy selected channel so the delegate highlights correctly,
     // and clear the trees own selection so no stale highlight remains
     channelFilterProxy->setSelectedChannel(entry.channelId, entry.accountId);
@@ -1540,6 +1636,7 @@ void MainWindow::activateChannel(const TabEntry &entry)
         switchActiveInstance(instance);
 
     if (entry.isForum) {
+        setThreadBrowserTarget(Snowflake::Invalid);
         openForumChannel(instance, entry.channelId, entry.guildId);
         if (entry.guildId.isValid())
             recordLastViewedChannel(entry.accountId, entry.guildId, entry.channelId);
@@ -2115,6 +2212,46 @@ void MainWindow::selectChannelInTree(Snowflake channelId)
     QModelIndex proxyIndex = channelFilterProxy->mapFromSource(sourceIndex);
     if (proxyIndex.isValid())
         channelTree->setCurrentIndex(proxyIndex);
+}
+
+void MainWindow::setThreadBrowserTarget(Core::Snowflake channelId)
+{
+    threadBrowserChannelId = channelId;
+    channelToolbar->setVisible(channelId.isValid());
+}
+
+void MainWindow::openThreadBrowser()
+{
+    if (!currentInstance || !threadBrowserChannelId.isValid())
+        return;
+
+    if (!threadBrowser) {
+        threadBrowser = new ThreadBrowserPopup(this);
+        connect(threadBrowser, &ThreadBrowserPopup::threadActivated, this,
+                &MainWindow::navigateToChannel);
+    }
+
+    QString name;
+    if (auto ch = currentInstance->getChannel(threadBrowserChannelId); ch && ch->name.hasValue())
+        name = ch->name.get();
+
+    threadBrowser->configure(currentInstance, threadBrowserChannelId, name);
+    threadBrowser->show();
+    threadBrowser->raise();
+}
+
+void MainWindow::navigateToChannel(Core::Snowflake channelId)
+{
+    if (!currentInstance)
+        return;
+    Core::Snowflake acc = currentInstance->accountId();
+
+    if (!channelTreeModel->findChannelTreeNode(channelId, acc)) {
+        auto chOpt = currentInstance->getChannel(channelId);
+        if (chOpt && chOpt->isThread())
+            channelTreeModel->showTemporaryThread(*chOpt, acc);
+    }
+    selectChannelInTree(channelId);
 }
 
 } // namespace UI

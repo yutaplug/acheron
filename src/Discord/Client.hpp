@@ -85,6 +85,20 @@ public:
     using ForumPostDataCallback = std::function<void(const Core::Result<QHash<Snowflake, Message>> &)>;
     void fetchForumPostData(Snowflake forumId, const QList<Snowflake> &threadIds, ForumPostDataCallback callback);
 
+    void joinThread(Snowflake threadId);
+    void leaveThread(Snowflake threadId);
+
+    struct ThreadListResult
+    {
+        QList<Channel> threads;
+        QList<ThreadMember> members;
+        bool hasMore = false;
+        bool indexNotReady = false; // 202
+        int retryAfterSeconds = 0;
+    };
+    using ThreadListCallback = std::function<void(const Core::Result<ThreadListResult> &)>;
+    void searchThreads(Snowflake channelId, bool archived, int offset, ThreadListCallback callback);
+
     void sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
                      Snowflake replyToMessageId = Snowflake::Invalid,
                      const QList<Core::PendingAttachment> &attachments = {});
@@ -143,6 +157,7 @@ signals:
     void threadDeleted(const ThreadDelete &event);
     void threadListSync(const ThreadListSync &event);
     void threadMemberUpdated(const ThreadMemberUpdate &event);
+    void threadMembersUpdated(const ThreadMembersUpdate &event);
     void forumUnreads(const ForumUnreads &event);
     void guildCreated(const GatewayGuild &guild);
     void guildMembersChunk(const GuildMembersChunk &chunk);
@@ -193,6 +208,8 @@ private slots:
     void onGatewayGuildRoleDelete(const GuildRoleDelete &event);
 
 private:
+    void indexGuildMappings(const GatewayGuild &guild);
+
     struct UploadState
     {
         Snowflake channelId;

@@ -68,18 +68,40 @@ ChannelReadState ReadStateManager::computeChannelReadState(Snowflake channelId, 
                                                                        : Snowflake();
 
     result.isMuted = isChannelMuted(channelId);
-    result.isUnread = canView && isChannelUnread(channelId, lastMessageId, guildId);
     result.mentionCount = canView ? getMentionCount(channelId) : 0;
 
     bool fullyMuted = result.isMuted ||
                       (parentId.isValid() && isChannelMuted(parentId)) ||
                       (guildId.isValid() && isGuildMuted(guildId));
+
+    result.isUnread = canView && isChannelUnread(channelId, lastMessageId, guildId);
+
     auto effective = isDM ? Discord::MessageNotificationLevel::ALL_MESSAGES : resolveMessageNotifications(guildId, channelId, parentId);
     result.countsForGuildUnread =
             result.isUnread &&
             !fullyMuted &&
             (result.mentionCount > 0 || effective == Discord::MessageNotificationLevel::ALL_MESSAGES);
 
+    return result;
+}
+
+ChannelReadState ReadStateManager::computeThreadReadState(Snowflake threadId, Snowflake guildId,
+                                                          Snowflake parentId, bool joined) const
+{
+    if (joined)
+        return computeChannelReadState(threadId, guildId, parentId);
+
+    ChannelReadState result;
+    bool canView = permissionManager->hasChannelPermission(accountId, threadId, Discord::Permission::VIEW_CHANNEL);
+    result.isMuted = isChannelMuted(threadId);
+    result.mentionCount = canView ? getMentionCount(threadId) : 0;
+
+    bool fullyMuted = result.isMuted ||
+                      (parentId.isValid() && isChannelMuted(parentId)) ||
+                      (guildId.isValid() && isGuildMuted(guildId));
+
+    result.isUnread = result.mentionCount > 0;
+    result.countsForGuildUnread = !fullyMuted && result.mentionCount > 0;
     return result;
 }
 
@@ -108,6 +130,27 @@ bool ReadStateManager::isForumPostUnread(Snowflake threadId, Snowflake lastMessa
         return lastMessageId > it->lastMessageId.get();
 
     return true;
+}
+
+bool ReadStateManager::isThreadRelevant(const Discord::Channel &thread) const
+{
+    const Snowflake threadId = thread.id.get();
+    if (thread.isPinned())
+        return true;
+    if (getMentionCount(threadId) > 0)
+        return true;
+    if (isForumPostUnread(threadId, thread.effectiveLastMessageId(), thread.isArchived()) &&
+        !isChannelMuted(threadId))
+        return true;
+
+    if (!thread.threadMetadata.hasValue() || !thread.threadMetadata->autoArchiveDuration.hasValue())
+        return false;
+    const auto &meta = thread.threadMetadata.get();
+    qint64 base = thread.effectiveLastMessageId().toDateTime().toMSecsSinceEpoch();
+    if (meta.archiveTimestamp.hasValue())
+        base = qMax(base, meta.archiveTimestamp.get().toMSecsSinceEpoch());
+    const qint64 expiry = base + static_cast<qint64>(meta.autoArchiveDuration.get()) * 60000;
+    return expiry > QDateTime::currentMSecsSinceEpoch();
 }
 
 bool ReadStateManager::isForumPostNew(Snowflake threadId, Snowflake forumId, Snowflake guildId,

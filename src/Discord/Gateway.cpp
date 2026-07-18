@@ -197,6 +197,9 @@ void Gateway::handleDispatch(const Inbound &data)
     case GatewayEvent::THREAD_MEMBER_UPDATE:
         handleThreadMemberUpdate(data);
         break;
+    case GatewayEvent::THREAD_MEMBERS_UPDATE:
+        handleThreadMembersUpdate(data);
+        break;
     case GatewayEvent::FORUM_UNREADS:
         handleForumUnreads(data);
         break;
@@ -378,6 +381,13 @@ void Gateway::handleThreadMemberUpdate(const Inbound &data)
     ThreadMemberUpdate event = data.getData<ThreadMemberUpdate>();
 
     emit gatewayThreadMemberUpdate(event);
+}
+
+void Gateway::handleThreadMembersUpdate(const Inbound &data)
+{
+    ThreadMembersUpdate event = data.getData<ThreadMembersUpdate>();
+
+    emit gatewayThreadMembersUpdate(event);
 }
 
 void Gateway::handleForumUnreads(const Inbound &data)

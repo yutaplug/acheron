@@ -193,6 +193,7 @@ set(PROJECT_SOURCES
     src/UI/Forum/ForumPostDelegate.cpp
     src/UI/Forum/ForumBrowser.cpp
     src/UI/Forum/NewPostDialog.cpp
+    src/UI/ThreadBrowser/ThreadBrowserPopup.cpp
     src/UI/Dialogs/TokenInputDialog.cpp
     src/UI/Dialogs/QRLoginDialog.cpp
     src/UI/Dialogs/BasePopup.cpp

@@ -164,11 +164,15 @@ struct PermissionOverwrite : Core::JsonUtils::JsonObject
 struct ThreadMetadata : Core::JsonUtils::JsonObject
 {
     Field<bool> archived;
+    Field<int, true> autoArchiveDuration; // minutes
+    Field<QDateTime, true> archiveTimestamp; // when the archive status last changed
 
     static ThreadMetadata fromJson(const QJsonObject &obj)
     {
         ThreadMetadata meta;
         get(obj, "archived", meta.archived);
+        get(obj, "auto_archive_duration", meta.autoArchiveDuration);
+        get(obj, "archive_timestamp", meta.archiveTimestamp);
         return meta;
     }
 };
@@ -194,12 +198,14 @@ struct ForumTag : Core::JsonUtils::JsonObject
 struct ThreadMember : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake, true> id; // thread id
+    Field<Core::Snowflake, true> userId;
     Field<QDateTime> joinTimestamp;
 
     static ThreadMember fromJson(const QJsonObject &obj)
     {
         ThreadMember member;
         get(obj, "id", member.id);
+        get(obj, "user_id", member.userId);
         get(obj, "join_timestamp", member.joinTimestamp);
         return member;
     }
@@ -228,6 +234,8 @@ struct Channel : Core::JsonUtils::JsonObject
     Field<QList<ForumTag>, true> availableTags;
     Field<QList<Core::Snowflake>, true> appliedTags;
     Field<int, true> messageCount;
+    Field<int, true> memberCount;
+    Field<int, true> totalMessageSent;
     Field<ChannelFlags, true> flags;
     Field<int, true, true> defaultSortOrder;
 
@@ -256,6 +264,8 @@ struct Channel : Core::JsonUtils::JsonObject
         get(obj, "available_tags", channel.availableTags);
         get(obj, "applied_tags", channel.appliedTags);
         get(obj, "message_count", channel.messageCount);
+        get(obj, "member_count", channel.memberCount);
+        get(obj, "total_message_sent", channel.totalMessageSent);
         get(obj, "flags", channel.flags);
         get(obj, "default_sort_order", channel.defaultSortOrder);
 
@@ -280,6 +290,8 @@ struct Channel : Core::JsonUtils::JsonObject
     }
 
     bool isPinned() const { return flags.hasValue() && flags->testFlag(ChannelFlag::PINNED); }
+
+    bool isThread() const { return type.hasValue() && isThreadType(type.get()); }
 };
 
 struct Guild : Core::JsonUtils::JsonObject

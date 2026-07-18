@@ -25,6 +25,8 @@ signals:
     void openInNewTabRequested(const QModelIndex &proxyIndex);
     void joinVoiceChannelRequested(const QModelIndex &proxyIndex);
     void disconnectVoiceRequested(const QModelIndex &proxyIndex);
+    void joinThreadRequested(const QModelIndex &proxyIndex);
+    void leaveThreadRequested(const QModelIndex &proxyIndex);
 
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;

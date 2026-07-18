@@ -34,7 +34,10 @@ void ChannelTreeView::onRowsInserted(const QModelIndex &parent, int first, int l
 {
     if (parent.isValid()) {
         auto parentType = static_cast<ChannelNode::Type>(parent.data(ChannelTreeModel::TypeRole).toInt());
-        if ((parentType == ChannelNode::Type::VoiceChannel || isAlwaysExpanded(parentType)) && !isExpanded(parent))
+        if ((parentType == ChannelNode::Type::VoiceChannel ||
+             parentType == ChannelNode::Type::Channel ||
+             isAlwaysExpanded(parentType)) &&
+            !isExpanded(parent))
             expand(parent);
     }
 
@@ -55,6 +58,8 @@ void ChannelTreeView::performDefaultExpansion()
             auto nodeType = static_cast<ChannelNode::Type>(idx.data(ChannelTreeModel::TypeRole).toInt());
             if (nodeType == ChannelNode::Type::Category || nodeType == ChannelNode::Type::Account ||
                 nodeType == ChannelNode::Type::VoiceChannel || isAlwaysExpanded(nodeType))
+                expand(idx);
+            else if (nodeType == ChannelNode::Type::Channel && model()->hasChildren(idx))
                 expand(idx);
             if (model()->hasChildren(idx))
                 walk(idx);
@@ -102,7 +107,7 @@ bool ChannelTreeView::handleMouseEventForExpansion(QMouseEvent *event)
         sourceModel->toggleCollapsed(sourceIndex);
         proxy->invalidateFilter();
         return true;
-    } else if (!isAlwaysExpanded(nodeType) && model()->hasChildren(proxyIndex)) {
+    } else if (nodeType != ChannelNode::Type::Channel && !isAlwaysExpanded(nodeType) && model()->hasChildren(proxyIndex)) {
         setExpanded(proxyIndex, !isExpanded(proxyIndex));
         return true;
     }
@@ -138,6 +143,19 @@ void ChannelTreeView::contextMenuEvent(QContextMenuEvent *event)
         QAction *openTabAction = menu.addAction(tr("Open in New Tab"));
         connect(openTabAction, &QAction::triggered, this, [this, proxyIndex]() {
             emit openInNewTabRequested(proxyIndex);
+        });
+        menu.addSeparator();
+    }
+
+    auto parentType = static_cast<ChannelNode::Type>(sourceIndex.parent().data(ChannelTreeModel::TypeRole).toInt());
+    if (nodeType == ChannelNode::Type::Thread && parentType == ChannelNode::Type::Channel) {
+        bool joined = sourceIndex.data(ChannelTreeModel::ThreadJoinedRole).toBool();
+        QAction *action = menu.addAction(joined ? tr("Leave Thread") : tr("Join Thread"));
+        connect(action, &QAction::triggered, this, [this, proxyIndex, joined]() {
+            if (joined)
+                emit leaveThreadRequested(proxyIndex);
+            else
+                emit joinThreadRequested(proxyIndex);
         });
         menu.addSeparator();
     }

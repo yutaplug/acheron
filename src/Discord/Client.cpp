@@ -59,6 +59,7 @@ Client::Client(const QString &token, const QString &gatewayUrl, const QString &b
     connect(gateway, &Gateway::gatewayThreadDelete, this, &Client::onGatewayThreadDelete);
     connect(gateway, &Gateway::gatewayThreadListSync, this, &Client::onGatewayThreadListSync);
     connect(gateway, &Gateway::gatewayThreadMemberUpdate, this, &Client::threadMemberUpdated);
+    connect(gateway, &Gateway::gatewayThreadMembersUpdate, this, &Client::threadMembersUpdated);
     connect(gateway, &Gateway::gatewayForumUnreads, this, &Client::forumUnreads);
     connect(gateway, &Gateway::gatewayGuildCreate, this, &Client::onGatewayGuildCreate);
     connect(gateway, &Gateway::gatewayGuildMembersChunk, this, &Client::guildMembersChunk);
@@ -194,9 +195,45 @@ void Client::setUserNote(Snowflake userId, const QString &note)
     });
 }
 
+namespace {
+
+template <typename ResultT, typename ParseExtra>
+void runThreadSearch(HttpClient *http, Core::Snowflake channelId, const QUrlQuery &query,
+                     const QString &errorPrefix,
+                     std::function<void(const Core::Result<ResultT> &)> callback,
+                     ParseExtra parseExtra)
+{
+    QString endpoint = "/channels/" + QString::number(channelId) + "/threads/search";
+    http->get(endpoint, query, [callback, parseExtra, errorPrefix](const HttpResponse &response) {
+        if (response.statusCode == 202) {
+            QJsonObject obj = QJsonDocument::fromJson(response.body).object();
+            ResultT result;
+            result.indexNotReady = true;
+            result.retryAfterSeconds = qMax(1, qRound(obj.value("retry_after").toDouble(1.0)));
+            callback(Core::Result<ResultT>::makeOk(result));
+            return;
+        }
+
+        if (!response.success) {
+            qCWarning(LogDiscord) << errorPrefix << response.error;
+            callback(Core::Result<ResultT>::makeError(errorPrefix + " " + response.error));
+            return;
+        }
+
+        QJsonObject obj = QJsonDocument::fromJson(response.body).object();
+        ResultT result;
+        result.hasMore = obj.value("has_more").toBool();
+        for (const QJsonValue &val : obj.value("threads").toArray())
+            result.threads.append(Channel::fromJson(val.toObject()));
+        parseExtra(obj, result);
+        callback(Core::Result<ResultT>::makeOk(result));
+    });
+}
+
+} // namespace
+
 void Client::searchForumThreads(Snowflake forumId, int offset, const QString &sortBy, ForumThreadsCallback callback)
 {
-    QString endpoint = "/channels/" + QString::number(forumId) + "/threads/search";
     QUrlQuery query;
     query.addQueryItem("sort_by", sortBy);
     query.addQueryItem("sort_order", "desc");
@@ -205,34 +242,51 @@ void Client::searchForumThreads(Snowflake forumId, int offset, const QString &so
     if (offset > 0)
         query.addQueryItem("offset", QString::number(offset));
 
-    httpClient->get(endpoint, query, [callback](const HttpResponse &response) {
-        if (response.statusCode == 202) {
-            QJsonObject obj = QJsonDocument::fromJson(response.body).object();
-            ForumThreadSearchResult result;
-            result.indexNotReady = true;
-            result.retryAfterSeconds = qMax(1, qRound(obj.value("retry_after").toDouble(1.0)));
-            callback(Core::Result<ForumThreadSearchResult>::makeOk(result));
-            return;
-        }
+    runThreadSearch<ForumThreadSearchResult>(
+            httpClient, forumId, query, QStringLiteral("Failed to search forum threads:"),
+            std::move(callback), [](const QJsonObject &obj, ForumThreadSearchResult &result) {
+                for (const QJsonValue &val : obj.value("first_messages").toArray()) {
+                    Message msg = Message::fromJson(val.toObject());
+                    if (msg.channelId.hasValue())
+                        result.firstMessages.insert(msg.channelId.get(), msg);
+                }
+            });
+}
 
-        if (!response.success) {
-            qCWarning(LogDiscord) << "Failed to search forum threads:" << response.error;
-            callback(Core::Result<ForumThreadSearchResult>::makeError("Failed to search forum threads: " + response.error));
-            return;
-        }
-
-        QJsonObject obj = QJsonDocument::fromJson(response.body).object();
-        ForumThreadSearchResult result;
-        result.hasMore = obj.value("has_more").toBool();
-        for (const QJsonValue &val : obj.value("threads").toArray())
-            result.threads.append(Channel::fromJson(val.toObject()));
-        for (const QJsonValue &val : obj.value("first_messages").toArray()) {
-            Message msg = Message::fromJson(val.toObject());
-            if (msg.channelId.hasValue())
-                result.firstMessages.insert(msg.channelId.get(), msg);
-        }
-        callback(Core::Result<ForumThreadSearchResult>::makeOk(result));
+void Client::joinThread(Snowflake threadId)
+{
+    QString endpoint = "/channels/" + QString::number(threadId) + "/thread-members/@me";
+    httpClient->put(endpoint, QJsonObject{}, [threadId](const HttpResponse &response) {
+        if (!response.success)
+            qCWarning(LogDiscord) << "Failed to join thread" << threadId << ":" << response.error;
     });
+}
+
+void Client::leaveThread(Snowflake threadId)
+{
+    QString endpoint = "/channels/" + QString::number(threadId) + "/thread-members/@me";
+    httpClient->delete_(endpoint, [threadId](const HttpResponse &response) {
+        if (!response.success)
+            qCWarning(LogDiscord) << "Failed to leave thread" << threadId << ":" << response.error;
+    });
+}
+
+void Client::searchThreads(Snowflake channelId, bool archived, int offset, ThreadListCallback callback)
+{
+    QUrlQuery query;
+    query.addQueryItem("archived", archived ? "true" : "false");
+    query.addQueryItem("sort_by", "last_message_time");
+    query.addQueryItem("sort_order", "desc");
+    query.addQueryItem("limit", "25");
+    if (offset > 0)
+        query.addQueryItem("offset", QString::number(offset));
+
+    runThreadSearch<ThreadListResult>(
+            httpClient, channelId, query, QStringLiteral("Failed to search threads:"),
+            std::move(callback), [](const QJsonObject &obj, ThreadListResult &result) {
+                for (const QJsonValue &val : obj.value("members").toArray())
+                    result.members.append(ThreadMember::fromJson(val.toObject()));
+            });
 }
 
 void Client::createForumThread(Snowflake forumId, const QString &name,
@@ -378,15 +432,8 @@ void Client::onDisconnected(CloseCode code, const QString &reason)
 
 void Client::onGatewayReady(const Ready &data)
 {
-    for (const auto &guild : data.guilds.get()) {
-        for (const auto &channel : guild.channels.get()) {
-            channelToGuild.insert(channel.id, guild.properties->id.get());
-        }
-        guildPremiumTiers.insert(guild.properties->id.get(),
-                                 guild.properties->premiumTier.hasValue()
-                                         ? guild.properties->premiumTier.get()
-                                         : PremiumTier::NONE);
-    }
+    for (const auto &guild : data.guilds.get())
+        indexGuildMappings(guild);
 
     const QByteArray binary = QByteArray::fromBase64(data.userSettingsProto->toUtf8());
     Proto::ProtoReader reader(binary);
@@ -427,17 +474,26 @@ void Client::onGatewayChannelCreate(const ChannelCreate &event)
 
 void Client::onGatewayGuildCreate(const GatewayGuild &guild)
 {
-    if (guild.properties.hasValue()) {
-        Snowflake guildId = guild.properties->id.get();
-        if (guild.channels.hasValue())
-            for (const auto &channel : guild.channels.get())
-                channelToGuild.insert(channel.id, guildId);
-        guildPremiumTiers.insert(guildId, guild.properties->premiumTier.hasValue()
-                                                  ? guild.properties->premiumTier.get()
-                                                  : PremiumTier::NONE);
-    }
+    indexGuildMappings(guild);
 
     emit guildCreated(guild);
+}
+
+void Client::indexGuildMappings(const GatewayGuild &guild)
+{
+    if (!guild.properties.hasValue())
+        return;
+
+    Snowflake guildId = guild.properties->id.get();
+    if (guild.channels.hasValue())
+        for (const auto &channel : guild.channels.get())
+            channelToGuild.insert(channel.id, guildId);
+    if (guild.threads.hasValue())
+        for (const auto &thread : guild.threads.get())
+            channelToGuild.insert(thread.id, guildId);
+    guildPremiumTiers.insert(guildId, guild.properties->premiumTier.hasValue()
+                                              ? guild.properties->premiumTier.get()
+                                              : PremiumTier::NONE);
 }
 
 void Client::onGatewayChannelUpdate(const ChannelUpdate &event)
@@ -697,7 +753,7 @@ void Client::cleanupUploadedSlots(const std::shared_ptr<UploadState> &state)
     for (int i = 0; i < state->uploaded.size(); i++) {
         if (!state->uploaded[i] || state->uploadFilenames[i].isEmpty())
             continue;
-        httpClient->delete_("/attachments/" + state->uploadFilenames[i], [](const auto &) { });
+        httpClient->delete_("/attachments/" + state->uploadFilenames[i], [](const auto &) {});
     }
 }
 

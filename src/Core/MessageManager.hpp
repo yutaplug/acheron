@@ -72,6 +72,7 @@ private:
     void cacheMessages(Snowflake channelId, const QList<Discord::Message> &msgs);
     QList<Discord::Message> getCachedMessages();
     void emitReactionUpdate(Discord::Message &msg);
+    void parseMessageContent(Discord::Message &msg);
 
     Storage::MessageRepository repo;
 

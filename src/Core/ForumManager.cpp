@@ -1,5 +1,6 @@
 #include "ForumManager.hpp"
 
+#include <QDateTime>
 #include <QSet>
 #include <QTimer>
 
@@ -229,7 +230,7 @@ QList<Discord::Channel> ForumManager::joinedPosts(Snowflake forumId) const
 
     QList<Discord::Channel> result;
     for (const auto &post : it->posts) {
-        if (!post.isArchived() && joinedAt.contains(post.id.get()))
+        if (!post.isArchived() && joinedAt.contains(post.id.get()) && readState->isThreadRelevant(post))
             result.append(post);
     }
 

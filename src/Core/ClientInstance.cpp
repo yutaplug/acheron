@@ -204,6 +204,13 @@ ClientInstance::ClientInstance(const AccountInfo &info,
     connect(client, &Discord::Client::forumUnreads, forumManager, &ForumManager::onForumUnreads);
     connect(client, &Discord::Client::messageCreated, forumManager, &ForumManager::onMessageCreated);
 
+    connect(client, &Discord::Client::threadCreated, this, &ClientInstance::onThreadCreated);
+    connect(client, &Discord::Client::threadUpdated, this, &ClientInstance::onThreadUpdated);
+    connect(client, &Discord::Client::threadDeleted, this, &ClientInstance::onThreadDeleted);
+    connect(client, &Discord::Client::threadListSync, this, &ClientInstance::onThreadListSync);
+    connect(client, &Discord::Client::threadMemberUpdated, this, &ClientInstance::onThreadMemberUpdate);
+    connect(client, &Discord::Client::threadMembersUpdated, this, &ClientInstance::onThreadMembersUpdate);
+
     connect(forumManager, &ForumManager::badgeChanged, this, &ClientInstance::forumBadgeChanged);
     connect(forumManager, &ForumManager::joinedPostsChanged, this, &ClientInstance::forumJoinedPostsChanged);
 
@@ -311,6 +318,15 @@ void ClientInstance::initGuildReadState(const Discord::GatewayGuild &guild)
                 readStateManager->updateChannelLastMessageId(channel.id.get(), channel.lastMessageId.get());
         }
     }
+
+    if (guild.threads.hasValue()) {
+        for (const auto &thread : guild.threads.get()) {
+            if (isForumParent(thread.parentId.hasValue() ? thread.parentId.get() : Snowflake()))
+                registerThreadReadState(thread, guildId);
+            else
+                ingestThread(thread, guildId);
+        }
+    }
 }
 
 void ClientInstance::onGuildCreated(const Discord::GatewayGuild &guild)
@@ -381,6 +397,8 @@ void ClientInstance::onChannelCreated(const Discord::ChannelCreate &event)
             readStateManager->updateChannelLastMessageId(channelId, channel.lastMessageId.get());
     }
 
+    forumParentCache.remove(channelId);
+
     emit channelCreated(event);
 }
 
@@ -407,6 +425,7 @@ void ClientInstance::onChannelUpdated(const Discord::ChannelUpdate &event)
     txn.commit();
 
     permissionManager->invalidateChannelCache(channelId);
+    forumParentCache.remove(channelId);
 
     emit channelUpdated(event);
 }
@@ -430,8 +449,230 @@ void ClientInstance::onChannelDeleted(const Discord::ChannelDelete &event)
     txn.commit();
 
     permissionManager->invalidateChannelCache(channelId);
+    forumParentCache.remove(channelId);
 
     emit channelDeleted(event);
+}
+
+bool ClientInstance::isForumParent(Snowflake parentId)
+{
+    if (!parentId.isValid())
+        return false;
+    auto it = forumParentCache.constFind(parentId);
+    if (it != forumParentCache.constEnd())
+        return it.value();
+    auto ch = channelRepo.getChannel(parentId);
+    bool isForum = ch && ch->type.hasValue() &&
+                   (ch->type.get() == Discord::ChannelType::GUILD_FORUM ||
+                    ch->type.get() == Discord::ChannelType::GUILD_MEDIA);
+    forumParentCache.insert(parentId, isForum);
+    return isForum;
+}
+
+void ClientInstance::registerThreadReadState(const Discord::Channel &thread, Snowflake guildId)
+{
+    if (guildId.isValid())
+        readStateManager->registerChannelGuild(thread.id.get(), guildId);
+    if (thread.lastMessageId.hasValue())
+        readStateManager->updateChannelLastMessageId(thread.id.get(), thread.lastMessageId.get());
+}
+
+void ClientInstance::cacheThread(const Discord::Channel &thread, Snowflake guildId)
+{
+    Discord::Channel copy = thread;
+    if (!copy.guildId.hasValue() && guildId.isValid())
+        copy.guildId = guildId;
+    threadCache.insert(copy.id.get(), copy);
+    registerThreadReadState(copy, copy.guildId.hasValue() ? copy.guildId.get() : guildId);
+}
+
+void ClientInstance::ingestThread(const Discord::Channel &thread, Snowflake guildId)
+{
+    cacheThread(thread, guildId);
+    if (thread.member.hasValue())
+        joinedThreads.insert(thread.id.get());
+}
+
+void ClientInstance::onThreadCreated(const Discord::ChannelCreate &event)
+{
+    if (!event.channel.hasValue())
+        return;
+    const Discord::Channel &thread = event.channel.get();
+    if (!thread.parentId.hasValue() || isForumParent(thread.parentId.get()))
+        return;
+
+    Snowflake threadId = thread.id.get();
+    Snowflake guildId = thread.guildId.hasValue() ? thread.guildId.get() : Snowflake::Invalid;
+    ingestThread(thread, guildId);
+
+    bool isMember = thread.member.hasValue() || (thread.ownerId.hasValue() && thread.ownerId.get() == account.id);
+    if (isMember) {
+        joinedThreads.insert(threadId);
+        emit threadCreated(thread);
+    }
+}
+
+void ClientInstance::onThreadUpdated(const Discord::ChannelUpdate &event)
+{
+    if (!event.channel.hasValue())
+        return;
+    const Discord::Channel &thread = event.channel.get();
+    if (!thread.parentId.hasValue() || isForumParent(thread.parentId.get()))
+        return;
+
+    Snowflake guildId = thread.guildId.hasValue() ? thread.guildId.get() : Snowflake::Invalid;
+    ingestThread(thread, guildId);
+
+    emit threadUpdated(thread);
+}
+
+void ClientInstance::onThreadDeleted(const Discord::ThreadDelete &event)
+{
+    if (!event.id.hasValue())
+        return;
+    Snowflake parentId = event.parentId.hasValue() ? event.parentId.get() : Snowflake::Invalid;
+    if (isForumParent(parentId))
+        return;
+
+    Snowflake threadId = event.id.get();
+    Snowflake guildId = event.guildId.hasValue() ? event.guildId.get() : Snowflake::Invalid;
+    threadCache.remove(threadId);
+    joinedThreads.remove(threadId);
+
+    emit threadDeleted(threadId, parentId, guildId);
+}
+
+void ClientInstance::onThreadListSync(const Discord::ThreadListSync &event)
+{
+    Snowflake guildId = event.guildId.get();
+
+    QList<Discord::Channel> textThreads;
+    QSet<Snowflake> textThreadIds;
+    if (event.threads.hasValue()) {
+        for (const auto &thread : event.threads.get()) {
+            if (!thread.parentId.hasValue() || isForumParent(thread.parentId.get()))
+                continue;
+            ingestThread(thread, guildId);
+            textThreadIds.insert(thread.id.get());
+            textThreads.append(thread);
+        }
+    }
+
+    if (event.members.hasValue())
+        for (const auto &member : event.members.get())
+            if (member.id.hasValue() && textThreadIds.contains(member.id.get()))
+                joinedThreads.insert(member.id.get());
+
+    QList<Snowflake> parentIds =
+            event.channelIds.hasValue() ? event.channelIds.get() : QList<Snowflake>{};
+    emit threadListSynced(guildId, parentIds, textThreads);
+}
+
+void ClientInstance::onThreadMemberUpdate(const Discord::ThreadMemberUpdate &event)
+{
+    if (event.userId.hasValue() && event.userId.get() != account.id)
+        return;
+    if (!event.member.id.hasValue())
+        return;
+    Snowflake threadId = event.member.id.get();
+
+    if (!threadCache.contains(threadId))
+        return;
+
+    joinedThreads.insert(threadId);
+    emit threadMembershipChanged(threadId);
+}
+
+void ClientInstance::onThreadMembersUpdate(const Discord::ThreadMembersUpdate &event)
+{
+    if (!event.id.hasValue())
+        return;
+    Snowflake threadId = event.id.get();
+    if (!threadCache.contains(threadId))
+        return;
+
+    bool changed = false;
+    if (event.addedMembers.hasValue()) {
+        for (const auto &member : event.addedMembers.get()) {
+            if (member.userId.hasValue() && member.userId.get() == account.id &&
+                !joinedThreads.contains(threadId)) {
+                joinedThreads.insert(threadId);
+                changed = true;
+            }
+        }
+    }
+    if (event.removedMemberIds.hasValue()) {
+        for (Snowflake userId : event.removedMemberIds.get())
+            if (userId == account.id && joinedThreads.remove(threadId))
+                changed = true;
+    }
+
+    if (changed)
+        emit threadMembershipChanged(threadId);
+}
+
+std::optional<Discord::Channel> ClientInstance::getChannel(Snowflake channelId)
+{
+    auto it = threadCache.constFind(channelId);
+    if (it != threadCache.constEnd())
+        return it.value();
+    return channelRepo.getChannel(channelId);
+}
+
+bool ClientInstance::isThreadJoined(Snowflake threadId) const
+{
+    return joinedThreads.contains(threadId);
+}
+
+void ClientInstance::fetchThreadList(Snowflake channelId, bool archived, int offset, ThreadListPageCallback callback)
+{
+    fetchThreadListAttempt(channelId, archived, offset, 0, std::move(callback));
+}
+
+void ClientInstance::fetchThreadListAttempt(Snowflake channelId, bool archived, int offset, int attempt, const ThreadListPageCallback &callback)
+{
+    static constexpr int kMaxRetries = 5;
+
+    client->searchThreads(
+            channelId, archived, offset,
+            [this, channelId, archived, offset, attempt,
+             callback](const Result<Discord::Client::ThreadListResult> &res) {
+                if (!res.success()) {
+                    callback(Result<ThreadListPage>::makeError(res.error));
+                    return;
+                }
+
+                const auto &data = *res.value;
+                if (data.indexNotReady) {
+                    if (attempt >= kMaxRetries) {
+                        qCWarning(LogCore)
+                                << "Thread search index not ready after retries for" << channelId;
+                        callback(Result<ThreadListPage>::makeError("Thread list is not ready yet"));
+                        return;
+                    }
+                    int delayMs = qMax(1, data.retryAfterSeconds) * 1000;
+                    QTimer::singleShot(delayMs, this,
+                                       [this, channelId, archived, offset, attempt, callback]() {
+                                           fetchThreadListAttempt(channelId, archived, offset, attempt + 1, callback);
+                                       });
+                    return;
+                }
+
+                Snowflake guildId = Snowflake::Invalid;
+                if (auto ch = getChannel(channelId); ch && ch->guildId.hasValue())
+                    guildId = ch->guildId.get();
+                for (const auto &thread : data.threads)
+                    ingestThread(thread, guildId);
+
+                for (const auto &member : data.members)
+                    if (member.id.hasValue())
+                        joinedThreads.insert(member.id.get());
+
+                ThreadListPage page;
+                page.threads = data.threads;
+                page.hasMore = data.hasMore;
+                callback(Result<ThreadListPage>::makeOk(page));
+            });
 }
 
 bool ClientInstance::runInCacheTransaction(const char *what,
@@ -648,6 +889,10 @@ void ClientInstance::onMessageCreated(const Discord::Message &msg)
     Snowflake channelId = msg.channelId.get();
     Snowflake messageId = msg.id.get();
 
+    // we can get a message in a thread without knowing the thread exists maybe
+    if (msg.guildId.hasValue())
+        readStateManager->registerChannelGuild(channelId, msg.guildId.get());
+
     bool isMention = isMessageMentioningMe(msg);
     readStateManager->handleMessageCreated(channelId, messageId, isMention);
 
@@ -822,7 +1067,7 @@ std::optional<Snowflake> ClientInstance::findDmChannelWithUser(Snowflake userId)
 
 int ClientInstance::getChannelRateLimit(Snowflake channelId)
 {
-    auto channelOpt = channelRepo.getChannel(channelId);
+    auto channelOpt = getChannel(channelId);
     if (!channelOpt || !channelOpt->rateLimitPerUser.hasValue())
         return 0;
     return channelOpt->rateLimitPerUser.get();

@@ -47,6 +47,7 @@ public:
         IconHashRole = Qt::UserRole + 12,
         FolderColorRole = Qt::UserRole + 13,
         CountsForGuildUnreadRole = Qt::UserRole + 14,
+        ThreadJoinedRole = Qt::UserRole + 15,
     };
 
     QModelIndex index(int row, int column, const QModelIndex &parentIndex) const override;
@@ -69,6 +70,13 @@ public:
     void addChannel(const Discord::ChannelCreate &event, Snowflake accountId);
     void updateChannel(const Discord::ChannelUpdate &update, Snowflake accountId);
     void deleteChannel(const Discord::ChannelDelete &event, Snowflake accountId);
+    void addThread(const Discord::Channel &thread, Snowflake accountId);
+    void updateThread(const Discord::Channel &thread, Snowflake accountId);
+    void removeThread(Snowflake threadId, Snowflake accountId);
+    void syncThreads(Snowflake guildId, const QList<Snowflake> &parentIds, const QList<Discord::Channel> &threads, Snowflake accountId);
+    void showTemporaryThread(const Discord::Channel &thread, Snowflake accountId);
+    void clearTemporaryThread(Snowflake exceptThreadId = Snowflake::Invalid);
+    void promoteTemporaryThread(Snowflake threadId);
     void invalidateGuildData(Snowflake guildId);
     void updateReadState(Snowflake channelId, Snowflake accountId);
     void updateForumBadge(Snowflake forumId, Snowflake accountId);
@@ -97,6 +105,7 @@ private:
     static void collectMarkableChannels(ChannelNode *node,
                                         QList<QPair<Snowflake, Snowflake>> &out);
     void applyChannelReadState(ChannelNode *node, const Core::ChannelReadState &state);
+    Core::ChannelReadState computeNodeReadState(ChannelNode *node, Snowflake guildId, Core::ClientInstance *instance);
     void applyForumReadState(ChannelNode *node, Core::ReadStateManager *readState, Snowflake guildId);
     struct ReadStateSnapshot
     {
@@ -112,7 +121,11 @@ private:
     static void aggregateChildren(ChannelNode *node);
     void recomputeSubtreeAggregates(ChannelNode *root);
     void updateNodeAggregates(ChannelNode *node);
-    std::unique_ptr<ChannelNode> createGuildNode(const Discord::GatewayGuild &guild);
+    std::unique_ptr<ChannelNode> createGuildNode(const Discord::GatewayGuild &guild, Core::ClientInstance *instance);
+    static std::unique_ptr<ChannelNode> makeThreadNode(const Discord::Channel &thread);
+    ChannelNode *insertThreadNode(const Discord::Channel &thread, Snowflake accountId, bool temporary = false);
+    bool removeChildRow(ChannelNode *parent, ChannelNode *node);
+    void resortThread(ChannelNode *node);
     std::unique_ptr<ChannelNode> createFolderNode(const Proto::GuildFolder &folder);
     void placeGuildNode(ChannelNode *accNode, Snowflake guildId, std::unique_ptr<ChannelNode> guildNode, Core::ClientInstance *instance);
     ChannelNode *findChannelTreeNode(Snowflake channelId, ChannelNode *root);
@@ -128,6 +141,9 @@ private:
     std::unique_ptr<ChannelNode> root;
     QHash<Snowflake, ChannelNode *> accountNodes;
     mutable AvatarRequestTracker<QPersistentModelIndex> avatarTracker;
+
+    Snowflake temporaryThreadId;
+    Snowflake temporaryThreadAccount;
 };
 } // namespace UI
 } // namespace Acheron
