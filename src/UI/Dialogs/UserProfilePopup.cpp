@@ -23,6 +23,7 @@
 #include "Core/ClientInstance.hpp"
 #include "Core/ImageManager.hpp"
 #include "Core/RelationshipManager.hpp"
+#include "Core/Theme/Icons.hpp"
 #include "Core/UserManager.hpp"
 #include "Discord/CdnUrls.hpp"
 #include "Discord/Client.hpp"
@@ -324,13 +325,14 @@ QWidget *UserProfilePopup::buildBody()
     bioSection->setVisible(false);
     leftCol->addWidget(bioSection);
 
-    auto buildInfoRow = [&](const QString &emoji, QLabel *&labelSlot, bool muted) {
+    auto buildInfoRow = [&](const QString &iconName, QLabel *&labelSlot, bool muted) {
         auto *row = new QWidget(body);
         auto *rl = new QHBoxLayout(row);
         rl->setContentsMargins(0, 0, 0, 0);
         rl->setSpacing(6);
-        auto *icon = new QLabel(emoji, row);
+        auto *icon = new QLabel(row);
         icon->setFixedWidth(18);
+        icon->setPixmap(Core::Theme::Icons::pixmap(iconName, 16, Core::Theme::Token::PlaceholderText, row->devicePixelRatioF()));
         rl->addWidget(icon);
         labelSlot = new QLabel(row);
         labelSlot->setStyleSheet(
@@ -345,10 +347,10 @@ QWidget *UserProfilePopup::buildBody()
     auto *infoBlockLayout = new QVBoxLayout(infoBlock);
     infoBlockLayout->setContentsMargins(0, 0, 0, 0);
     infoBlockLayout->setSpacing(4);
-    serverJoinRow = buildInfoRow(QStringLiteral("🪪"), serverJoinLabel, false);
+    serverJoinRow = buildInfoRow(Core::Theme::Icons::Name::IdCard, serverJoinLabel, false);
     infoBlockLayout->addWidget(serverJoinRow);
-    infoBlockLayout->addWidget(buildInfoRow(QStringLiteral("💬"), discordJoinLabel, false));
-    infoBlockLayout->addWidget(buildInfoRow(QStringLiteral("🤝"), friendsSinceLabel, true));
+    infoBlockLayout->addWidget(buildInfoRow(Core::Theme::Icons::Name::MessageCircle, discordJoinLabel, false));
+    infoBlockLayout->addWidget(buildInfoRow(Core::Theme::Icons::Name::Handshake, friendsSinceLabel, true));
     leftCol->addWidget(infoBlock);
 
     rolesSection = new QWidget(leftContent);

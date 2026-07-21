@@ -1,5 +1,8 @@
 #include "MessageInput.hpp"
 #include "AttachmentPreviewPanel.hpp"
+
+#include "Core/Theme/Icons.hpp"
+
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QKeyEvent>
@@ -89,11 +92,12 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
     replyLayout->addWidget(replyLabel, 1);
 
     replyCancelButton = new QToolButton(replyBar);
-    replyCancelButton->setText(QStringLiteral("\u00D7")); // multiplication sign as close icon
+    replyCancelButton->setIcon(Core::Theme::Icons::icon(Core::Theme::Icons::Name::X, Core::Theme::Token::PlaceholderText));
+    replyCancelButton->setIconSize(QSize(14, 14));
     replyCancelButton->setFixedSize(16, 16);
-    replyCancelButton->setStyleSheet(
-            "QToolButton { border: none; color: #b5bac1; font-size: 14px; }"
-            "QToolButton:hover { color: #ffffff; }");
+    replyCancelButton->setAutoRaise(true);
+    replyCancelButton->setCursor(Qt::PointingHandCursor);
+    replyCancelButton->setStyleSheet("QToolButton { border: none; }");
     replyLayout->addWidget(replyCancelButton);
 
     connect(replyCancelButton, &QToolButton::clicked, this, &MessageInput::clearReplyTarget);

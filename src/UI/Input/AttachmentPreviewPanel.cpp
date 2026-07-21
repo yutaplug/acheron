@@ -18,6 +18,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "Core/Theme/Icons.hpp"
 #include "Core/Theme/Manager.hpp"
 #include "UI/Chat/ChatLayout.hpp"
 #include "UI/Dialogs/BasePopup.hpp"
@@ -229,15 +230,15 @@ QWidget *AttachmentPreviewPanel::createCard(int index)
     thumbLabel->setAlignment(Qt::AlignCenter);
     thumbLabel->setPixmap(thumbnailFor(item));
 
-    auto makeButton = [card](const QString &text, const QString &tooltip) {
+    auto makeButton = [card](const QString &iconName, const QString &tooltip) {
         auto *button = new QToolButton(card);
-        button->setText(text);
+        button->setIcon(Core::Theme::Icons::icon(iconName, Core::Theme::Token::PlaceholderText));
+        button->setIconSize(QSize(15, 15));
         button->setToolTip(tooltip);
         button->setFixedSize(18, 18);
+        button->setAutoRaise(true);
         button->setCursor(Qt::PointingHandCursor);
-        button->setStyleSheet("QToolButton { border: none; color: #b5bac1; font-size: 13px; }"
-                              "QToolButton:hover { color: #ffffff; }"
-                              "QToolButton:checked { color: #ffffff; }");
+        button->setStyleSheet("QToolButton { border: none; }");
         return button;
     };
 
@@ -246,7 +247,7 @@ QWidget *AttachmentPreviewPanel::createCard(int index)
     buttonRow->setSpacing(2);
     buttonRow->addStretch();
 
-    auto *spoilerButton = makeButton(QStringLiteral("\U0001F441"), tr("Spoiler")); // eyeball
+    auto *spoilerButton = makeButton(Core::Theme::Icons::Name::Eye, tr("Spoiler"));
     spoilerButton->setCheckable(true);
     spoilerButton->setChecked(item.isSpoiler);
     connect(spoilerButton, &QToolButton::toggled, this, [this, index, thumbLabel](bool checked) {
@@ -257,13 +258,13 @@ QWidget *AttachmentPreviewPanel::createCard(int index)
     });
     buttonRow->addWidget(spoilerButton);
 
-    auto *editButton = makeButton(QStringLiteral("\u270E"), tr("Edit")); // pencil
+    auto *editButton = makeButton(Core::Theme::Icons::Name::Pencil, tr("Edit"));
     connect(editButton, &QToolButton::clicked, this, [this, index]() {
         editAttachment(index);
     });
     buttonRow->addWidget(editButton);
 
-    auto *removeButton = makeButton(QStringLiteral("\u00D7"), tr("Remove")); // x
+    auto *removeButton = makeButton(Core::Theme::Icons::Name::X, tr("Remove"));
     connect(removeButton, &QToolButton::clicked, this, [this, index]() {
         if (index >= items.size())
             return;

@@ -4,6 +4,7 @@
 #include "ChatLayout.hpp"
 #include "ChatView.hpp"
 #include "Core/ImageManager.hpp"
+#include "Core/Theme/Icons.hpp"
 #include "Core/Theme/Manager.hpp"
 
 #include <algorithm>
@@ -384,8 +385,11 @@ void ChatDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         QRect iconRect(fileRect.left() + fileAttachmentPadding,
                        fileRect.top() + fileAttachmentPadding, 32, 32);
         painter->fillRect(iconRect, option.palette.mid());
-        painter->setPen(option.palette.text().color());
-        painter->drawText(iconRect, Qt::AlignCenter, "📄");
+        const qreal fileIconDpr = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
+        const QPixmap fileIcon = Core::Theme::Icons::pixmap(Core::Theme::Icons::Name::FileText, 20, option.palette.text().color(), fileIconDpr);
+        QRect fileGlyphRect(0, 0, 20, 20);
+        fileGlyphRect.moveCenter(iconRect.center());
+        painter->drawPixmap(fileGlyphRect, fileIcon);
 
         int textLeft = iconRect.right() + fileAttachmentPadding;
         QRect textAreaRect(textLeft, fileRect.top() + fileAttachmentPadding,

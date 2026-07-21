@@ -1,5 +1,6 @@
 #include "TabBar.hpp"
 #include "Core/ImageManager.hpp"
+#include "Core/Theme/Icons.hpp"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -307,14 +308,12 @@ void TabBar::paintEvent(QPaintEvent *)
         QRect iconRect(iconX, iconY, IconSize, IconSize);
 
         if (entry.isDm) {
-            p.save();
-            QFont iconFont = font();
-            iconFont.setPixelSize(IconSize - 2);
-            iconFont.setBold(true);
-            p.setFont(iconFont);
-            p.setPen(isActive ? highlight : dimText);
-            p.drawText(iconRect, Qt::AlignCenter, QStringLiteral("@"));
-            p.restore();
+            const qreal iconDpr = p.device() ? p.device()->devicePixelRatioF() : 1.0;
+            const QPixmap dmIcon = Core::Theme::Icons::pixmap(Core::Theme::Icons::Name::AtSign,
+                                                              IconSize,
+                                                              isActive ? highlight : dimText,
+                                                              iconDpr);
+            p.drawPixmap(iconRect, dmIcon);
         } else if (!entry.iconUrl.isEmpty()) {
             QPixmap icon = imageManager->get(entry.iconUrl, QSize(IconSize * 2, IconSize * 2), Core::PinGroup::ChannelList);
             if (!icon.isNull()) {

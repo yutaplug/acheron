@@ -52,12 +52,13 @@ if(ENABLE_VOICE)
     endif()
 endif()
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Widgets Network Sql Test LinguistTools)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Widgets Svg Network Sql Test LinguistTools)
 find_package(Qt${QT_VERSION_MAJOR}
     COMPONENTS
         Core
         Gui
         Widgets
+        Svg
         Network
         Sql
         Concurrent
@@ -162,6 +163,7 @@ set(PROJECT_SOURCES
     src/Core/Markdown/Parser.cpp
     src/Core/Theme/Tokens.cpp
     src/Core/Theme/Manager.cpp
+    src/Core/Theme/Icons.cpp
     src/Core/Theme/Generator.cpp
     src/Core/Theme/Stylesheet.cpp
     src/Core/Theme/Fonts.cpp
@@ -306,6 +308,7 @@ target_link_libraries(${PROJECT_NAME}
         Qt::Core
         Qt::Gui
         Qt::Widgets
+        Qt::Svg
         Qt::Network
         Qt::Sql
         Qt::Concurrent

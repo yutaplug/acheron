@@ -328,9 +328,12 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         if (msg.flags.hasValue() && msg.flags->testFlag(Discord::MessageFlag::HAS_THREAD)) {
             QString sep = html.isEmpty() ? QString() : QStringLiteral("<br>");
             html += sep +
-                    QStringLiteral("<a href=\"acheron://channel/%1\">%2</a>")
+                    QStringLiteral("<a href=\"acheron://channel/%1\">"
+                                   "<img src=\"acheron-icon:view-thread\" width=\"14\" height=\"14\""
+                                   " style=\"vertical-align: middle\">"
+                                   " %2</a>")
                             .arg(QString::number(static_cast<quint64>(msg.id.get())),
-                                 tr("\U0001F9F5 View Thread"));
+                                 tr("View Thread"));
         }
 
         return html;

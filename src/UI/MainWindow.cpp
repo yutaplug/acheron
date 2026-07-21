@@ -29,6 +29,7 @@
 #include "Core/TypingTracker.hpp"
 #include "Core/Logging.hpp"
 #include "Core/ReadStateManager.hpp"
+#include "Core/Theme/Icons.hpp"
 #include "Discord/Events.hpp"
 #include "TypingIndicator.hpp"
 #include "SlowModeIndicator.hpp"
@@ -792,7 +793,9 @@ void MainWindow::setupUi()
     tabBar = new TabBar(session->getImageManager(), rightSideWidget);
 
     threadBrowserButton = new QToolButton(rightSideWidget);
-    threadBrowserButton->setText(QStringLiteral("\U0001F9F5 Threads"));
+    threadBrowserButton->setText(tr("Threads"));
+    threadBrowserButton->setIcon(Core::Theme::Icons::icon(Core::Theme::Icons::Name::Spool, Core::Theme::Token::PrimaryText));
+    threadBrowserButton->setIconSize(QSize(16, 16));
     threadBrowserButton->setToolTip(tr("Browse threads"));
     threadBrowserButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     threadBrowserButton->setAutoRaise(true);

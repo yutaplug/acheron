@@ -1,6 +1,7 @@
 #include "ChatLayout.hpp"
 
 #include "Core/Theme/Fonts.hpp"
+#include "Core/Theme/Icons.hpp"
 #include "Core/Theme/Manager.hpp"
 #include "Core/Theme/Tokens.hpp"
 
@@ -9,6 +10,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
 #include <QTextBlock>
+#include <QUrl>
 
 namespace Acheron {
 namespace UI {
@@ -52,6 +54,14 @@ void setupDocument(QTextDocument &doc, const QString &htmlContent, const QFont &
 
     doc.setDefaultFont(font);
     doc.setDefaultStyleSheet(richTextStyleSheet());
+
+    if (htmlContent.contains(QLatin1String("acheron-icon:view-thread"))) {
+        const QColor threadColor = Core::Theme::Manager::instance().color(Core::Theme::Token::LinkText);
+        doc.addResource(QTextDocument::ImageResource,
+                        QUrl(QStringLiteral("acheron-icon:view-thread")),
+                        Core::Theme::Icons::pixmap(Core::Theme::Icons::Name::Spool, 14, threadColor, 2.0));
+    }
+
     doc.setHtml(wrapped);
     doc.setTextWidth(textWidth);
     doc.setDocumentMargin(0);

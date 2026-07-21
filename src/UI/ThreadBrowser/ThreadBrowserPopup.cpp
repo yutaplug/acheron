@@ -1,6 +1,7 @@
 #include "ThreadBrowserPopup.hpp"
 
 #include "Core/ClientInstance.hpp"
+#include "Core/Theme/Icons.hpp"
 
 #include <QLabel>
 #include <QListWidget>
@@ -32,6 +33,7 @@ ThreadBrowserPopup::ThreadBrowserPopup(QWidget *parent) : BasePopup(parent)
 
     list = new QListWidget(c);
     list->setMinimumHeight(360);
+    list->setIconSize(QSize(16, 16));
     list->setSelectionMode(QAbstractItemView::NoSelection);
     list->setUniformItemSizes(false);
     connect(list, &QListWidget::itemClicked, this, &ThreadBrowserPopup::onItemClicked);
@@ -83,11 +85,11 @@ void ThreadBrowserPopup::addThreadItem(const Discord::Channel &thread)
 {
     QString name = thread.name.hasValue() ? thread.name.get()
                                           : QString::number(static_cast<quint64>(thread.id.get()));
-    QString prefix =
-            thread.type.hasValue() && thread.type.get() == Discord::ChannelType::PRIVATE_THREAD
-                    ? QStringLiteral("\U0001F512 ")
-                    : QStringLiteral("\U0001F9F5 ");
-    auto *item = new QListWidgetItem(prefix + name, list);
+    const bool isPrivate = thread.type.hasValue() && thread.type.get() == Discord::ChannelType::PRIVATE_THREAD;
+    auto *item = new QListWidgetItem(name, list);
+    item->setIcon(Core::Theme::Icons::icon(isPrivate ? Core::Theme::Icons::Name::Lock
+                                                     : Core::Theme::Icons::Name::Spool,
+                                           Core::Theme::Token::PrimaryText));
     item->setData(Qt::UserRole, static_cast<qulonglong>(thread.id.get()));
 }
 
