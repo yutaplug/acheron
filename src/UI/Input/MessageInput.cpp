@@ -10,6 +10,9 @@
 #include <QDragEnterEvent>
 #include <QImage>
 #include <QMimeData>
+#include <QPainter>
+#include <QPen>
+#include <QTimer>
 #include <QToolButton>
 
 #include <algorithm>
@@ -87,6 +90,18 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
     replyLayout->setContentsMargins(8, 4, 4, 2);
     replyLayout->setSpacing(4);
 
+    replyMentionButton = new QToolButton(replyBar);
+    replyMentionButton->setIcon(Core::Theme::Icons::icon(Core::Theme::Icons::Name::AtSign, Core::Theme::Token::Highlight));
+    replyMentionButton->setIconSize(QSize(14, 14));
+    replyMentionButton->setFixedSize(20, 20);
+    replyMentionButton->setAutoRaise(true);
+    replyMentionButton->setCheckable(true);
+    replyMentionButton->setChecked(true);
+    replyMentionButton->setCursor(Qt::PointingHandCursor);
+    replyMentionButton->setToolTip(tr("Mention reply target"));
+    replyMentionButton->setStyleSheet("QToolButton { border: none; }");
+    replyLayout->addWidget(replyMentionButton);
+
     replyLabel = new QLabel(replyBar);
     replyLabel->setStyleSheet("color: #b5bac1; font-size: 12px;");
     replyLayout->addWidget(replyLabel, 1);
@@ -101,6 +116,10 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
     replyLayout->addWidget(replyCancelButton);
 
     connect(replyCancelButton, &QToolButton::clicked, this, &MessageInput::clearReplyTarget);
+    connect(replyMentionButton, &QToolButton::toggled, this, [this](bool checked) {
+        replyMention = checked;
+        updateReplyMentionIcon();
+    });
 
     outerLayout->addWidget(replyBar);
 
@@ -111,7 +130,18 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
     auto *inputContainer = new QWidget(this);
     auto *inputLayout = new QHBoxLayout(inputContainer);
     inputLayout->setContentsMargins(0, 0, 0, 0);
-    inputLayout->setSpacing(0);
+    inputLayout->setSpacing(4);
+
+    silentTypingButton = new QToolButton(inputContainer);
+    silentTypingButton->setIconSize(QSize(18, 18));
+    silentTypingButton->setFixedSize(28, 28);
+    silentTypingButton->setAutoRaise(true);
+    silentTypingButton->setCheckable(true);
+    silentTypingButton->setChecked(false);
+    silentTypingButton->setCursor(Qt::PointingHandCursor);
+    silentTypingButton->setToolTip(tr("Silent typing (typing indicator hidden)"));
+    updateSilentTypingIcon();
+    inputLayout->addWidget(silentTypingButton);
 
     textEdit = new ChatTextEdit(inputContainer);
     setFocusProxy(textEdit);
@@ -134,9 +164,26 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
     connect(textEdit->document(), &QTextDocument::contentsChanged, this,
             &MessageInput::adjustHeight);
 
+    connect(textEdit->document(), &QTextDocument::contentsChanged, this,
+            &MessageInput::updateTypingTimer);
+
     connect(textEdit, &ChatTextEdit::filesPasted, this, &MessageInput::queueAttachments);
     connect(textEdit, &ChatTextEdit::imagePasted, attachmentPanel, &AttachmentPreviewPanel::addImage);
     connect(attachmentPanel, &AttachmentPreviewPanel::attachmentsChanged, this, &MessageInput::adjustHeight);
+
+    connect(silentTypingButton, &QToolButton::toggled, this, [this](bool checked) {
+        silentTyping = checked;
+        updateSilentTypingIcon();
+        if (checked)
+            stopTypingTimer();
+        else
+            updateTypingTimer();
+    });
+
+    // Typing timer
+    typingTimer = new QTimer(this);
+    typingTimer->setInterval(8000);
+    connect(typingTimer, &QTimer::timeout, this, &MessageInput::typingRequired);
 
     inputLayout->addWidget(textEdit);
     outerLayout->addWidget(inputContainer);
@@ -144,6 +191,71 @@ MessageInput::MessageInput(QWidget *parent) : QWidget(parent)
     setAcceptDrops(true);
 
     adjustHeight();
+}
+
+void MessageInput::updateTypingTimer()
+{
+    if (silentTyping) {
+        stopTypingTimer();
+        return;
+    }
+    if (!textEdit->toPlainText().isEmpty())
+        startTypingTimer();
+    else
+        stopTypingTimer();
+}
+
+void MessageInput::startTypingTimer()
+{
+    bool wasActive = typingTimer->isActive();
+    typingTimer->start();
+    if (!wasActive)
+        emit typingRequired();
+}
+
+void MessageInput::stopTypingTimer()
+{
+    typingTimer->stop();
+}
+
+void MessageInput::updateSilentTypingIcon()
+{
+    auto basePm = Core::Theme::Icons::pixmap(
+            Core::Theme::Icons::Name::Keyboard, 18,
+            silentTyping ? Core::Theme::Token::DisabledText : Core::Theme::Token::PlaceholderText);
+
+    if (silentTyping) {
+        QPixmap crossed(basePm.size());
+        crossed.fill(Qt::transparent);
+        QPainter p(&crossed);
+        p.drawPixmap(0, 0, basePm);
+        p.setPen(QPen(QColor(255, 80, 80), 2));
+        p.drawLine(basePm.width(), 0, 0, basePm.height());
+        p.end();
+        silentTypingButton->setIcon(QIcon(crossed));
+    } else {
+        silentTypingButton->setIcon(QIcon(basePm));
+    }
+}
+
+void MessageInput::updateReplyMentionIcon()
+{
+    auto basePm = Core::Theme::Icons::pixmap(
+            Core::Theme::Icons::Name::AtSign, 14,
+            replyMention ? Core::Theme::Token::Highlight : Core::Theme::Token::DisabledText);
+
+    if (!replyMention) {
+        QPixmap crossed(basePm.size());
+        crossed.fill(Qt::transparent);
+        QPainter p(&crossed);
+        p.drawPixmap(0, 0, basePm);
+        p.setPen(QPen(QColor(255, 80, 80), 2));
+        p.drawLine(basePm.width(), 0, 0, basePm.height());
+        p.end();
+        replyMentionButton->setIcon(QIcon(crossed));
+    } else {
+        replyMentionButton->setIcon(QIcon(basePm));
+    }
 }
 
 void MessageInput::setPlaceholder(const QString &name)
@@ -162,6 +274,7 @@ void MessageInput::clear()
     clearReplyTarget();
     attachmentPanel->clearAttachments();
     adjustHeight();
+    stopTypingTimer();
 }
 
 void MessageInput::queueAttachments(const QList<QUrl> &urls)
@@ -196,6 +309,10 @@ void MessageInput::setReplyTarget(Core::Snowflake messageId, const QString &auth
                                   const QString &contentSnippet)
 {
     replyMessageId = messageId;
+    replyMention = true;
+    replyMentionButton->setChecked(true);
+    updateReplyMentionIcon();
+
     QString snippet = contentSnippet;
     snippet.replace('\n', ' ');
     if (snippet.length() > 100)

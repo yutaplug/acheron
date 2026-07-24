@@ -8,6 +8,7 @@
 #include "Core/Snowflake.hpp"
 
 class QToolButton;
+class QTimer;
 
 namespace Acheron {
 namespace UI {
@@ -47,6 +48,9 @@ public:
     void setSendBlocked(bool blocked);
     [[nodiscard]] bool isSendBlocked() const { return sendBlocked; }
 
+    [[nodiscard]] bool isSilentTyping() const { return silentTyping; }
+    [[nodiscard]] bool isReplyMentionEnabled() const { return replyMention; }
+
     void insertText(const QString &text);
 
     void queueAttachments(const QList<QUrl> &urls);
@@ -59,18 +63,31 @@ protected:
 
 signals:
     void sendMessage(const QString &text, const QList<Core::PendingAttachment> &attachments);
+    void typingRequired();
 
 private:
+    void updateTypingTimer();
+    void updateSilentTypingIcon();
+    void updateReplyMentionIcon();
+
     ChatTextEdit *textEdit;
     QWidget *replyBar;
     QLabel *replyLabel;
     QToolButton *replyCancelButton;
+    QToolButton *replyMentionButton;
+    QToolButton *silentTypingButton;
     AttachmentPreviewPanel *attachmentPanel;
 
     Core::Snowflake replyMessageId;
     bool sendBlocked = false;
+    bool silentTyping = false;
+    bool replyMention = true;
+
+    QTimer *typingTimer;
 
     void adjustHeight();
+    void startTypingTimer();
+    void stopTypingTimer();
 };
 
 } // namespace UI

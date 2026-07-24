@@ -44,7 +44,8 @@ public:
     void requestLoadHistory(Snowflake channelId, Snowflake beforeId);
     void sendMessage(Snowflake channelId, const QString &content,
                      Snowflake replyToMessageId = Snowflake::Invalid,
-                     const QList<PendingAttachment> &attachments = {});
+                     const QList<PendingAttachment> &attachments = {},
+                     bool mentionReply = true);
     void cancelSend(Snowflake channelId, const QString &nonce);
 
 signals:

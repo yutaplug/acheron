@@ -1044,7 +1044,8 @@ void MainWindow::setupUi()
         }
 
         Snowflake replyTo = messageInput->replyTargetMessageId();
-        currentInstance->messages()->sendMessage(channelId, text, replyTo, attachments);
+        bool mention = messageInput->isReplyMentionEnabled();
+        currentInstance->messages()->sendMessage(channelId, text, replyTo, attachments, mention);
 
         int rateLimit = currentInstance->getChannelRateLimit(channelId);
         Snowflake userId = currentInstance->accountId();
@@ -1055,6 +1056,15 @@ void MainWindow::setupUi()
             messageInput->setSendBlocked(true);
             messageInput->setPlaceholder("Slowmode is active");
         }
+    });
+
+    connect(messageInput, &MessageInput::typingRequired, this, [this]() {
+        if (!currentInstance)
+            return;
+        Snowflake channelId = chatModel->getActiveChannelId();
+        if (!channelId.isValid())
+            return;
+        currentInstance->discord()->sendTyping(channelId);
     });
 
     connect(chatView, &ChatView::historyRequested, this, [this]() {

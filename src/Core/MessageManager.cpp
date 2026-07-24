@@ -349,7 +349,8 @@ void MessageManager::onMessageSendFailed(const QString &nonce, const QString &er
 
 void MessageManager::sendMessage(Snowflake channelId, const QString &content,
                                  Snowflake replyToMessageId,
-                                 const QList<PendingAttachment> &attachments)
+                                 const QList<PendingAttachment> &attachments,
+                                 bool mentionReply)
 {
     Snowflake nonceId = Snowflake::generateNonce();
     QString nonce = QString::number(nonceId);
@@ -423,7 +424,7 @@ void MessageManager::sendMessage(Snowflake channelId, const QString &content,
         }
     }
 
-    client->sendMessage(channelId, content, nonce, replyToMessageId, outgoing);
+    client->sendMessage(channelId, content, nonce, replyToMessageId, outgoing, mentionReply);
 }
 
 void MessageManager::cancelSend(Snowflake channelId, const QString &nonce)

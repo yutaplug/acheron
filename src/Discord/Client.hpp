@@ -101,7 +101,9 @@ public:
 
     void sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
                      Snowflake replyToMessageId = Snowflake::Invalid,
-                     const QList<Core::PendingAttachment> &attachments = {});
+                     const QList<Core::PendingAttachment> &attachments = {},
+                     bool mentionReply = true);
+    void sendTyping(Snowflake channelId);
     bool cancelMessageSend(const QString &nonce);
     void editMessage(Snowflake channelId, Snowflake messageId, const QString &content);
     void deleteMessage(Snowflake channelId, Snowflake messageId);
@@ -151,6 +153,7 @@ signals:
     void messageUpdated(const Message &msg);
     void messageDeleted(const MessageDelete &event);
     void typingStart(const TypingStart &event);
+    void typingSent();
     void channelCreated(const ChannelCreate &event);
     void channelUpdated(const ChannelUpdate &event);
     void channelDeleted(const ChannelDelete &event);

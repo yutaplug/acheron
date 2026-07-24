@@ -583,12 +583,15 @@ void Client::onGatewayGuildRoleDelete(const GuildRoleDelete &event)
 }
 
 void Client::sendMessage(Snowflake channelId, const QString &content, const QString &nonce,
-                         Snowflake replyToMessageId, const QList<Core::PendingAttachment> &attachments)
+                         Snowflake replyToMessageId, const QList<Core::PendingAttachment> &attachments,
+                         bool mentionReply)
 {
     // todo extract to struct probably
     QJsonObject payload;
     payload["content"] = content;
-    payload["flags"] = 0;
+    payload["flags"] = (replyToMessageId.isValid() && !mentionReply)
+                               ? static_cast<int>(MessageFlag::SUPPRESS_NOTIFICATIONS)
+                               : 0;
     payload["mobile_network_type"] = "unknown";
     payload["nonce"] = nonce;
     payload["tts"] = false;
@@ -642,6 +645,18 @@ void Client::sendMessage(Snowflake channelId, const QString &content, const QStr
 
         qCInfo(LogDiscord) << "Message sent successfully to channel" << channelId;
     });
+}
+
+void Client::sendTyping(Snowflake channelId)
+{
+    QString endpoint = "/channels/" + QString::number(channelId) + "/typing";
+    httpClient->post(endpoint, QJsonObject(), [this](const HttpResponse &response) {
+        if (!response.success) {
+            qCDebug(LogDiscord) << "Failed to send typing indicator:" << response.error;
+            return;
+        }
+    });
+    emit typingSent();
 }
 
 void Client::uploadAttachmentsAndSend(const std::shared_ptr<UploadState> &state)
