@@ -75,6 +75,36 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const
         return item->type == Core::MemberListItem::Type::Member && userManager
                        ? userManager->getActivityText(item->userId)
                        : QString();
+    case ActivityEmojiRole: {
+        if (item->type != Core::MemberListItem::Type::Member || !userManager ||
+            !item->userId.isValid())
+            return QVariant();
+
+        auto activity = userManager->getActivity(item->userId);
+        if (!activity || !activity->emoji.hasValue() || !activity->emoji->id.hasValue() ||
+            !activity->emoji->id->isValid())
+            return QVariant();
+
+        const QUrl url = Discord::Cdn::emoji(activity->emoji->id.get(), 32);
+        const QSize size(16, 16);
+        QPixmap pixmap = imageManager->get(url, size, accountId);
+        if (!imageManager->isCached(url, size)) {
+            avatarTracker.track(url, index);
+            return QVariant();
+        }
+        return pixmap;
+    }
+    case ActivityEmojiNameRole: {
+        if (item->type != Core::MemberListItem::Type::Member || !userManager ||
+            !item->userId.isValid())
+            return QString();
+
+        auto activity = userManager->getActivity(item->userId);
+        if (!activity || !activity->emoji.hasValue() || !activity->emoji->id.hasValue() ||
+            !activity->emoji->id->isValid())
+            return QString();
+        return activity->emoji->name.get();
+    }
     case AvatarRole: {
         if (item->type != Core::MemberListItem::Type::Member)
             return QVariant();
@@ -143,7 +173,8 @@ void MemberListModel::setUserManager(Core::UserManager *newUserManager)
 
     if (manager && manager->totalItemCount() > 0)
         emit dataChanged(index(0, 0), index(manager->totalItemCount() - 1, 0),
-                         { ActivityRole, Qt::SizeHintRole });
+                         { ActivityRole, ActivityEmojiRole, ActivityEmojiNameRole,
+                           Qt::SizeHintRole });
 }
 
 void MemberListModel::onListAboutToReset()
@@ -180,7 +211,9 @@ void MemberListModel::onPresenceChanged(Core::Snowflake userId)
             continue;
 
         const QModelIndex idx = index(row, 0);
-        emit dataChanged(idx, idx, { ActivityRole, Qt::SizeHintRole });
+        emit dataChanged(idx, idx,
+                         { ActivityRole, ActivityEmojiRole, ActivityEmojiNameRole,
+                           Qt::SizeHintRole });
     }
 }
 

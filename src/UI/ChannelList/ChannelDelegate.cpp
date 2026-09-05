@@ -517,8 +517,17 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
     QRect textRect = contentOpt.rect.adjusted(iconSize, 0, -rightReserve, 0);
     painter->setPen(textColor);
-    const QString activity = index.data(ChannelTreeModel::ActivityRole).toString();
-    if (node->type == ChannelNode::Type::DMChannel && !activity.isEmpty()) {
+    QPixmap activityEmoji = index.data(ChannelTreeModel::ActivityEmojiRole).value<QPixmap>();
+    QString activity = index.data(ChannelTreeModel::ActivityRole).toString();
+    const QString activityEmojiName = index.data(ChannelTreeModel::ActivityEmojiNameRole).toString();
+    if (!activityEmoji.isNull() && !activityEmojiName.isEmpty()) {
+        const QString prefix = QStringLiteral(":%1:").arg(activityEmojiName);
+        if (activity.startsWith(prefix))
+            activity.remove(0, prefix.size());
+        activity = activity.trimmed();
+    }
+    const bool hasActivity = !activity.isEmpty() || !activityEmoji.isNull();
+    if (node->type == ChannelNode::Type::DMChannel && hasActivity) {
         QFont nameFont = painter->font();
         nameFont.setWeight(QFont::Medium);
         painter->setFont(nameFont);
@@ -544,8 +553,17 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         if (isSelected)
             activityColor = option.palette.highlightedText().color();
         painter->setPen(activityColor);
-        painter->drawText(activityRect, Qt::AlignLeft | Qt::AlignVCenter,
-                          activityFm.elidedText(activity, Qt::ElideRight, activityRect.width()));
+        if (!activityEmoji.isNull()) {
+            const int emojiSize = qMin(16, activityRect.height());
+            QRect emojiRect(activityRect.left(),
+                            activityRect.top() + (activityRect.height() - emojiSize) / 2,
+                            emojiSize, emojiSize);
+            painter->drawPixmap(emojiRect, activityEmoji);
+            activityRect.setLeft(emojiRect.right() + 4);
+        }
+        if (!activity.isEmpty())
+            painter->drawText(activityRect, Qt::AlignLeft | Qt::AlignVCenter,
+                              activityFm.elidedText(activity, Qt::ElideRight, activityRect.width()));
     } else {
         QString elidedName = painter->fontMetrics().elidedText(
                 index.data(Qt::DisplayRole).toString(), Qt::ElideRight, textRect.width());
@@ -607,7 +625,8 @@ QSize ChannelDelegate::sizeHint(const QStyleOptionViewItem &option, const QModel
     const auto type = static_cast<ChannelNode::Type>(
             sourceIndex.data(ChannelTreeModel::TypeRole).toInt());
     const bool hasActivity = type == ChannelNode::Type::DMChannel &&
-                             !sourceIndex.data(ChannelTreeModel::ActivityRole).toString().isEmpty();
+                             (!sourceIndex.data(ChannelTreeModel::ActivityRole).toString().isEmpty() ||
+                              !sourceIndex.data(ChannelTreeModel::ActivityEmojiRole).value<QPixmap>().isNull());
     return QSize(sz.width(), hasActivity ? 40 : 24);
 }
 } // namespace UI

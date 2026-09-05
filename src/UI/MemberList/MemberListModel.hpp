@@ -29,6 +29,8 @@ public:
         GroupColorRole,
         LoadedRole,
         ActivityRole,
+        ActivityEmojiRole,
+        ActivityEmojiNameRole,
     };
 
     explicit MemberListModel(Core::ImageManager *imageManager, QObject *parent = nullptr);

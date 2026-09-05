@@ -50,6 +50,16 @@ std::optional<Discord::Presence> UserManager::getPresence(Snowflake userId) cons
     return it.value();
 }
 
+std::optional<Discord::Activity> UserManager::getActivity(Snowflake userId) const
+{
+    auto presence = getPresence(userId);
+    if (!presence)
+        return std::nullopt;
+
+    const Discord::Activity *activity = presence->getActivity();
+    return activity ? std::optional<Discord::Activity>(*activity) : std::nullopt;
+}
+
 QString UserManager::getActivityText(Snowflake userId) const
 {
     auto presence = getPresence(userId);

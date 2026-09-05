@@ -48,7 +48,8 @@ QSize MemberListDelegate::sizeHint(const QStyleOptionViewItem &option,
     if (itemType == static_cast<int>(Core::MemberListItem::Type::Group))
         return QSize(option.rect.width(), GroupHeight);
 
-    const bool hasActivity = index.data(MemberListModel::ActivityRole).toString().isEmpty() == false;
+    const bool hasActivity = index.data(MemberListModel::ActivityRole).toString().isEmpty() == false ||
+                             !index.data(MemberListModel::ActivityEmojiRole).value<QPixmap>().isNull();
     return QSize(option.rect.width(), hasActivity ? MemberActivityHeight : MemberHeight);
 }
 
@@ -120,7 +121,15 @@ void MemberListDelegate::paintMember(QPainter *painter, const QStyleOptionViewIt
 
     x += AvatarSize + AvatarTextSpacing;
     int textWidth = option.rect.right() - x - HorizontalPadding;
-    const QString activity = index.data(MemberListModel::ActivityRole).toString();
+    QPixmap activityEmoji = index.data(MemberListModel::ActivityEmojiRole).value<QPixmap>();
+    QString activity = index.data(MemberListModel::ActivityRole).toString();
+    const QString activityEmojiName = index.data(MemberListModel::ActivityEmojiNameRole).toString();
+    if (!activityEmoji.isNull() && !activityEmojiName.isEmpty()) {
+        const QString prefix = QStringLiteral(":%1:").arg(activityEmojiName);
+        if (activity.startsWith(prefix))
+            activity.remove(0, prefix.size());
+        activity = activity.trimmed();
+    }
     QRect nameRect(x, option.rect.top(), textWidth, option.rect.height());
 
     QString displayName = index.data(MemberListModel::UsernameRole).toString();
@@ -140,7 +149,7 @@ void MemberListDelegate::paintMember(QPainter *painter, const QStyleOptionViewIt
     painter->setPen(nameColor);
 
     QFontMetrics fm(font);
-    if (activity.isEmpty()) {
+    if (activity.isEmpty() && activityEmoji.isNull()) {
         QString elidedName = fm.elidedText(displayName, Qt::ElideRight, textWidth);
         painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
         return;
@@ -158,8 +167,17 @@ void MemberListDelegate::paintMember(QPainter *painter, const QStyleOptionViewIt
     QFontMetrics activityFm(activityFont);
     QRect activityRect(x, nameRect.bottom() + 1, textWidth, activityFm.height());
     painter->setPen(option.palette.color(QPalette::PlaceholderText));
-    painter->drawText(activityRect, Qt::AlignLeft | Qt::AlignVCenter,
-                      activityFm.elidedText(activity, Qt::ElideRight, textWidth));
+    if (!activityEmoji.isNull()) {
+        const int emojiSize = qMin(16, activityRect.height());
+        QRect emojiRect(activityRect.left(),
+                        activityRect.top() + (activityRect.height() - emojiSize) / 2,
+                        emojiSize, emojiSize);
+        painter->drawPixmap(emojiRect, activityEmoji);
+        activityRect.setLeft(emojiRect.right() + 4);
+    }
+    if (!activity.isEmpty())
+        painter->drawText(activityRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          activityFm.elidedText(activity, Qt::ElideRight, activityRect.width()));
 }
 
 void MemberListDelegate::paintPlaceholder(QPainter *painter,

@@ -55,6 +55,31 @@ struct User : Core::JsonUtils::JsonObject
     }
 };
 
+struct ActivityEmoji : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake, true, true> id;
+    Field<QString> name;
+    Field<bool, true> animated;
+
+    static ActivityEmoji fromJson(const QJsonObject &obj)
+    {
+        ActivityEmoji emoji;
+        get(obj, "id", emoji.id);
+        get(obj, "name", emoji.name);
+        get(obj, "animated", emoji.animated);
+        return emoji;
+    }
+
+    [[nodiscard]] QString displayText() const
+    {
+        if (name.get().isEmpty())
+            return {};
+        return id.hasValue() && id->isValid()
+                       ? QStringLiteral(":%1:").arg(name.get())
+                       : name.get();
+    }
+};
+
 struct Activity : Core::JsonUtils::JsonObject
 {
     Field<QString> name;
@@ -62,6 +87,7 @@ struct Activity : Core::JsonUtils::JsonObject
     Field<QString, true> state;
     Field<QString, true> details;
     Field<QString, true> url;
+    Field<ActivityEmoji, true> emoji;
 
     static Activity fromJson(const QJsonObject &obj)
     {
@@ -71,15 +97,23 @@ struct Activity : Core::JsonUtils::JsonObject
         get(obj, "state", activity.state);
         get(obj, "details", activity.details);
         get(obj, "url", activity.url);
+        get(obj, "emoji", activity.emoji);
         return activity;
     }
 
     [[nodiscard]] QString displayText() const
     {
-        // Custom status activities use state as their visible text.
+        const QString emojiText = emoji.hasValue() ? emoji->displayText() : QString();
+
+        // Custom status activities use the emoji and state as their visible text.
         if (type.get() == 4) {
-            if (state.hasValue() && !state->isEmpty())
-                return state.get();
+            const QString statusText = state.hasValue() ? state.get() : QString();
+            if (!emojiText.isEmpty() && !statusText.isEmpty())
+                return emojiText + QStringLiteral(" ") + statusText;
+            if (!emojiText.isEmpty())
+                return emojiText;
+            if (!statusText.isEmpty())
+                return statusText;
             return name.get();
         }
 
@@ -130,26 +164,26 @@ struct Presence : Core::JsonUtils::JsonObject
         return presence;
     }
 
-    [[nodiscard]] QString activityText() const
+    [[nodiscard]] const Activity *getActivity() const
     {
         // Prefer a real activity over a custom status when both are present.
         for (const auto &activity : activities.get()) {
-            if (activity.type.get() != 4) {
-                const QString text = activity.displayText();
-                if (!text.isEmpty())
-                    return text;
-            }
+            if (activity.type.get() != 4 && !activity.displayText().isEmpty())
+                return &activity;
         }
-        if (game.hasValue()) {
-            const QString text = game->displayText();
-            if (!text.isEmpty())
-                return text;
-        }
+        if (game.hasValue() && !game->displayText().isEmpty())
+            return &game.get();
         for (const auto &activity : activities.get()) {
-            const QString text = activity.displayText();
-            if (!text.isEmpty())
-                return text;
+            if (!activity.displayText().isEmpty())
+                return &activity;
         }
+        return nullptr;
+    }
+
+    [[nodiscard]] QString activityText() const
+    {
+        if (const Activity *activity = getActivity())
+            return activity->displayText();
         return {};
     }
 };

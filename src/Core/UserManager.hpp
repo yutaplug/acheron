@@ -39,6 +39,7 @@ public:
     [[nodiscard]] std::optional<Discord::User> getUser(Snowflake userId);
     [[nodiscard]] std::optional<Discord::Member> getMember(Snowflake guildId, Snowflake userId);
     [[nodiscard]] std::optional<Discord::Presence> getPresence(Snowflake userId) const;
+    [[nodiscard]] std::optional<Discord::Activity> getActivity(Snowflake userId) const;
     [[nodiscard]] QString getActivityText(Snowflake userId) const;
 
     [[nodiscard]] std::optional<QList<Snowflake>> getMemberRoles(Snowflake guildId, Snowflake userId);

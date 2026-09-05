@@ -278,8 +278,11 @@ void MainWindow::onChannelSelectionChanged(const QModelIndex &current, const QMo
     switchChatChannel(node->id, guildId);
     selectedInstance->messages()->requestLoadChannel(node->id);
 
-    if (node->isUnread && node->lastMessageId.isValid())
-        selectedInstance->readState()->markChannelAsRead(node->id, node->lastMessageId);
+    Snowflake lastMessageId = node->lastMessageId;
+    if (!lastMessageId.isValid())
+        lastMessageId = selectedInstance->readState()->getChannelLastMessageId(node->id);
+    if ((node->isUnread || node->mentionCount > 0) && lastMessageId.isValid())
+        selectedInstance->readState()->markChannelAsRead(node->id, lastMessageId);
 
     tabBar->updateCurrentTab(makeTabEntry(node, accountNode));
 

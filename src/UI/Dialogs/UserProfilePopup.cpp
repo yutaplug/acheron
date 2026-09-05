@@ -343,11 +343,21 @@ QWidget *UserProfilePopup::buildBody()
     activityHeading->setText(sectionHeading(tr("Activity"), headingColor));
     activityHeading->setTextFormat(Qt::RichText);
     activityLayout->addWidget(activityHeading);
-    activityLabel = new QLabel(activitySection);
+    auto *activityRow = new QWidget(activitySection);
+    auto *activityRowLayout = new QHBoxLayout(activityRow);
+    activityRowLayout->setContentsMargins(0, 0, 0, 0);
+    activityRowLayout->setSpacing(5);
+    activityEmojiLabel = new QLabel(activityRow);
+    activityEmojiLabel->setFixedSize(18, 18);
+    activityEmojiLabel->setAlignment(Qt::AlignCenter);
+    activityRowLayout->addWidget(activityEmojiLabel);
+    activityLabel = new QLabel(activityRow);
     activityLabel->setTextFormat(Qt::PlainText);
     activityLabel->setWordWrap(true);
     activityLabel->setStyleSheet(QStringLiteral("font-size: 12px;"));
-    activityLayout->addWidget(activityLabel);
+    activityRowLayout->addWidget(activityLabel, 1);
+    activityLayout->addWidget(activityRow);
+    activityEmojiLabel->setVisible(false);
     activitySection->setVisible(false);
     leftCol->addWidget(activitySection);
 
@@ -584,12 +594,37 @@ void UserProfilePopup::renderFromCachedData()
 
 void UserProfilePopup::renderActivity()
 {
-    if (!activitySection || !activityLabel)
+    if (!activitySection || !activityLabel || !activityEmojiLabel)
         return;
 
-    const QString activity = instance ? instance->users()->getActivityText(userId) : QString();
-    activityLabel->setText(activity);
-    activitySection->setVisible(!activity.isEmpty());
+    auto activity = instance ? instance->users()->getActivity(userId) : std::nullopt;
+    if (!activity) {
+        activityLabel->clear();
+        activityEmojiLabel->clear();
+        activityEmojiLabel->setVisible(false);
+        activitySection->setVisible(false);
+        return;
+    }
+
+    QString activityText = activity->displayText();
+    activityEmojiLabel->clear();
+    activityEmojiLabel->setVisible(false);
+
+    if (activity->emoji.hasValue() && activity->emoji->id.hasValue() &&
+        activity->emoji->id->isValid()) {
+        const QString prefix = QStringLiteral(":%1:").arg(activity->emoji->name.get());
+        if (activityText.startsWith(prefix))
+            activityText.remove(0, prefix.size());
+
+        const QUrl emojiUrl = Discord::Cdn::emoji(activity->emoji->id.get(), 32);
+        images->assign(activityEmojiLabel, emojiUrl, QSize(18, 18), accountId());
+        activityEmojiLabel->setVisible(true);
+    } else {
+        disconnect(images, &Core::ImageManager::imageFetched, activityEmojiLabel, nullptr);
+    }
+
+    activityLabel->setText(activityText.trimmed());
+    activitySection->setVisible(!activityText.trimmed().isEmpty() || activityEmojiLabel->isVisible());
 }
 
 void UserProfilePopup::renderFromProfile()

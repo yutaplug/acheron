@@ -101,7 +101,7 @@ ChannelTreeModel::ChannelTreeModel(Session *session, QObject *parent)
             [this](const QUrl &url, const QSize &size, const QPixmap &pixmap) {
                 avatarTracker.notify(url, [this](const QModelIndex &index) {
                     if (index.isValid())
-                        emit dataChanged(index, index, { Qt::DecorationRole });
+                        emit dataChanged(index, index);
                 });
             });
 }
@@ -236,6 +236,38 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
         return instance ? instance->users()->getActivityText(node->dmRecipientId) : QString();
     }
 
+    if (role == ActivityEmojiRole || role == ActivityEmojiNameRole) {
+        if (node->type != ChannelNode::Type::DMChannel || !node->dmRecipientId.isValid())
+            return {};
+
+        ChannelNode *accountNode = getAccountNodeFor(node);
+        if (!accountNode)
+            return {};
+
+        auto *instance = session->client(accountNode->id);
+        if (!instance)
+            return {};
+
+        auto activity = instance->users()->getActivity(node->dmRecipientId);
+        if (!activity || !activity->emoji.hasValue())
+            return {};
+
+        const auto &emoji = activity->emoji.get();
+        if (role == ActivityEmojiNameRole)
+            return emoji.id.hasValue() && emoji.id->isValid() ? emoji.name.get() : QString();
+        if (!emoji.id.hasValue() || !emoji.id->isValid())
+            return {};
+
+        const QUrl url = Discord::Cdn::emoji(emoji.id.get(), 32);
+        const QSize size(16, 16);
+        QPixmap pixmap = session->getImageManager()->get(url, size, accountNode->id);
+        if (!session->getImageManager()->isCached(url, size)) {
+            avatarTracker.track(url, index);
+            return {};
+        }
+        return pixmap;
+    }
+
     if (role == ThreadJoinedRole) {
         if (node->type != ChannelNode::Type::Thread ||
             !node->parent ||
@@ -288,7 +320,9 @@ void ChannelTreeModel::refreshUserPresence(Snowflake accountId, Snowflake userId
 
             const QModelIndex idx = indexForNode(dm.get());
             if (idx.isValid())
-                emit dataChanged(idx, idx, { ActivityRole, Qt::SizeHintRole });
+                emit dataChanged(idx, idx,
+                                 { ActivityRole, ActivityEmojiRole, ActivityEmojiNameRole,
+                                   Qt::SizeHintRole });
         }
     }
 }
@@ -1420,7 +1454,8 @@ static Core::ChannelReadState forumPostReadState(Core::ReadStateManager *readSta
     state.mentionCount = readState->getMentionCount(node->id);
     state.isMuted = readState->isChannelMuted(node->id);
     bool guildMuted = guildId.isValid() && readState->isGuildMuted(guildId);
-    state.countsForGuildUnread = state.mentionCount > 0 || (state.isUnread && !state.isMuted && !guildMuted);
+    state.countsForGuildUnread = !state.isMuted && !guildMuted &&
+                                 (state.mentionCount > 0 || state.isUnread);
     return state;
 }
 
@@ -1457,7 +1492,8 @@ bool ChannelTreeModel::notifyIfReadStateChanged(ChannelNode *node, const ReadSta
 
     QModelIndex idx = indexForNode(node);
     if (idx.isValid())
-        emit dataChanged(idx, idx, { IsUnreadRole, MentionCountRole, IsMutedRole });
+        emit dataChanged(idx, idx,
+                         { IsUnreadRole, CountsForGuildUnreadRole, MentionCountRole, IsMutedRole });
     return true;
 }
 

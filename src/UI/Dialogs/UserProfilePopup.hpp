@@ -97,6 +97,7 @@ private:
     QLabel *bioLabel = nullptr;
 
     QWidget *activitySection = nullptr;
+    QLabel *activityEmojiLabel = nullptr;
     QLabel *activityLabel = nullptr;
 
     QPushButton *viewToggle = nullptr;

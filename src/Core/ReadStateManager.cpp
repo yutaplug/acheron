@@ -78,9 +78,9 @@ ChannelReadState ReadStateManager::computeChannelReadState(Snowflake channelId, 
 
     auto effective = isDM ? Discord::MessageNotificationLevel::ALL_MESSAGES : resolveMessageNotifications(guildId, channelId, parentId);
     result.countsForGuildUnread =
-            result.isUnread &&
             !fullyMuted &&
-            (result.mentionCount > 0 || effective == Discord::MessageNotificationLevel::ALL_MESSAGES);
+            (result.mentionCount > 0 ||
+             (result.isUnread && effective == Discord::MessageNotificationLevel::ALL_MESSAGES));
 
     return result;
 }
@@ -181,12 +181,17 @@ void ReadStateManager::markForumPostAsRead(Snowflake threadId, Snowflake lastMes
     if (!lastMessageId.isValid())
         return;
 
-    auto it = channelReadStates.constFind(threadId);
-    if (it != channelReadStates.constEnd() && it->lastMessageId.hasValue() && lastMessageId <= it->lastMessageId.get())
+    const bool isUnread = isForumPostUnread(threadId, lastMessageId, false);
+    if (!isUnread && getMentionCount(threadId) == 0)
         return;
 
-    updateLocalReadState(threadId, lastMessageId);
-    emit ackRequested(threadId, lastMessageId);
+    Snowflake ackMessageId = lastMessageId;
+    auto entry = getReadStateEntry(threadId);
+    if (entry && entry->lastMessageId.hasValue() && entry->lastMessageId.get() > ackMessageId)
+        ackMessageId = entry->lastMessageId.get();
+
+    updateLocalReadState(threadId, ackMessageId);
+    emit ackRequested(threadId, ackMessageId);
 }
 
 Snowflake ReadStateManager::effectiveAckId(Snowflake channelId, Snowflake guildId) const
@@ -381,7 +386,8 @@ void ReadStateManager::updateLocalReadState(Snowflake channelId, Snowflake lastM
         entry.mentionCount = 0;
         channelReadStates.insert(channelId, entry);
     } else {
-        it->lastMessageId = lastMessageId;
+        if (!it->lastMessageId.hasValue() || lastMessageId > it->lastMessageId.get())
+            it->lastMessageId = lastMessageId;
         it->mentionCount = 0;
     }
 
@@ -410,11 +416,17 @@ void ReadStateManager::markChannelAsRead(Snowflake channelId, Snowflake lastMess
     if (!lastMessageId.isValid())
         return;
 
-    if (!isChannelUnread(channelId, lastMessageId, guildForChannel(channelId)))
+    const bool isUnread = isChannelUnread(channelId, lastMessageId, guildForChannel(channelId));
+    if (!isUnread && getMentionCount(channelId) == 0)
         return;
 
-    updateLocalReadState(channelId, lastMessageId);
-    emit ackRequested(channelId, lastMessageId);
+    Snowflake ackMessageId = lastMessageId;
+    auto entry = getReadStateEntry(channelId);
+    if (entry && entry->lastMessageId.hasValue() && entry->lastMessageId.get() > ackMessageId)
+        ackMessageId = entry->lastMessageId.get();
+
+    updateLocalReadState(channelId, ackMessageId);
+    emit ackRequested(channelId, ackMessageId);
 }
 
 void ReadStateManager::markChannelsAsRead(
@@ -427,10 +439,17 @@ void ReadStateManager::markChannelsAsRead(
     for (const auto &[channelId, messageId] : channelMessagePairs) {
         if (!messageId.isValid())
             continue;
-        if (!isChannelUnread(channelId, messageId, guildForChannel(channelId)))
+        const bool isUnread = isChannelUnread(channelId, messageId, guildForChannel(channelId));
+        if (!isUnread && getMentionCount(channelId) == 0)
             continue;
-        updateLocalReadState(channelId, messageId);
-        toAck.append({ channelId, messageId });
+
+        Snowflake ackMessageId = messageId;
+        auto entry = getReadStateEntry(channelId);
+        if (entry && entry->lastMessageId.hasValue() && entry->lastMessageId.get() > ackMessageId)
+            ackMessageId = entry->lastMessageId.get();
+
+        updateLocalReadState(channelId, ackMessageId);
+        toAck.append({ channelId, ackMessageId });
     }
 
     if (!toAck.isEmpty())
