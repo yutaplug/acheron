@@ -22,16 +22,17 @@ struct AttachmentData
     QUrl originalUrl;
     QSize displaySize;
     QPixmap pixmap;
-    bool isLoading;
-    bool isImage;
+    bool isLoading = false;
+    bool isImage = false;
     bool isVideo = false;
     bool isAudio = false;
     bool isVoiceMessage = false;
+    bool isSticker = false;
     qint64 durationMs = 0;
     QString contentType;
     QString filename;
-    qint64 fileSizeBytes;
-    bool isSpoiler;
+    qint64 fileSizeBytes = 0;
+    bool isSpoiler = false;
     qint64 uploadSent = -1;
     qint64 uploadTotal = -1;
 

@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 #include <QColor>
+#include <QDateTime>
 #include <QImage>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -51,6 +52,112 @@ struct User : Core::JsonUtils::JsonObject
         if (globalName.hasValue() && !globalName->isEmpty())
             return globalName;
         return username;
+    }
+};
+
+struct Activity : Core::JsonUtils::JsonObject
+{
+    Field<QString> name;
+    Field<int> type;
+    Field<QString, true> state;
+    Field<QString, true> details;
+    Field<QString, true> url;
+
+    static Activity fromJson(const QJsonObject &obj)
+    {
+        Activity activity;
+        get(obj, "name", activity.name);
+        get(obj, "type", activity.type);
+        get(obj, "state", activity.state);
+        get(obj, "details", activity.details);
+        get(obj, "url", activity.url);
+        return activity;
+    }
+
+    [[nodiscard]] QString displayText() const
+    {
+        // Custom status activities use state as their visible text.
+        if (type.get() == 4) {
+            if (state.hasValue() && !state->isEmpty())
+                return state.get();
+            return name.get();
+        }
+
+        QString title = name.get();
+        if (title.isEmpty() && state.hasValue())
+            title = state.get();
+        if (title.isEmpty())
+            return {};
+
+        switch (type.get()) {
+        case 0:
+            return QStringLiteral("Playing %1").arg(title);
+        case 1:
+            return QStringLiteral("Streaming %1").arg(title);
+        case 2:
+            return QStringLiteral("Listening to %1").arg(title);
+        case 3:
+            return QStringLiteral("Watching %1").arg(title);
+        case 5:
+            return QStringLiteral("Competing in %1").arg(title);
+        default:
+            return title;
+        }
+    }
+};
+
+struct Presence : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> userId;
+    Field<QString> status;
+    Field<QList<Activity>> activities;
+
+    static Presence fromJson(const QJsonObject &obj)
+    {
+        Presence presence;
+
+        if (obj.contains("user")) {
+            const QJsonObject user = obj.value("user").toObject();
+            get(user, "id", presence.userId);
+        }
+        get(obj, "user_id", presence.userId);
+        get(obj, "status", presence.status);
+        get(obj, "activities", presence.activities);
+        return presence;
+    }
+
+    [[nodiscard]] QString activityText() const
+    {
+        // Prefer a real activity over a custom status when both are present.
+        for (const auto &activity : activities.get()) {
+            if (activity.type.get() != 4) {
+                const QString text = activity.displayText();
+                if (!text.isEmpty())
+                    return text;
+            }
+        }
+        for (const auto &activity : activities.get()) {
+            const QString text = activity.displayText();
+            if (!text.isEmpty())
+                return text;
+        }
+        return {};
+    }
+};
+
+struct StickerItem : Core::JsonUtils::JsonObject
+{
+    Field<Core::Snowflake> id;
+    Field<QString> name;
+    Field<int> formatType;
+
+    static StickerItem fromJson(const QJsonObject &obj)
+    {
+        StickerItem sticker;
+        get(obj, "id", sticker.id);
+        get(obj, "name", sticker.name);
+        get(obj, "format_type", sticker.formatType);
+        return sticker;
     }
 };
 
@@ -396,6 +503,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
     Field<QList<Role>, true> roles;
     Field<QList<Emoji>, true> emojis;
     Field<QList<Member>, true> members;
+    Field<QList<Presence>, true> presences;
     Field<QDateTime, true> joinedAt;
     Field<bool, true> unavailable;
 
@@ -408,6 +516,7 @@ struct GatewayGuild : Core::JsonUtils::JsonObject
         get(obj, "roles", guild.roles);
         get(obj, "emojis", guild.emojis);
         get(obj, "members", guild.members);
+        get(obj, "presences", guild.presences);
         get(obj, "joined_at", guild.joinedAt);
         get(obj, "unavailable", guild.unavailable);
         return guild;
@@ -679,6 +788,8 @@ struct Message : Core::JsonUtils::JsonObject
     Field<QList<User>, true> mentions;
     Field<QList<Core::Snowflake>, true> mentionRoles;
     Field<QList<Reaction>, true> reactions;
+    Field<QList<StickerItem>, true> stickerItems;
+    Field<QList<StickerItem>, true> stickers; // deprecated message field
 
     Field<MessageReference, true> messageReference;
 
@@ -746,6 +857,8 @@ struct Message : Core::JsonUtils::JsonObject
         get(obj, "mentions", message.mentions);
         get(obj, "mention_roles", message.mentionRoles);
         get(obj, "reactions", message.reactions);
+        get(obj, "sticker_items", message.stickerItems);
+        get(obj, "stickers", message.stickers);
         get(obj, "message_reference", message.messageReference);
         get(obj, "guild_id", message.guildId);
         get(obj, "channel_type", message.channelType);
@@ -817,6 +930,11 @@ struct Message : Core::JsonUtils::JsonObject
             reactions = update.reactions;
             reactionsJson = update.reactionsJson;
         }
+
+        if (present.contains(QStringLiteral("sticker_items")))
+            stickerItems = update.stickerItems;
+        if (present.contains(QStringLiteral("stickers")))
+            stickers = update.stickers;
     }
 };
 

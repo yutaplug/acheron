@@ -64,6 +64,7 @@ Client::Client(const QString &token, const QString &gatewayUrl, const QString &b
 
     connect(gateway, &Gateway::gatewayReady, this, &Client::onGatewayReady);
     connect(gateway, &Gateway::gatewayReadySupplemental, this, &Client::onGatewayReadySupplemental);
+    connect(gateway, &Gateway::gatewayPresenceUpdate, this, &Client::presenceUpdated);
     connect(gateway, &Gateway::gatewayMessageCreate, this, &Client::onGatewayMessageCreate);
     connect(gateway, &Gateway::gatewayMessageUpdate, this, &Client::onGatewayMessageUpdate);
     connect(gateway, &Gateway::gatewayMessageDelete, this, &Client::onGatewayMessageDelete);

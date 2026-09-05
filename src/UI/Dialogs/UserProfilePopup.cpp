@@ -180,6 +180,11 @@ UserProfilePopup::UserProfilePopup(Core::ImageManager *images, Core::ClientInsta
                     if (id == this->userId)
                         loadCachedNote();
                 });
+        connect(instance->users(), &Core::UserManager::presenceChanged, this,
+                [this](Core::Snowflake id) {
+                    if (id == this->userId)
+                        renderActivity();
+                });
         connect(instance, &QObject::destroyed, this, &QDialog::close);
     }
 }
@@ -329,6 +334,22 @@ QWidget *UserProfilePopup::buildBody()
     bioLayout->addWidget(bioLabel);
     bioSection->setVisible(false);
     leftCol->addWidget(bioSection);
+
+    activitySection = new QWidget(body);
+    auto *activityLayout = new QVBoxLayout(activitySection);
+    activityLayout->setContentsMargins(0, 0, 0, 0);
+    activityLayout->setSpacing(4);
+    auto *activityHeading = new QLabel(activitySection);
+    activityHeading->setText(sectionHeading(tr("Activity"), headingColor));
+    activityHeading->setTextFormat(Qt::RichText);
+    activityLayout->addWidget(activityHeading);
+    activityLabel = new QLabel(activitySection);
+    activityLabel->setTextFormat(Qt::PlainText);
+    activityLabel->setWordWrap(true);
+    activityLabel->setStyleSheet(QStringLiteral("font-size: 12px;"));
+    activityLayout->addWidget(activityLabel);
+    activitySection->setVisible(false);
+    leftCol->addWidget(activitySection);
 
     auto buildInfoRow = [&](const QString &iconName, QLabel *&labelSlot, bool muted) {
         auto *row = new QWidget(body);
@@ -556,7 +577,19 @@ void UserProfilePopup::renderFromCachedData()
         renderFriendStatus();
     }
 
+    renderActivity();
+
     applyView();
+}
+
+void UserProfilePopup::renderActivity()
+{
+    if (!activitySection || !activityLabel)
+        return;
+
+    const QString activity = instance ? instance->users()->getActivityText(userId) : QString();
+    activityLabel->setText(activity);
+    activitySection->setVisible(!activity.isEmpty());
 }
 
 void UserProfilePopup::renderFromProfile()

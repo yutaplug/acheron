@@ -224,6 +224,18 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
     if (role == OwnerIdRole)
         return static_cast<quint64>(node->ownerId);
 
+    if (role == ActivityRole) {
+        if (node->type != ChannelNode::Type::DMChannel || !node->dmRecipientId.isValid())
+            return {};
+
+        ChannelNode *accountNode = getAccountNodeFor(node);
+        if (!accountNode)
+            return {};
+
+        auto *instance = session->client(accountNode->id);
+        return instance ? instance->users()->getActivityText(node->dmRecipientId) : QString();
+    }
+
     if (role == ThreadJoinedRole) {
         if (node->type != ChannelNode::Type::Thread ||
             !node->parent ||
@@ -258,6 +270,27 @@ QVariant ChannelTreeModel::data(const QModelIndex &index, int role) const
     }
 
     return {};
+}
+
+void ChannelTreeModel::refreshUserPresence(Snowflake accountId, Snowflake userId)
+{
+    ChannelNode *accountNode = accountNodes.value(accountId, nullptr);
+    if (!accountNode || !userId.isValid())
+        return;
+
+    for (const auto &child : accountNode->children) {
+        if (child->type != ChannelNode::Type::DMHeader)
+            continue;
+
+        for (const auto &dm : child->children) {
+            if (dm->type != ChannelNode::Type::DMChannel || dm->dmRecipientId != userId)
+                continue;
+
+            const QModelIndex idx = indexForNode(dm.get());
+            if (idx.isValid())
+                emit dataChanged(idx, idx, { ActivityRole, Qt::SizeHintRole });
+        }
+    }
 }
 
 Qt::ItemFlags ChannelTreeModel::flags(const QModelIndex &index) const

@@ -117,6 +117,20 @@ struct TypingStart : Core::JsonUtils::JsonObject
     }
 };
 
+struct PresenceUpdate : Core::JsonUtils::JsonObject
+{
+    Presence presence;
+    Field<Core::Snowflake, true> guildId;
+
+    static PresenceUpdate fromJson(const QJsonObject &obj)
+    {
+        PresenceUpdate event;
+        event.presence = Presence::fromJson(obj);
+        get(obj, "guild_id", event.guildId);
+        return event;
+    }
+};
+
 struct ChannelCreate : Core::JsonUtils::JsonObject
 {
     Field<Channel> channel;

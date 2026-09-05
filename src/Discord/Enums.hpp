@@ -133,6 +133,7 @@ enum class GatewayEvent {
     UNKNOWN,
     READY,
     READY_SUPPLEMENTAL,
+    PRESENCE_UPDATE,
     MESSAGE_CREATE,
     MESSAGE_UPDATE,
     MESSAGE_DELETE,
@@ -187,6 +188,7 @@ inline GatewayEvent parseGatewayEvent(const QString &event)
     static const QHash<QString, GatewayEvent> events = {
         { "READY", GatewayEvent::READY },
         { "READY_SUPPLEMENTAL", GatewayEvent::READY_SUPPLEMENTAL },
+        { "PRESENCE_UPDATE", GatewayEvent::PRESENCE_UPDATE },
         { "MESSAGE_CREATE", GatewayEvent::MESSAGE_CREATE },
         { "MESSAGE_UPDATE", GatewayEvent::MESSAGE_UPDATE },
         { "MESSAGE_DELETE", GatewayEvent::MESSAGE_DELETE },

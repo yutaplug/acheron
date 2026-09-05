@@ -517,9 +517,40 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
     QRect textRect = contentOpt.rect.adjusted(iconSize, 0, -rightReserve, 0);
     painter->setPen(textColor);
-    QString elidedName = painter->fontMetrics().elidedText(
-            index.data(Qt::DisplayRole).toString(), Qt::ElideRight, textRect.width());
-    painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+    const QString activity = index.data(ChannelTreeModel::ActivityRole).toString();
+    if (node->type == ChannelNode::Type::DMChannel && !activity.isEmpty()) {
+        QFont nameFont = painter->font();
+        nameFont.setWeight(QFont::Medium);
+        painter->setFont(nameFont);
+        QFontMetrics nameFm(nameFont);
+
+        QRect nameRect = textRect;
+        nameRect.setHeight(nameFm.height() + 2);
+        nameRect.setTop(textRect.top() + 1);
+        QString elidedName = nameFm.elidedText(index.data(Qt::DisplayRole).toString(),
+                                               Qt::ElideRight, nameRect.width());
+        painter->setPen(textColor);
+        painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+
+        QFont activityFont = painter->font();
+        activityFont.setPointSizeF(qMax(8.0, activityFont.pointSizeF() - 2.0));
+        activityFont.setWeight(QFont::Normal);
+        painter->setFont(activityFont);
+        QFontMetrics activityFm(activityFont);
+        QRect activityRect = textRect;
+        activityRect.setTop(nameRect.bottom() + 1);
+        activityRect.setHeight(activityFm.height());
+        QColor activityColor = option.palette.placeholderText().color();
+        if (isSelected)
+            activityColor = option.palette.highlightedText().color();
+        painter->setPen(activityColor);
+        painter->drawText(activityRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          activityFm.elidedText(activity, Qt::ElideRight, activityRect.width()));
+    } else {
+        QString elidedName = painter->fontMetrics().elidedText(
+                index.data(Qt::DisplayRole).toString(), Qt::ElideRight, textRect.width());
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+    }
 
     // branch indicator for categories
     if (node->type == ChannelNode::Type::Category)
@@ -572,7 +603,12 @@ void ChannelDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 QSize ChannelDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     QSize sz = QStyledItemDelegate::sizeHint(option, index);
-    return QSize(sz.width(), 24);
+    const auto sourceIndex = proxyModel ? proxyModel->mapToSource(index) : index;
+    const auto type = static_cast<ChannelNode::Type>(
+            sourceIndex.data(ChannelTreeModel::TypeRole).toInt());
+    const bool hasActivity = type == ChannelNode::Type::DMChannel &&
+                             !sourceIndex.data(ChannelTreeModel::ActivityRole).toString().isEmpty();
+    return QSize(sz.width(), hasActivity ? 40 : 24);
 }
 } // namespace UI
 } // namespace Acheron

@@ -58,6 +58,7 @@ signals:
     void gatewayHello();
     void gatewayReady(const Ready &data);
     void gatewayReadySupplemental(const ReadySupplemental &data);
+    void gatewayPresenceUpdate(const PresenceUpdate &event);
     void gatewayMessageCreate(const Message &data);
     void gatewayMessageUpdate(const Message &data);
     void gatewayMessageDelete(const MessageDelete &data);
@@ -105,6 +106,7 @@ private:
     void handleDispatch(const Inbound &data);
     void handleReady(const Inbound &data);
     void handleReadySupplemental(const Inbound &data);
+    void handlePresenceUpdate(const Inbound &data);
     void handleMessageCreate(const Inbound &data);
     void handleMessageUpdate(const Inbound &data);
     void handleMessageDelete(const Inbound &data);

@@ -49,6 +49,7 @@ public:
         CountsForGuildUnreadRole = Qt::UserRole + 14,
         ThreadJoinedRole = Qt::UserRole + 15,
         OwnerIdRole = Qt::UserRole + 16,
+        ActivityRole = Qt::UserRole + 17,
     };
 
     QModelIndex index(int row, int column, const QModelIndex &parentIndex) const override;
@@ -88,6 +89,7 @@ public:
     void updateVoiceCount(Snowflake channelId, int count, Snowflake accountId);
     void updateVoiceParticipant(Snowflake channelId, Snowflake userId, bool joined, Snowflake accountId);
     void updateVoiceParticipantState(Snowflake channelId, Snowflake userId, Snowflake accountId);
+    void refreshUserPresence(Snowflake accountId, Snowflake userId);
     void toggleCollapsed(const QModelIndex &index);
     void setCollapsed(const QModelIndex &index, bool collapsed);
 

@@ -77,6 +77,13 @@ ClientInstance::ClientInstance(const AccountInfo &info,
 
         userManager->saveUser(ready.user);
 
+        for (const auto &guild : ready.guilds.get()) {
+            if (!guild.presences.hasValue())
+                continue;
+            for (const auto &presence : guild.presences.get())
+                userManager->savePresence(presence);
+        }
+
         if (ready.users.hasValue())
             userManager->saveUsers(ready.users.get());
 
@@ -202,6 +209,11 @@ ClientInstance::ClientInstance(const AccountInfo &info,
     connect(client, &Discord::Client::userGuildSettingsUpdated, readStateManager, &ReadStateManager::onUserGuildSettingsUpdate);
 
     connect(client, &Discord::Client::messageCreated, this, &ClientInstance::onMessageCreated);
+
+    connect(client, &Discord::Client::presenceUpdated, this,
+            [this](const Discord::PresenceUpdate &event) {
+                userManager->savePresence(event.presence);
+            });
 
     connect(client, &Discord::Client::threadCreated, forumManager, &ForumManager::onThreadCreated);
     connect(client, &Discord::Client::threadUpdated, forumManager, &ForumManager::onThreadUpdated);

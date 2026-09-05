@@ -46,6 +46,7 @@ private:
     void renderFromCachedData();
     void renderFromProfile();
     void renderBannerAndBio();
+    void renderActivity();
     void renderBadges();
     void renderConnections();
     void renderMutualServers();
@@ -94,6 +95,9 @@ private:
 
     QWidget *bioSection = nullptr;
     QLabel *bioLabel = nullptr;
+
+    QWidget *activitySection = nullptr;
+    QLabel *activityLabel = nullptr;
 
     QPushButton *viewToggle = nullptr;
 

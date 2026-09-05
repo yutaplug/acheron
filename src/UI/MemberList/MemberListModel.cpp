@@ -1,6 +1,7 @@
 #include "MemberListModel.hpp"
 
 #include "Discord/CdnUrls.hpp"
+#include "Core/UserManager.hpp"
 
 namespace Acheron {
 namespace UI {
@@ -66,6 +67,10 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const
         return item->type == Core::MemberListItem::Type::Member
                        ? item->displayName
                        : QString();
+    case ActivityRole:
+        return item->type == Core::MemberListItem::Type::Member && userManager
+                       ? userManager->getActivityText(item->userId)
+                       : QString();
     case AvatarRole: {
         if (item->type != Core::MemberListItem::Type::Member)
             return QVariant();
@@ -109,6 +114,25 @@ void MemberListModel::setAccount(Core::Snowflake id)
     accountId = id;
 }
 
+void MemberListModel::setUserManager(Core::UserManager *newUserManager)
+{
+    if (userManager == newUserManager)
+        return;
+
+    if (userManager)
+        disconnect(userManager, nullptr, this, nullptr);
+
+    userManager = newUserManager;
+    if (userManager) {
+        connect(userManager, &Core::UserManager::presenceChanged, this,
+                &MemberListModel::onPresenceChanged);
+    }
+
+    if (manager && manager->totalItemCount() > 0)
+        emit dataChanged(index(0, 0), index(manager->totalItemCount() - 1, 0),
+                         { ActivityRole, Qt::SizeHintRole });
+}
+
 void MemberListModel::onListAboutToReset()
 {
     beginResetModel();
@@ -129,6 +153,22 @@ void MemberListModel::onImageFetched(const QUrl &url, const QSize &size, const Q
         if (index.isValid())
             emit dataChanged(index, index);
     });
+}
+
+void MemberListModel::onPresenceChanged(Core::Snowflake userId)
+{
+    if (!manager || !userId.isValid())
+        return;
+
+    for (int row = 0; row < manager->totalItemCount(); ++row) {
+        const auto *item = manager->itemAt(row);
+        if (!item || item->type != Core::MemberListItem::Type::Member ||
+            item->userId != userId)
+            continue;
+
+        const QModelIndex idx = index(row, 0);
+        emit dataChanged(idx, idx, { ActivityRole, Qt::SizeHintRole });
+    }
 }
 
 void MemberListModel::connectManager()

@@ -42,6 +42,20 @@ std::optional<Discord::Member> UserManager::getMember(Snowflake guildId, Snowfla
     return dbMember;
 }
 
+std::optional<Discord::Presence> UserManager::getPresence(Snowflake userId) const
+{
+    auto it = presences.constFind(userId);
+    if (it == presences.constEnd())
+        return std::nullopt;
+    return it.value();
+}
+
+QString UserManager::getActivityText(Snowflake userId) const
+{
+    auto presence = getPresence(userId);
+    return presence ? presence->activityText() : QString();
+}
+
 std::optional<QList<Snowflake>> UserManager::getMemberRoles(Snowflake guildId, Snowflake userId)
 {
     if (auto *member = memberCache.object(MemberKey{ guildId, userId }))
@@ -115,6 +129,16 @@ void UserManager::saveMemberWithUser(Snowflake guildId, const Discord::Member &m
         saveUser(member.user.get());
         saveMember(guildId, member.user->id, member);
     }
+}
+
+void UserManager::savePresence(const Discord::Presence &presence)
+{
+    if (!presence.userId.hasValue() || !presence.userId->isValid())
+        return;
+
+    const Snowflake userId = presence.userId.get();
+    presences.insert(userId, presence);
+    emit presenceChanged(userId);
 }
 
 void UserManager::loadNotesFromReady(const QHash<Snowflake, QString> &readyNotes)

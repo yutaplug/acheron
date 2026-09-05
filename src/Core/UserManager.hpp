@@ -38,6 +38,8 @@ public:
 
     [[nodiscard]] std::optional<Discord::User> getUser(Snowflake userId);
     [[nodiscard]] std::optional<Discord::Member> getMember(Snowflake guildId, Snowflake userId);
+    [[nodiscard]] std::optional<Discord::Presence> getPresence(Snowflake userId) const;
+    [[nodiscard]] QString getActivityText(Snowflake userId) const;
 
     [[nodiscard]] std::optional<QList<Snowflake>> getMemberRoles(Snowflake guildId, Snowflake userId);
 
@@ -50,6 +52,7 @@ public:
     void removeGuildMembers(Snowflake guildId);
 
     void saveMemberWithUser(Snowflake guildId, const Discord::Member &member);
+    void savePresence(const Discord::Presence &presence);
 
     void loadNotesFromReady(const QHash<Snowflake, QString> &notes);
     void setCachedNote(Snowflake userId, const QString &note);
@@ -57,12 +60,14 @@ public:
 
 signals:
     void noteChanged(Snowflake userId);
+    void presenceChanged(Snowflake userId);
 
 private:
     QCache<Snowflake, Discord::User> userCache;
     QCache<MemberKey, Discord::Member> memberCache;
 
     QHash<Snowflake, QString> notes;
+    QHash<Snowflake, Discord::Presence> presences;
 
     Storage::UserRepository userRepo;
     Storage::MemberRepository memberRepo;

@@ -86,6 +86,8 @@ inline QUrl emoji(Core::Snowflake emojiId, int size = 48)
                         .arg(QString::number(quint64(emojiId)), QString::number(size)));
 }
 
+QUrl sticker(Core::Snowflake stickerId, int formatType);
+
 QUrl connectionIcon(const QString &type);
 
 bool isDiscordMediaUrl(const QUrl &url);

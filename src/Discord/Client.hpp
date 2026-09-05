@@ -172,6 +172,7 @@ signals:
     void stateChanged(Core::ConnectionState state);
     void ready(const Ready &data);
     void readySupplemental(const ReadySupplemental &data);
+    void presenceUpdated(const PresenceUpdate &event);
     void messageCreated(const Message &msg);
     void messageUpdated(const Message &msg);
     void messageDeleted(const MessageDelete &event);

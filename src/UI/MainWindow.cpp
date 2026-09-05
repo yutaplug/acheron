@@ -383,6 +383,7 @@ void MainWindow::detachInstance(Core::Snowflake accountId)
     disconnect(currentInstance->forums(), nullptr, this, nullptr);
 
     memberListModel->setManager(nullptr);
+    memberListModel->setUserManager(nullptr);
     forumModel->setManager(nullptr);
     typingTracker->clear();
     typingTracker->setUserManager(nullptr);
@@ -410,6 +411,7 @@ void MainWindow::switchActiveInstance(Core::ClientInstance *newInstance)
 
     memberListModel->setAccount(currentInstance->accountId());
     memberListModel->setManager(currentInstance->memberList());
+    memberListModel->setUserManager(currentInstance->users());
 
     if (auto *video = chatView->videoController())
         video->setProxy(currentInstance->discord()->getProxy());
@@ -648,6 +650,11 @@ void MainWindow::setupPermanentConnections(Core::ClientInstance *instance)
                 channelTreeModel->addGuild(guild, instance->accountId());
                 if (channelListMode == ChannelListMode::Tree)
                     channelTree->performDefaultExpansion();
+            });
+
+    connect(instance->users(), &Core::UserManager::presenceChanged, this,
+            [this, instance](Snowflake userId) {
+                channelTreeModel->refreshUserPresence(instance->accountId(), userId);
             });
 
     connect(instance, &Core::ClientInstance::guildRemoved, this,

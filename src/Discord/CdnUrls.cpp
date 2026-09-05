@@ -83,6 +83,23 @@ QUrl connectionIcon(const QString &type)
     return QUrl(QStringLiteral("https://discord.com/assets/%1.png").arg(it.value()));
 }
 
+QUrl sticker(Core::Snowflake stickerId, int formatType)
+{
+    if (!stickerId.isValid())
+        return {};
+
+    // Discord serves GIF stickers from media.discordapp.net; the other
+    // formats use the regular CDN endpoint.
+    if (formatType == 4)
+        return QUrl(QStringLiteral("https://media.discordapp.net/stickers/%1.gif")
+                            .arg(QString::number(quint64(stickerId))));
+    if (formatType == 3)
+        return QUrl(QStringLiteral("https://cdn.discordapp.com/stickers/%1.json")
+                            .arg(QString::number(quint64(stickerId))));
+    return QUrl(QStringLiteral("https://cdn.discordapp.com/stickers/%1.png")
+                        .arg(QString::number(quint64(stickerId))));
+}
+
 } // namespace Cdn
 } // namespace Discord
 } // namespace Acheron

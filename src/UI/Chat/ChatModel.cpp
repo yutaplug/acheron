@@ -9,6 +9,7 @@
 #include "Core/ImageManager.hpp"
 #include "Core/Theme/Manager.hpp"
 #include "Core/Media/Player.hpp"
+#include "Discord/CdnUrls.hpp"
 #include "Discord/Enums.hpp"
 
 namespace Acheron {
@@ -135,6 +136,20 @@ ChatModel::ChatModel(Core::ImageManager *imageManager, QObject *parent)
                     if (visible.attachments.hasValue()) {
                         for (const auto &att : *visible.attachments) {
                             if (QUrl(*att.proxyUrl) == url) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!found) {
+                        const QList<Discord::StickerItem> stickerItems =
+                                visible.stickerItems.hasValue() && !visible.stickerItems->isEmpty()
+                                        ? visible.stickerItems.get()
+                                        : visible.stickers.hasValue() ? visible.stickers.get()
+                                                                       : QList<Discord::StickerItem>{};
+                        for (const auto &sticker : stickerItems) {
+                            if (Discord::Cdn::sticker(sticker.id.get(), sticker.formatType.get()) == url) {
                                 found = true;
                                 break;
                             }
@@ -418,7 +433,10 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     }
     case AttachmentsRole: {
         const Discord::Message &visible = msg.contentMessage();
-        if (!visible.attachments.hasValue() || visible.attachments->isEmpty())
+        const bool hasAttachments = visible.attachments.hasValue() && !visible.attachments->isEmpty();
+        const bool hasCurrentStickers = visible.stickerItems.hasValue() && !visible.stickerItems->isEmpty();
+        const bool hasDeprecatedStickers = visible.stickers.hasValue() && !visible.stickers->isEmpty();
+        if (!hasAttachments && !hasCurrentStickers && !hasDeprecatedStickers)
             return QVariant();
 
         const QVector<QPair<qint64, qint64>> *progress = nullptr;
@@ -429,55 +447,96 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         }
 
         QList<AttachmentData> result;
-        for (const auto &att : *visible.attachments) {
-            AttachmentData data;
-            data.id = att.id;
-            data.proxyUrl = QUrl(*att.proxyUrl);
-            data.originalUrl = QUrl(*att.url);
-            const MediaFlags media = mediaFlagsFor(att, visible);
-            data.isImage = media.isImage;
-            data.contentType = media.contentType;
-            data.isVideo = media.isVideo;
-            data.isVoiceMessage = media.isVoiceMessage;
-            data.isAudio = media.isAudio;
-            data.durationMs = media.durationMs;
-            data.filename = att.filename.hasValue() ? *att.filename : "unknown";
-            data.fileSizeBytes = att.size.hasValue() ? *att.size : 0;
-            data.isSpoiler = att.isSpoiler();
+        if (hasAttachments) {
+            for (const auto &att : *visible.attachments) {
+                AttachmentData data;
+                data.id = att.id;
+                data.proxyUrl = QUrl(*att.proxyUrl);
+                data.originalUrl = QUrl(*att.url);
+                const MediaFlags media = mediaFlagsFor(att, visible);
+                data.isImage = media.isImage;
+                data.contentType = media.contentType;
+                data.isVideo = media.isVideo;
+                data.isVoiceMessage = media.isVoiceMessage;
+                data.isAudio = media.isAudio;
+                data.durationMs = media.durationMs;
+                data.filename = att.filename.hasValue() ? *att.filename : "unknown";
+                data.fileSizeBytes = att.size.hasValue() ? *att.size : 0;
+                data.isSpoiler = att.isSpoiler();
 
-            int attIndex = result.size();
-            if (progress && attIndex < progress->size()) {
-                data.uploadSent = (*progress)[attIndex].first;
-                data.uploadTotal = (*progress)[attIndex].second;
-            }
-
-            if (data.isMedia()) {
-                QSize original;
-                if (att.width.hasValue() && att.height.hasValue())
-                    original = QSize(*att.width, *att.height);
-                if (!original.isValid() && data.isVideo) {
-                    const QSize decoded = videoNativeSizes.value(data.id);
-                    original = decoded.isValid() ? decoded : QSize(1280, 720);
+                int attIndex = result.size();
+                if (progress && attIndex < progress->size()) {
+                    data.uploadSent = (*progress)[attIndex].first;
+                    data.uploadTotal = (*progress)[attIndex].second;
                 }
 
-                data.displaySize = Core::ImageManager::calculateDisplaySize(original);
-                if (!att.localPreview.isNull()) {
-                    // pending paste preview: pixels live in memory, not on disk
-                    data.pixmap = previewPixmap(att.id, att.localPreview, data.displaySize);
-                    data.isLoading = data.pixmap.isNull();
-                } else if (data.proxyUrl.isLocalFile()) {
-                    // pending dropped-file preview: decode from disk
-                    data.pixmap = localPixmap(data.proxyUrl, data.displaySize);
-                    data.isLoading = data.pixmap.isNull();
+                if (data.isMedia()) {
+                    QSize original;
+                    if (att.width.hasValue() && att.height.hasValue())
+                        original = QSize(*att.width, *att.height);
+                    if (!original.isValid() && data.isVideo) {
+                        const QSize decoded = videoNativeSizes.value(data.id);
+                        original = decoded.isValid() ? decoded : QSize(1280, 720);
+                    }
+
+                    data.displaySize = Core::ImageManager::calculateDisplaySize(original);
+                    if (!att.localPreview.isNull()) {
+                        // pending paste preview: pixels live in memory, not on disk
+                        data.pixmap = previewPixmap(att.id, att.localPreview, data.displaySize);
+                        data.isLoading = data.pixmap.isNull();
+                    } else if (data.proxyUrl.isLocalFile()) {
+                        // pending dropped-file preview: decode from disk
+                        data.pixmap = localPixmap(data.proxyUrl, data.displaySize);
+                        data.isLoading = data.pixmap.isNull();
+                    } else {
+                        data.pixmap = suppressImageFetch
+                                              ? imageManager->getIfCached(data.proxyUrl, data.displaySize)
+                                              : imageManager->get(data.proxyUrl, data.displaySize, currentAccountId);
+                        data.isLoading = !imageManager->isCached(data.proxyUrl, data.displaySize);
+                    }
                 } else {
-                    data.pixmap = suppressImageFetch
-                                          ? imageManager->getIfCached(data.proxyUrl, data.displaySize)
-                                          : imageManager->get(data.proxyUrl, data.displaySize, currentAccountId);
-                    data.isLoading = !imageManager->isCached(data.proxyUrl, data.displaySize);
+                    data.displaySize = QSize();
+                    data.isLoading = false;
                 }
+
+                result.append(data);
+            }
+        }
+
+        // A message sticker is rendered in the same media grid as an image
+        // attachment.  Lottie stickers remain visible as a small file card;
+        // Qt's raster image pipeline cannot render Lottie JSON.
+        QList<Discord::StickerItem> stickers;
+        if (hasCurrentStickers)
+            stickers = visible.stickerItems.get();
+        else if (hasDeprecatedStickers)
+            stickers = visible.stickers.get();
+
+        for (const auto &sticker : stickers) {
+            if (!sticker.id.hasValue() || !sticker.id->isValid())
+                continue;
+
+            AttachmentData data;
+            data.id = sticker.id;
+            const int formatType = sticker.formatType.get();
+            data.proxyUrl = Discord::Cdn::sticker(sticker.id.get(), formatType);
+            data.originalUrl = data.proxyUrl;
+            data.isSticker = true;
+            data.filename = sticker.name.get().isEmpty() ? QStringLiteral("sticker") : sticker.name.get();
+            data.displaySize = Core::ImageManager::calculateDisplaySize(QSize(320, 320));
+
+            if (formatType == 3) {
+                data.contentType = QStringLiteral("application/json");
+                data.filename += QStringLiteral(".json");
             } else {
-                data.displaySize = QSize();
-                data.isLoading = false;
+                data.contentType = formatType == 4
+                                           ? QStringLiteral("image/gif")
+                                           : QStringLiteral("image/png");
+                data.isImage = true;
+                data.pixmap = suppressImageFetch
+                                      ? imageManager->getIfCached(data.proxyUrl, data.displaySize)
+                                      : imageManager->get(data.proxyUrl, data.displaySize, currentAccountId);
+                data.isLoading = !imageManager->isCached(data.proxyUrl, data.displaySize);
             }
 
             result.append(data);

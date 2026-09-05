@@ -8,6 +8,7 @@
 
 constexpr static int GroupHeight = 22;
 constexpr static int MemberHeight = 28;
+constexpr static int MemberActivityHeight = 40;
 constexpr static int AvatarSize = 20;
 constexpr static int AvatarRadius = 4;
 constexpr static int HorizontalPadding = 8;
@@ -47,7 +48,8 @@ QSize MemberListDelegate::sizeHint(const QStyleOptionViewItem &option,
     if (itemType == static_cast<int>(Core::MemberListItem::Type::Group))
         return QSize(option.rect.width(), GroupHeight);
 
-    return QSize(option.rect.width(), MemberHeight);
+    const bool hasActivity = index.data(MemberListModel::ActivityRole).toString().isEmpty() == false;
+    return QSize(option.rect.width(), hasActivity ? MemberActivityHeight : MemberHeight);
 }
 
 void MemberListDelegate::paintGroup(QPainter *painter, const QStyleOptionViewItem &option,
@@ -118,6 +120,7 @@ void MemberListDelegate::paintMember(QPainter *painter, const QStyleOptionViewIt
 
     x += AvatarSize + AvatarTextSpacing;
     int textWidth = option.rect.right() - x - HorizontalPadding;
+    const QString activity = index.data(MemberListModel::ActivityRole).toString();
     QRect nameRect(x, option.rect.top(), textWidth, option.rect.height());
 
     QString displayName = index.data(MemberListModel::UsernameRole).toString();
@@ -137,8 +140,26 @@ void MemberListDelegate::paintMember(QPainter *painter, const QStyleOptionViewIt
     painter->setPen(nameColor);
 
     QFontMetrics fm(font);
-    QString elidedName = fm.elidedText(displayName, Qt::ElideRight, textWidth);
-    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+    if (activity.isEmpty()) {
+        QString elidedName = fm.elidedText(displayName, Qt::ElideRight, textWidth);
+        painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+        return;
+    }
+
+    nameRect.setTop(option.rect.top() + 2);
+    nameRect.setHeight(fm.height() + 1);
+    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      fm.elidedText(displayName, Qt::ElideRight, textWidth));
+
+    QFont activityFont = font;
+    activityFont.setPixelSize(10);
+    activityFont.setWeight(QFont::Normal);
+    painter->setFont(activityFont);
+    QFontMetrics activityFm(activityFont);
+    QRect activityRect(x, nameRect.bottom() + 1, textWidth, activityFm.height());
+    painter->setPen(option.palette.color(QPalette::PlaceholderText));
+    painter->drawText(activityRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      activityFm.elidedText(activity, Qt::ElideRight, textWidth));
 }
 
 void MemberListDelegate::paintPlaceholder(QPainter *painter,

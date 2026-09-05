@@ -168,6 +168,9 @@ void Gateway::handleDispatch(const Inbound &data)
     case GatewayEvent::READY_SUPPLEMENTAL:
         handleReadySupplemental(data);
         break;
+    case GatewayEvent::PRESENCE_UPDATE:
+        handlePresenceUpdate(data);
+        break;
     case GatewayEvent::MESSAGE_CREATE:
         handleMessageCreate(data);
         break;
@@ -313,6 +316,12 @@ void Gateway::handleReadySupplemental(const Inbound &data)
     ReadySupplemental msg = data.getData<ReadySupplemental>();
 
     emit gatewayReadySupplemental(msg);
+}
+
+void Gateway::handlePresenceUpdate(const Inbound &data)
+{
+    PresenceUpdate event = data.getData<PresenceUpdate>();
+    emit gatewayPresenceUpdate(event);
 }
 
 void Gateway::handleMessageCreate(const Inbound &data)
