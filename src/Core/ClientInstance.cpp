@@ -80,9 +80,13 @@ ClientInstance::ClientInstance(const AccountInfo &info,
         for (const auto &guild : ready.guilds.get()) {
             if (!guild.presences.hasValue())
                 continue;
-            for (const auto &presence : guild.presences.get())
-                userManager->savePresence(presence);
+            userManager->savePresences(guild.presences.get());
         }
+
+        if (ready.presences.hasValue())
+            userManager->savePresences(ready.presences.get());
+        if (ready.mergedPresences.hasValue())
+            userManager->saveMergedPresences(ready.mergedPresences.get());
 
         if (ready.users.hasValue())
             userManager->saveUsers(ready.users.get());
@@ -148,9 +152,16 @@ ClientInstance::ClientInstance(const AccountInfo &info,
                     const auto &guild = data.guilds->at(i);
                     const auto &members = data.mergedMembers->at(i);
 
-                    for (const auto &member : members)
+                    for (const auto &member : members) {
                         memberRepo.saveMember(guild.id, member.userId.get(), member);
+                        saveMemberPresence(member, member.userId.get());
+                    }
                 }
+
+                if (data.presences.hasValue())
+                    userManager->savePresences(data.presences.get());
+                if (data.mergedPresences.hasValue())
+                    userManager->saveMergedPresences(data.mergedPresences.get());
 
                 txn.commit();
 
@@ -292,6 +303,7 @@ void ClientInstance::saveGuild(const Discord::GatewayGuild &guild, const QList<D
             if (member.user.hasValue())
                 userManager->saveUser(member.user.get());
             memberRepo.saveMember(guildId, memberId, member);
+            saveMemberPresence(member, memberId);
             if (memberId == myId)
                 me = &member;
         }
@@ -319,6 +331,17 @@ void ClientInstance::saveGuild(const Discord::GatewayGuild &guild, const QList<D
                 channelRepo.savePermissionOverwrites(copy.id.get(), copy.permissionOverwrites.get(), db);
         }
     }
+}
+
+void ClientInstance::saveMemberPresence(const Discord::Member &member, Snowflake fallbackUserId)
+{
+    if (!member.presence.hasValue())
+        return;
+
+    if (!fallbackUserId.isValid() && member.user.hasValue() && member.user->id.hasValue())
+        fallbackUserId = member.user->id.get();
+
+    userManager->savePresence(member.presence.get(), fallbackUserId);
 }
 
 void ClientInstance::initGuildReadState(const Discord::GatewayGuild &guild)
@@ -833,6 +856,9 @@ void ClientInstance::onGuildMembersChunk(const Discord::GuildMembersChunk &chunk
     Snowflake guildId = chunk.guildId.get();
     QList<Snowflake> updatedUserIds;
 
+    if (chunk.presences.hasValue())
+        userManager->savePresences(chunk.presences.get());
+
     for (const auto &member : chunk.members.get()) {
         Snowflake userId =
                 member.userId.hasValue()
@@ -844,6 +870,7 @@ void ClientInstance::onGuildMembersChunk(const Discord::GuildMembersChunk &chunk
         memberRepo.saveMember(guildId, userId, member);
         if (member.user.hasValue())
             userManager->saveUser(member.user.get());
+        saveMemberPresence(member, userId);
 
         pendingMemberRequests.remove(qMakePair(guildId, userId));
         updatedUserIds.append(userId);
@@ -882,9 +909,14 @@ void ClientInstance::onGuildMemberListUpdate(const Discord::GuildMemberListUpdat
     QList<Discord::Member> members;
 
     auto persist = [&](const Discord::Member &member) {
-        if (!member.user.hasValue() || !member.user->id.hasValue())
+        Snowflake userId = member.userId.hasValue() ? member.userId.get()
+                                                    : Snowflake::Invalid;
+        if (!userId.isValid() && member.user.hasValue() && member.user->id.hasValue())
+            userId = member.user->id.get();
+        if (!userId.isValid())
             return;
-        users.append(member.user.get());
+        if (member.user.hasValue())
+            users.append(member.user.get());
         members.append(member);
     };
 

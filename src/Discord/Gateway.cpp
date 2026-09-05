@@ -605,7 +605,7 @@ void Gateway::requestGuildMembers(Core::Snowflake guildId, const QList<Core::Sno
     RequestGuildMembers request;
     request.guildId = guildId;
     request.userIds = userIds;
-    request.presences = false;
+    request.presences = true;
 
     sendPayload(request.toJson());
 }

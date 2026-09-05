@@ -138,6 +138,7 @@ private:
     bool runInCacheTransaction(const char *what, const std::function<void(QSqlDatabase &)> &op);
 
     void saveGuild(const Discord::GatewayGuild &guild, const QList<Discord::Member> *members, Snowflake myId, QSqlDatabase &db);
+    void saveMemberPresence(const Discord::Member &member, Snowflake fallbackUserId = Snowflake::Invalid);
     void initGuildReadState(const Discord::GatewayGuild &guild);
 
     [[nodiscard]] bool isForumParent(Snowflake parentId);

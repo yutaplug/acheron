@@ -52,7 +52,9 @@ public:
     void removeGuildMembers(Snowflake guildId);
 
     void saveMemberWithUser(Snowflake guildId, const Discord::Member &member);
-    void savePresence(const Discord::Presence &presence);
+    void savePresence(const Discord::Presence &presence, Snowflake fallbackUserId = Snowflake::Invalid);
+    void savePresences(const QList<Discord::Presence> &presences);
+    void saveMergedPresences(const Discord::MergedPresences &presences);
 
     void loadNotesFromReady(const QHash<Snowflake, QString> &notes);
     void setCachedNote(Snowflake userId, const QString &note);

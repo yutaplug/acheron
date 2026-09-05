@@ -84,6 +84,8 @@ struct Activity : Core::JsonUtils::JsonObject
         }
 
         QString title = name.get();
+        if (title.isEmpty() && details.hasValue())
+            title = details.get();
         if (title.isEmpty() && state.hasValue())
             title = state.get();
         if (title.isEmpty())
@@ -109,8 +111,9 @@ struct Activity : Core::JsonUtils::JsonObject
 struct Presence : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> userId;
-    Field<QString> status;
-    Field<QList<Activity>> activities;
+    Field<QString, true> status;
+    Field<QList<Activity>, true> activities;
+    Field<Activity, true> game; // legacy member-list activity field
 
     static Presence fromJson(const QJsonObject &obj)
     {
@@ -123,6 +126,7 @@ struct Presence : Core::JsonUtils::JsonObject
         get(obj, "user_id", presence.userId);
         get(obj, "status", presence.status);
         get(obj, "activities", presence.activities);
+        get(obj, "game", presence.game);
         return presence;
     }
 
@@ -136,12 +140,31 @@ struct Presence : Core::JsonUtils::JsonObject
                     return text;
             }
         }
+        if (game.hasValue()) {
+            const QString text = game->displayText();
+            if (!text.isEmpty())
+                return text;
+        }
         for (const auto &activity : activities.get()) {
             const QString text = activity.displayText();
             if (!text.isEmpty())
                 return text;
         }
         return {};
+    }
+};
+
+struct MergedPresences : Core::JsonUtils::JsonObject
+{
+    Field<QList<Presence>, true> friends;
+    Field<QList<QList<Presence>>, true> guilds;
+
+    static MergedPresences fromJson(const QJsonObject &obj)
+    {
+        MergedPresences presences;
+        get(obj, "friends", presences.friends);
+        get(obj, "guilds", presences.guilds);
+        return presences;
     }
 };
 
@@ -164,6 +187,7 @@ struct StickerItem : Core::JsonUtils::JsonObject
 struct Member : Core::JsonUtils::JsonObject
 {
     Field<User, true> user;
+    Field<Presence, true> presence;
     Field<QString, true, true> nick;
     Field<QString, true, true> avatar;
     Field<QList<Core::Snowflake>, true> roles;
@@ -180,6 +204,7 @@ struct Member : Core::JsonUtils::JsonObject
     {
         Member member;
         get(obj, "user", member.user);
+        get(obj, "presence", member.presence);
         get(obj, "nick", member.nick);
         get(obj, "avatar", member.avatar);
         get(obj, "roles", member.roles);

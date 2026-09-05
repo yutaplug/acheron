@@ -449,8 +449,10 @@ MemberListItem MemberListManager::syncItemToListItem(
         listItem.type = MemberListItem::Type::Member;
         listItem.member = syncItem.member;
 
-        if (!syncItem.member->user.isUndefined())
-            listItem.userId = syncItem.member->user->id;
+        if (syncItem.member->userId.hasValue())
+            listItem.userId = syncItem.member->userId.get();
+        else if (!syncItem.member->user.isUndefined() && syncItem.member->user->id.hasValue())
+            listItem.userId = syncItem.member->user->id.get();
 
         resolveMemberInfo(listItem, guildState);
     }

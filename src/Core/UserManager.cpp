@@ -102,15 +102,23 @@ void UserManager::saveMember(Snowflake guildId, Snowflake userId, const Discord:
 
     memberCache.insert(key, new Discord::Member(member));
     memberRepo.saveMember(guildId, userId, member);
+    if (member.presence.hasValue())
+        savePresence(member.presence.get(), userId);
 }
 
 void UserManager::saveMembers(Snowflake guildId, const QList<Discord::Member> &members)
 {
     for (const auto &member : members) {
-        if (!member.user.hasValue() || !member.user->id.hasValue())
+        Snowflake userId = member.userId.hasValue() ? member.userId.get()
+                                                    : Snowflake::Invalid;
+        if (!userId.isValid() && member.user.hasValue() && member.user->id.hasValue())
+            userId = member.user->id.get();
+        if (!userId.isValid())
             continue;
-        Snowflake userId = member.user->id.get();
+
         memberCache.insert(MemberKey{ guildId, userId }, new Discord::Member(member));
+        if (member.presence.hasValue())
+            savePresence(member.presence.get(), userId);
     }
     memberRepo.saveMembers(guildId, members);
 }
@@ -131,14 +139,45 @@ void UserManager::saveMemberWithUser(Snowflake guildId, const Discord::Member &m
     }
 }
 
-void UserManager::savePresence(const Discord::Presence &presence)
+void UserManager::savePresence(const Discord::Presence &presence, Snowflake fallbackUserId)
 {
-    if (!presence.userId.hasValue() || !presence.userId->isValid())
+    Snowflake userId = presence.userId;
+    if (!userId.isValid())
+        userId = fallbackUserId;
+    if (!userId.isValid())
         return;
 
-    const Snowflake userId = presence.userId.get();
-    presences.insert(userId, presence);
+    Discord::Presence merged = presence;
+    merged.userId = userId;
+
+    auto existing = presences.constFind(userId);
+    if (existing != presences.constEnd()) {
+        if (!merged.status.hasValue() && existing->status.hasValue())
+            merged.status = existing->status;
+        if (!merged.activities.hasValue() && existing->activities.hasValue())
+            merged.activities = existing->activities;
+    }
+
+    presences.insert(userId, merged);
     emit presenceChanged(userId);
+}
+
+void UserManager::savePresences(const QList<Discord::Presence> &newPresences)
+{
+    for (const auto &presence : newPresences)
+        savePresence(presence);
+}
+
+void UserManager::saveMergedPresences(const Discord::MergedPresences &merged)
+{
+    if (merged.friends.hasValue())
+        savePresences(merged.friends.get());
+
+    if (!merged.guilds.hasValue())
+        return;
+
+    for (const auto &guildPresences : merged.guilds.get())
+        savePresences(guildPresences);
 }
 
 void UserManager::loadNotesFromReady(const QHash<Snowflake, QString> &readyNotes)

@@ -64,8 +64,12 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const
                        ? QVariant::fromValue(static_cast<quint64>(item->userId))
                        : QVariant();
     case UsernameRole:
-        return item->type == Core::MemberListItem::Type::Member
-                       ? item->displayName
+        if (item->type != Core::MemberListItem::Type::Member)
+            return QString();
+        if (!item->displayName.isEmpty())
+            return item->displayName;
+        return userManager && item->userId.isValid()
+                       ? userManager->getDisplayName(item->userId, manager->currentGuildId())
                        : QString();
     case ActivityRole:
         return item->type == Core::MemberListItem::Type::Member && userManager
@@ -76,7 +80,16 @@ QVariant MemberListModel::data(const QModelIndex &index, int role) const
             return QVariant();
 
         Core::Snowflake userId = item->userId;
-        QUrl url = Discord::Cdn::userAvatar(userId, item->member.user->avatar.get(), AvatarRequestSize.width());
+        QString avatarHash;
+        if (item->member.user.hasValue() && item->member.user->avatar.hasValue())
+            avatarHash = item->member.user->avatar.get();
+        else if (userManager) {
+            auto user = userManager->getUser(userId);
+            if (user && user->avatar.hasValue())
+                avatarHash = user->avatar.get();
+        }
+
+        QUrl url = Discord::Cdn::userAvatar(userId, avatarHash, AvatarRequestSize.width());
         if (url.isEmpty())
             return QVariant();
 

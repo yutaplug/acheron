@@ -89,9 +89,13 @@ void MemberRepository::saveMembers(Core::Snowflake guildId, const QList<Discord:
     auto db = getDb();
     Transaction txn(db);
     for (const auto &member : members) {
-        if (!member.user.hasValue() || !member.user->id.hasValue())
+        Core::Snowflake userId = member.userId.hasValue() ? member.userId.get()
+                                                          : Core::Snowflake::Invalid;
+        if (!userId.isValid() && member.user.hasValue() && member.user->id.hasValue())
+            userId = member.user->id.get();
+        if (!userId.isValid())
             continue;
-        saveMember(guildId, member.user->id.get(), member, db);
+        saveMember(guildId, userId, member, db);
     }
     txn.commit();
 }

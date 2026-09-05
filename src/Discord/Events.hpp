@@ -14,6 +14,8 @@ struct Ready : Core::JsonUtils::JsonObject
 {
     Field<User> user;
     Field<QList<GatewayGuild>> guilds;
+    Field<QList<Presence>, true> presences;
+    Field<MergedPresences, true> mergedPresences;
     Field<QString> userSettingsProto;
     Field<QList<QList<Member>>, true> mergedMembers;
     Field<QList<User>, true> users;
@@ -31,6 +33,8 @@ struct Ready : Core::JsonUtils::JsonObject
         Ready ready;
         get(obj, "user", ready.user);
         get(obj, "guilds", ready.guilds);
+        get(obj, "presences", ready.presences);
+        get(obj, "merged_presences", ready.mergedPresences);
         get(obj, "user_settings_proto", ready.userSettingsProto);
         get(obj, "user_settings", ready.userSettings);
         get(obj, "merged_members", ready.mergedMembers);
@@ -87,12 +91,16 @@ struct ReadySupplemental : Core::JsonUtils::JsonObject
 {
     Field<QList<SupplementalGuild>> guilds;
     Field<QList<QList<Member>>> mergedMembers;
+    Field<QList<Presence>, true> presences;
+    Field<MergedPresences, true> mergedPresences;
 
     static ReadySupplemental fromJson(const QJsonObject &obj)
     {
         ReadySupplemental readySupplemental;
         get(obj, "guilds", readySupplemental.guilds);
         get(obj, "merged_members", readySupplemental.mergedMembers);
+        get(obj, "presences", readySupplemental.presences);
+        get(obj, "merged_presences", readySupplemental.mergedPresences);
         return readySupplemental;
     }
 };
@@ -271,6 +279,7 @@ struct GuildMembersChunk : Core::JsonUtils::JsonObject
 {
     Field<Core::Snowflake> guildId;
     Field<QList<Member>> members;
+    Field<QList<Presence>, true> presences;
     Field<int> chunkIndex;
     Field<int> chunkCount;
     Field<QList<Core::Snowflake>, true> notFound;
@@ -280,6 +289,7 @@ struct GuildMembersChunk : Core::JsonUtils::JsonObject
         GuildMembersChunk chunk;
         get(obj, "guild_id", chunk.guildId);
         get(obj, "members", chunk.members);
+        get(obj, "presences", chunk.presences);
         get(obj, "chunk_index", chunk.chunkIndex);
         get(obj, "chunk_count", chunk.chunkCount);
         get(obj, "not_found", chunk.notFound);
